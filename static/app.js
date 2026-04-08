@@ -1,6 +1,58 @@
 // API Base URL
 const API_BASE = window.location.origin;
 
+// Auth check
+function checkAuth() {
+    const token = localStorage.getItem('token');
+    const userDisplay = document.getElementById('user-display');
+    const logoutBtn = document.getElementById('logout-btn');
+    const authCheck = document.getElementById('auth-check');
+
+    if (!token) {
+        window.location.href = '/login.html';
+        return false;
+    }
+
+    // Verify token with server
+    fetch(`${API_BASE}/api/verify`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    })
+    .then(res => {
+        if (!res.ok) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            window.location.href = '/login.html';
+            return;
+        }
+        if (authCheck) authCheck.style.display = 'none';
+        const username = localStorage.getItem('username');
+        if (userDisplay) userDisplay.textContent = `👤 ${username}`;
+    })
+    .catch(() => {
+        window.location.href = '/login.html';
+    });
+
+    // Logout handler
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', () => {
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            window.location.href = '/login.html';
+        });
+    }
+
+    return true;
+}
+
+// Auth header for API requests
+function getAuthHeaders() {
+    const token = localStorage.getItem('token');
+    return {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+    };
+}
+
 // DOM Elements
 const statusDot = document.querySelector('.status-dot');
 const statusText = document.getElementById('status-text');
@@ -57,6 +109,7 @@ function formatDate(dateStr) {
 
 // Update connection status
 function setStatus(status, isError = false) {
+    if (!statusText || !statusDot) return;
     statusText.textContent = status;
     statusDot.classList.remove('connected', 'error');
     if (isError) {
@@ -68,12 +121,23 @@ function setStatus(status, isError = false) {
 
 // Fetch account info
 async function fetchAccount() {
+    if (!accountLoading) return;
+
     accountLoading.style.display = 'block';
     accountInfo.style.display = 'none';
     accountError.style.display = 'none';
 
     try {
-        const response = await fetch(`${API_BASE}/api/account`);
+        const response = await fetch(`${API_BASE}/api/account`, {
+            headers: getAuthHeaders()
+        });
+
+        if (response.status === 401) {
+            localStorage.removeItem('token');
+            window.location.href = '/login.html';
+            return;
+        }
+
         const data = await response.json();
 
         if (!response.ok) {
@@ -95,20 +159,29 @@ async function fetchAccount() {
     } catch (err) {
         accountLoading.style.display = 'none';
         accountError.style.display = 'block';
-        accountError.textContent = `Error: ${err.message}. Make sure API keys are configured in .env file.`;
+        accountError.textContent = `Error: ${err.message}. Configure API keys in Settings.`;
         setStatus('Connection Error', true);
     }
 }
 
 // Fetch positions
 async function fetchPositions() {
+    if (!positionsLoading) return;
+
     positionsLoading.style.display = 'block';
     positionsTable.style.display = 'none';
     noPositions.style.display = 'none';
     positionsError.style.display = 'none';
 
     try {
-        const response = await fetch(`${API_BASE}/api/positions`);
+        const response = await fetch(`${API_BASE}/api/positions`, {
+            headers: getAuthHeaders()
+        });
+
+        if (response.status === 401) {
+            return; // Auth check handles redirect
+        }
+
         const data = await response.json();
 
         if (!response.ok) {
@@ -144,13 +217,22 @@ async function fetchPositions() {
 
 // Fetch orders
 async function fetchOrders() {
+    if (!ordersLoading) return;
+
     ordersLoading.style.display = 'block';
     ordersTable.style.display = 'none';
     noOrders.style.display = 'none';
     ordersError.style.display = 'none';
 
     try {
-        const response = await fetch(`${API_BASE}/api/orders`);
+        const response = await fetch(`${API_BASE}/api/orders`, {
+            headers: getAuthHeaders()
+        });
+
+        if (response.status === 401) {
+            return;
+        }
+
         const data = await response.json();
 
         if (!response.ok) {
@@ -183,89 +265,102 @@ async function fetchOrders() {
 }
 
 // Handle order form submission
-orderForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
+if (orderForm) {
+    orderForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
 
-    orderSuccess.style.display = 'none';
-    orderError.style.display = 'none';
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Placing Order...';
+        orderSuccess.style.display = 'none';
+        orderError.style.display = 'none';
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Placing Order...';
 
-    const symbol = document.getElementById('symbol').value.toUpperCase();
-    const side = document.getElementById('side').value;
-    const qty = parseFloat(document.getElementById('qty').value);
-    const orderType = document.getElementById('order-type').value;
-    const limitPrice = document.getElementById('limit-price').value;
-    const timeInForce = document.getElementById('time-in-force').value;
+        const symbol = document.getElementById('symbol').value.toUpperCase();
+        const side = document.getElementById('side').value;
+        const qty = parseFloat(document.getElementById('qty').value);
+        const orderType = document.getElementById('order-type').value;
+        const limitPrice = document.getElementById('limit-price').value;
+        const timeInForce = document.getElementById('time-in-force').value;
 
-    const orderData = {
-        symbol,
-        qty,
-        side,
-        order_type: orderType,
-        time_in_force: timeInForce
-    };
+        const orderData = {
+            symbol,
+            qty,
+            side,
+            order_type: orderType,
+            time_in_force: timeInForce
+        };
 
-    if (orderType === 'limit' && limitPrice) {
-        orderData.limit_price = parseFloat(limitPrice);
-    }
-
-    try {
-        const response = await fetch(`${API_BASE}/api/orders`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(orderData)
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.message || data.error || 'Failed to place order');
+        if (orderType === 'limit' && limitPrice) {
+            orderData.limit_price = parseFloat(limitPrice);
         }
 
-        orderSuccess.style.display = 'block';
-        orderSuccess.textContent = `Order placed successfully! Order ID: ${data.id || 'N/A'}`;
-        orderForm.reset();
+        try {
+            const response = await fetch(`${API_BASE}/api/orders`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify(orderData)
+            });
 
-        // Refresh orders and account
-        setTimeout(() => {
-            fetchOrders();
-            fetchAccount();
-        }, 1000);
+            if (response.status === 401) {
+                localStorage.removeItem('token');
+                window.location.href = '/login.html';
+                return;
+            }
 
-    } catch (err) {
-        orderError.style.display = 'block';
-        orderError.textContent = `Error: ${err.message}`;
-    } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Place Order';
-    }
-});
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.message || data.error || 'Failed to place order');
+            }
+
+            orderSuccess.style.display = 'block';
+            orderSuccess.textContent = `Order placed successfully! Order ID: ${data.id || 'N/A'}`;
+            orderForm.reset();
+
+            // Refresh orders and account
+            setTimeout(() => {
+                fetchOrders();
+                fetchAccount();
+            }, 1000);
+
+        } catch (err) {
+            orderError.style.display = 'block';
+            orderError.textContent = `Error: ${err.message}`;
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Place Order';
+        }
+    });
+}
 
 // Show/hide limit price based on order type
-document.getElementById('order-type').addEventListener('change', (e) => {
-    const limitPriceInput = document.getElementById('limit-price');
-    if (e.target.value === 'limit') {
-        limitPriceInput.required = true;
-        limitPriceInput.placeholder = 'Required';
-    } else {
-        limitPriceInput.required = false;
-        limitPriceInput.placeholder = 'Optional';
-    }
-});
+const orderTypeSelect = document.getElementById('order-type');
+if (orderTypeSelect) {
+    orderTypeSelect.addEventListener('change', (e) => {
+        const limitPriceInput = document.getElementById('limit-price');
+        if (e.target.value === 'limit') {
+            limitPriceInput.required = true;
+            limitPriceInput.placeholder = 'Required';
+        } else {
+            limitPriceInput.required = false;
+            limitPriceInput.placeholder = 'Optional';
+        }
+    });
+}
 
 // Initial load
 document.addEventListener('DOMContentLoaded', () => {
-    fetchAccount();
-    fetchPositions();
-    fetchOrders();
+    if (checkAuth()) {
+        fetchAccount();
+        fetchPositions();
+        fetchOrders();
+    }
 });
 
 // Auto-refresh every 30 seconds
 setInterval(() => {
-    fetchAccount();
-    fetchPositions();
-    fetchOrders();
+    if (localStorage.getItem('token')) {
+        fetchAccount();
+        fetchPositions();
+        fetchOrders();
+    }
 }, 30000);

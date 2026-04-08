@@ -28,6 +28,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Time handling
 chrono = { version = "0.4", features = ["serde"] }
 
+# Thread-safe storage for auth
+lazy_static = "1.4"
+
 # GUI dependencies (for setup tool)
 eframe = "0.31"
 egui = "0.31"

@@ -1,6 +1,9 @@
 # Environment variables (contains secrets!)
 .env
 
+# User config (contains API keys and credentials)
+config.json
+
 # Rust build artifacts
 /target/
 **/*.rs.bk

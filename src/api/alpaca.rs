@@ -3,13 +3,15 @@ use serde_json::Value;
 
 use crate::models::order::OrderRequest;
 
-const ALPACA_BASE_URL: &str = "https://paper-api.alpaca.markets/v2";
+const ALPACA_PAPER_URL: &str = "https://paper-api.alpaca.markets/v2";
+const ALPACA_LIVE_URL: &str = "https://api.alpaca.markets/v2";
 
 #[derive(Clone)]
 pub struct AlpacaClient {
     client: Client,
     api_key: String,
     api_secret: String,
+    base_url: String,
 }
 
 impl AlpacaClient {
@@ -18,11 +20,28 @@ impl AlpacaClient {
             .map_err(|_| "ALPACA_API_KEY not set")?;
         let api_secret = std::env::var("ALPACA_API_SECRET")
             .map_err(|_| "ALPACA_API_SECRET not set")?;
+        let environment = std::env::var("ALPACA_ENV").unwrap_or_else(|_| "paper".to_string());
+
+        let base_url = if environment == "live" {
+            ALPACA_LIVE_URL.to_string()
+        } else {
+            ALPACA_PAPER_URL.to_string()
+        };
 
         Ok(Self {
             client: Client::new(),
             api_key,
             api_secret,
+            base_url,
+        })
+    }
+
+    pub fn with_keys(api_key: &str, api_secret: &str) -> Result<Self, &'static str> {
+        Ok(Self {
+            client: Client::new(),
+            api_key: api_key.to_string(),
+            api_secret: api_secret.to_string(),
+            base_url: ALPACA_PAPER_URL.to_string(), // Default to paper
         })
     }
 
@@ -35,7 +54,7 @@ impl AlpacaClient {
 
     /// Get account information
     pub async fn get_account(&self) -> Result<Value, reqwest::Error> {
-        let url = format!("{}/account", ALPACA_BASE_URL);
+        let url = format!("{}/account", self.base_url);
         let response = self.client
             .get(&url)
             .headers(self.build_headers())
@@ -47,7 +66,7 @@ impl AlpacaClient {
 
     /// Get all open positions
     pub async fn get_positions(&self) -> Result<Vec<Value>, reqwest::Error> {
-        let url = format!("{}/positions", ALPACA_BASE_URL);
+        let url = format!("{}/positions", self.base_url);
         let response = self.client
             .get(&url)
             .headers(self.build_headers())
@@ -59,7 +78,7 @@ impl AlpacaClient {
 
     /// Get orders
     pub async fn get_orders(&self) -> Result<Vec<Value>, reqwest::Error> {
-        let url = format!("{}/orders", ALPACA_BASE_URL);
+        let url = format!("{}/orders", self.base_url);
         let response = self.client
             .get(&url)
             .headers(self.build_headers())
@@ -71,7 +90,7 @@ impl AlpacaClient {
 
     /// Create a new order
     pub async fn create_order(&self, order: OrderRequest) -> Result<Value, reqwest::Error> {
-        let url = format!("{}/orders", ALPACA_BASE_URL);
+        let url = format!("{}/orders", self.base_url);
 
         let mut body = serde_json::json!({
             "symbol": order.symbol,

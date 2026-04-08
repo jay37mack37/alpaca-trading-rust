@@ -6,6 +6,7 @@ use tower_http::services::ServeDir;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod api;
+mod auth;
 mod models;
 mod routes;
 
@@ -22,13 +23,18 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // Initialize Alpaca client
+    // Initialize auth system
+    auth::init();
+
+    // Initialize Alpaca client (for demo/fallback)
     let alpaca_client = match AlpacaClient::new() {
-        Ok(client) => client,
-        Err(e) => {
-            tracing::error!("Failed to create Alpaca client: {}", e);
-            tracing::info!("Running in demo mode without Alpaca API connection");
-            panic!("Set ALPACA_API_KEY and ALPACA_API_SECRET in .env file");
+        Ok(client) => {
+            tracing::info!("Alpaca client initialized from environment variables");
+            Some(client)
+        }
+        Err(_) => {
+            tracing::info!("No Alpaca API keys in environment. Configure in Settings.");
+            None
         }
     };
 
@@ -37,14 +43,24 @@ async fn main() {
 
     // Build router with all routes
     let app = Router::new()
-        // API routes
+        // Auth routes (public)
+        .route("/api/login", post(routes::auth::login))
+        .route("/api/verify", get(routes::auth::verify_token))
+        .route("/api/logout", post(routes::auth::logout))
+
+        // Config routes (authenticated)
+        .route("/api/config/status", get(routes::auth::get_api_key_status))
+        .route("/api/config/api-keys", post(routes::auth::save_api_keys))
+        .route("/api/config/password", post(routes::auth::change_password))
+
+        // Trading routes (authenticated) - wrapped to handle optional client
         .route("/api/account", get(routes::trading::get_account))
         .route("/api/positions", get(routes::trading::get_positions))
         .route("/api/orders", get(routes::trading::get_orders))
         .route("/api/orders", post(routes::trading::create_order))
+
         // Static files
         .nest_service("/static", ServeDir::new("static"))
-        // Fallback to index.html for SPA
         .fallback_service(ServeDir::new("static"))
         .with_state(alpaca_client)
         .layer(cors);
@@ -52,8 +68,9 @@ async fn main() {
     // Start server
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     tracing::info!("Server running on http://{}", addr);
-    tracing::info!("Dashboard available at http://{}/index.html", addr);
-    tracing::info!("Network access: http://192.168.1.215:3000");
+    tracing::info!("Dashboard: http://localhost:3000/");
+    tracing::info!("Network access: http://192.168.1.215:3000/");
+    tracing::info!("Default login: admin / admin123");
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

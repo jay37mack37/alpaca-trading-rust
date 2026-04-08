@@ -10,11 +10,15 @@
     <div class="container">
         <header>
             <h1>📈 Alpaca Trading Dashboard</h1>
-            <div id="connection-status" class="status-indicator">
-                <span class="status-dot"></span>
-                <span id="status-text">Connecting...</span>
+            <div class="header-controls">
+                <span id="user-display" style="margin-right: 15px; color: #888;"></span>
+                <a href="/settings.html" class="btn-refresh">⚙️ Settings</a>
+                <button id="logout-btn" class="btn-refresh" style="margin-left: 10px;">Logout</button>
             </div>
         </header>
+
+        <!-- Connection Status -->
+        <div id="auth-check" class="loading">Checking authentication...</div>
 
         <!-- Account Info Section -->
         <section class="card" id="account-section">

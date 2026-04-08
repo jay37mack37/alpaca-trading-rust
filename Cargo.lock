@@ -147,6 +147,7 @@ dependencies = [
  "dotenvy",
  "eframe",
  "egui",
+ "lazy_static",
  "reqwest",
  "serde",
  "serde_json",
