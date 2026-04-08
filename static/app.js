@@ -295,6 +295,43 @@ async function cancelOrder(orderId) {
 // Make cancelOrder available globally
 window.cancelOrder = cancelOrder;
 
+// Asset class toggle
+let currentAssetClass = 'stock';
+
+document.querySelectorAll('.toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentAssetClass = btn.dataset.class;
+
+        // Toggle visibility
+        document.getElementById('stock-fields').style.display = currentAssetClass === 'stock' ? 'block' : 'none';
+        document.getElementById('option-fields').style.display = currentAssetClass === 'option' ? 'block' : 'none';
+    });
+});
+
+// Option type toggle
+let selectedOptionType = null;
+document.querySelectorAll('.option-type-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.option-type-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedOptionType = btn.dataset.type;
+        document.getElementById('option-type-hidden').value = selectedOptionType;
+    });
+});
+
+// Set default expiration date to next Friday
+function getNextFriday() {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const daysUntilFriday = (5 - dayOfWeek + 7) % 7 || 7;
+    const nextFriday = new Date(today);
+    nextFriday.setDate(today.getDate() + daysUntilFriday);
+    return nextFriday.toISOString().split('T')[0];
+}
+document.getElementById('expiration-date').value = getNextFriday();
+
 // Handle order form submission
 if (orderForm) {
     orderForm.addEventListener('submit', async (e) => {
@@ -305,26 +342,69 @@ if (orderForm) {
         submitBtn.disabled = true;
         submitBtn.textContent = 'Placing Order...';
 
-        const symbol = document.getElementById('symbol').value.toUpperCase();
-        const side = document.getElementById('side').value;
-        const qty = parseFloat(document.getElementById('qty').value);
-        const orderType = document.getElementById('order-type').value;
-        const limitPrice = document.getElementById('limit-price').value;
-        const timeInForce = document.getElementById('time-in-force').value;
-
-        const orderData = {
-            symbol,
-            qty,
-            side,
-            order_type: orderType,
-            time_in_force: timeInForce
-        };
-
-        if (orderType === 'limit' && limitPrice) {
-            orderData.limit_price = parseFloat(limitPrice);
-        }
+        let orderData = {};
 
         try {
+            if (currentAssetClass === 'stock') {
+                // Stock order
+                const symbol = document.getElementById('symbol').value.toUpperCase();
+                const side = document.getElementById('side').value;
+                const qty = parseFloat(document.getElementById('qty').value);
+                const orderType = document.getElementById('order-type').value;
+                const limitPrice = document.getElementById('limit-price').value;
+                const timeInForce = document.getElementById('time-in-force').value;
+
+                orderData = {
+                    symbol,
+                    qty,
+                    side,
+                    order_type: orderType,
+                    time_in_force: timeInForce
+                };
+
+                if (orderType === 'limit' && limitPrice) {
+                    orderData.limit_price = parseFloat(limitPrice);
+                }
+            } else {
+                // Option order
+                const underlying = document.getElementById('option-symbol').value.toUpperCase();
+                const optionType = document.getElementById('option-type-hidden').value;
+                const strike = parseFloat(document.getElementById('strike-price').value);
+                const expiration = document.getElementById('expiration-date').value;
+                const side = document.getElementById('option-side').value;
+                const qty = parseInt(document.getElementById('option-qty').value);
+                const orderType = document.getElementById('option-order-type').value;
+                const limitPrice = document.getElementById('option-limit-price').value;
+                const timeInForce = document.getElementById('option-tif').value;
+
+                if (!optionType) {
+                    throw new Error('Please select Call or Put');
+                }
+
+                // Build OCC symbol: SPY   240408C00500000
+                // Format: Symbol (6 chars) + YYMMDD + C/P + Strike (8 chars, 3 decimal places)
+                const expDate = new Date(expiration);
+                const yy = expDate.getFullYear().toString().slice(-2);
+                const mm = (expDate.getMonth() + 1).toString().padStart(2, '0');
+                const dd = expDate.getDate().toString().padStart(2, '0');
+                const cp = optionType === 'call' ? 'C' : 'P';
+                const strikeStr = (strike * 1000).toFixed(0).padStart(8, '0');
+                const symbol = underlying.padEnd(6, ' ') + yy + mm + dd + cp + strikeStr;
+
+                orderData = {
+                    symbol: symbol.replace(/\s/g, ''),
+                    qty,
+                    side,
+                    order_type: orderType,
+                    time_in_force: timeInForce,
+                    asset_class: 'us_option'
+                };
+
+                if (orderType === 'limit' && limitPrice) {
+                    orderData.limit_price = parseFloat(limitPrice);
+                }
+            }
+
             const response = await fetch(`${API_BASE}/api/orders`, {
                 method: 'POST',
                 headers: getAuthHeaders(),
@@ -346,6 +426,9 @@ if (orderForm) {
             orderSuccess.style.display = 'block';
             orderSuccess.textContent = `Order placed successfully! Order ID: ${data.id || 'N/A'}`;
             orderForm.reset();
+            document.getElementById('symbol').value = 'SPY';
+            document.getElementById('option-symbol').value = 'SPY';
+            document.getElementById('expiration-date').value = getNextFriday();
 
             // Refresh orders and account
             setTimeout(() => {
@@ -357,6 +440,11 @@ if (orderForm) {
             orderError.style.display = 'block';
             orderError.textContent = `Error: ${err.message}`;
         } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Place Order';
+        }
+    });
+}
             submitBtn.disabled = false;
             submitBtn.textContent = 'Place Order';
         }

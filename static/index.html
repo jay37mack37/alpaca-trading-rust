@@ -103,48 +103,127 @@
         <section class="card" id="new-order-section">
             <h2>Place New Order</h2>
             <form id="order-form" class="order-form">
+                <!-- Asset Class Toggle -->
                 <div class="form-row">
-                    <div class="form-group">
-                        <label for="symbol">Symbol</label>
-                        <input type="text" id="symbol" name="symbol" placeholder="SPY" value="SPY" required
-                               pattern="[A-Z]+" title="Stock symbol (uppercase letters only)">
-                    </div>
-                    <div class="form-group">
-                        <label for="side">Side</label>
-                        <select id="side" name="side" required>
-                            <option value="buy">Buy</option>
-                            <option value="sell">Sell</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="qty">Quantity</label>
-                        <input type="number" id="qty" name="qty" min="1" step="1" placeholder="1" required>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="order-type">Order Type</label>
-                        <select id="order-type" name="order-type" required>
-                            <option value="market">Market</option>
-                            <option value="limit">Limit</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="limit-price">Limit Price</label>
-                        <div class="input-with-button">
-                            <input type="number" id="limit-price" name="limit-price" step="0.01" placeholder="Optional">
-                            <button type="button" id="fill-price-btn" class="btn-fill-price" style="display: none;">Fill Market Price</button>
+                    <div class="form-group asset-toggle">
+                        <label>Asset Class</label>
+                        <div class="toggle-buttons">
+                            <button type="button" class="toggle-btn active" data-class="stock">📊 Stock</button>
+                            <button type="button" class="toggle-btn" data-class="option">📉 Option</button>
                         </div>
                     </div>
-                    <div class="form-group">
-                        <label for="time-in-force">Time in Force</label>
-                        <select id="time-in-force" name="time-in-force" required>
-                            <option value="gtc">Good Till Cancelled</option>
-                            <option value="day">Day</option>
-                            <option value="ioc">Immediate or Cancel</option>
-                        </select>
+                </div>
+
+                <!-- Stock Order Fields -->
+                <div id="stock-fields">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="symbol">Symbol</label>
+                            <input type="text" id="symbol" name="symbol" placeholder="SPY" value="SPY" required
+                                   pattern="[A-Z]+" title="Stock symbol (uppercase letters only)">
+                        </div>
+                        <div class="form-group">
+                            <label for="side">Side</label>
+                            <select id="side" name="side" required>
+                                <option value="buy">Buy</option>
+                                <option value="sell">Sell</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="qty">Quantity</label>
+                            <input type="number" id="qty" name="qty" min="1" step="1" placeholder="1" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="order-type">Order Type</label>
+                            <select id="order-type" name="order-type" required>
+                                <option value="market">Market</option>
+                                <option value="limit">Limit</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="limit-price">Limit Price</label>
+                            <div class="input-with-button">
+                                <input type="number" id="limit-price" name="limit-price" step="0.01" placeholder="Optional">
+                                <button type="button" id="fill-price-btn" class="btn-fill-price" style="display: none;">Fill Market Price</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="time-in-force">Time in Force</label>
+                            <select id="time-in-force" name="time-in-force" required>
+                                <option value="gtc">Good Till Cancelled</option>
+                                <option value="day">Day</option>
+                                <option value="ioc">Immediate or Cancel</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
+
+                <!-- Option Order Fields -->
+                <div id="option-fields" style="display: none;">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="option-symbol">Underlying Symbol</label>
+                            <input type="text" id="option-symbol" name="option-symbol" placeholder="SPY" value="SPY"
+                                   pattern="[A-Z]+" title="Stock symbol (uppercase letters only)">
+                        </div>
+                        <div class="form-group">
+                            <label for="option-type">Option Type</label>
+                            <div class="option-buttons">
+                                <button type="button" class="option-type-btn call-btn" data-type="call">📈 CALL</button>
+                                <button type="button" class="option-type-btn put-btn" data-type="put">📉 PUT</button>
+                            </div>
+                            <input type="hidden" id="option-type-hidden" name="option-type" value="">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="strike-price">Strike Price</label>
+                            <input type="number" id="strike-price" name="strike-price" step="0.5" placeholder="500" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="expiration-date">Expiration Date</label>
+                            <input type="date" id="expiration-date" name="expiration-date" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="option-side">Side</label>
+                            <select id="option-side" name="option-side" required>
+                                <option value="buy_to_open">Buy to Open</option>
+                                <option value="sell_to_open">Sell to Open</option>
+                                <option value="buy_to_close">Buy to Close</option>
+                                <option value="sell_to_close">Sell to Close</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="option-qty">Contracts</label>
+                            <input type="number" id="option-qty" name="option-qty" min="1" step="1" placeholder="1" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="option-order-type">Order Type</label>
+                            <select id="option-order-type" name="option-order-type" required>
+                                <option value="market">Market</option>
+                                <option value="limit">Limit</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="option-limit-price">Limit Price (per contract)</label>
+                            <input type="number" id="option-limit-price" name="option-limit-price" step="0.01" placeholder="Optional">
+                        </div>
+                        <div class="form-group">
+                            <label for="option-tif">Time in Force</label>
+                            <select id="option-tif" name="option-tif" required>
+                                <option value="gtc">Good Till Cancelled</option>
+                                <option value="day">Day</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
                 <button type="submit" class="btn-primary" id="submit-order">Place Order</button>
             </form>
             <div id="order-success" class="success-message" style="display: none;"></div>
