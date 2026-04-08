@@ -26,3 +26,15 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Time handling
 chrono = { version = "0.4", features = ["serde"] }
+
+# GUI dependencies (for setup tool)
+eframe = "0.31"
+egui = "0.31"
+
+[[bin]]
+name = "alpaca_trading3web"
+path = "src/main.rs"
+
+[[bin]]
+name = "setup"
+path = "src/bin/setup.rs"
