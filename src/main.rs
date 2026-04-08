@@ -2,6 +2,7 @@ use axum::routing::{get, post};
 use axum::Router;
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod api;
@@ -36,18 +37,23 @@ async fn main() {
 
     // Build router with all routes
     let app = Router::new()
-        .route("/", get(routes::health::root))
-        .route("/health", get(routes::health::health))
+        // API routes
         .route("/api/account", get(routes::trading::get_account))
         .route("/api/positions", get(routes::trading::get_positions))
         .route("/api/orders", get(routes::trading::get_orders))
         .route("/api/orders", post(routes::trading::create_order))
+        // Static files
+        .nest_service("/static", ServeDir::new("static"))
+        // Fallback to index.html for SPA
+        .fallback_service(ServeDir::new("static"))
         .with_state(alpaca_client)
         .layer(cors);
 
     // Start server
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     tracing::info!("Server running on http://{}", addr);
+    tracing::info!("Dashboard available at http://{}/index.html", addr);
+    tracing::info!("Network access: http://192.168.1.215:3000");
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

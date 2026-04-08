@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alpaca Trading Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📈 Alpaca Trading Dashboard</h1>
+            <div id="connection-status" class="status-indicator">
+                <span class="status-dot"></span>
+                <span id="status-text">Connecting...</span>
+            </div>
+        </header>
+
+        <!-- Account Info Section -->
+        <section class="card" id="account-section">
+            <h2>Account Overview</h2>
+            <div class="loading" id="account-loading">Loading account info...</div>
+            <div id="account-info" class="account-grid" style="display: none;">
+                <div class="account-item">
+                    <span class="label">Account Number</span>
+                    <span class="value" id="account-number">-</span>
+                </div>
+                <div class="account-item">
+                    <span class="label">Status</span>
+                    <span class="value" id="account-status">-</span>
+                </div>
+                <div class="account-item">
+                    <span class="label">Buying Power</span>
+                    <span class="value" id="buying-power">-</span>
+                </div>
+                <div class="account-item">
+                    <span class="label">Portfolio Value</span>
+                    <span class="value" id="portfolio-value">-</span>
+                </div>
+                <div class="account-item">
+                    <span class="label">Cash</span>
+                    <span class="value" id="cash">-</span>
+                </div>
+                <div class="account-item">
+                    <span class="label">Equity</span>
+                    <span class="value" id="equity">-</span>
+                </div>
+            </div>
+            <div id="account-error" class="error-message" style="display: none;"></div>
+        </section>
+
+        <!-- Positions Section -->
+        <section class="card" id="positions-section">
+            <h2>Open Positions</h2>
+            <div class="loading" id="positions-loading">Loading positions...</div>
+            <div id="positions-container">
+                <table id="positions-table" style="display: none;">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Qty</th>
+                            <th>Avg Price</th>
+                            <th>Current Price</th>
+                            <th>Market Value</th>
+                            <th>P/L</th>
+                        </tr>
+                    </thead>
+                    <tbody id="positions-body"></tbody>
+                </table>
+            </div>
+            <div id="no-positions" style="display: none;">No open positions</div>
+            <div id="positions-error" class="error-message" style="display: none;"></div>
+        </section>
+
+        <!-- Orders Section -->
+        <section class="card" id="orders-section">
+            <h2>Recent Orders</h2>
+            <div class="loading" id="orders-loading">Loading orders...</div>
+            <div id="orders-container">
+                <table id="orders-table" style="display: none;">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Qty</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orders-body"></tbody>
+                </table>
+            </div>
+            <div id="no-orders" style="display: none;">No recent orders</div>
+            <div id="orders-error" class="error-message" style="display: none;"></div>
+        </section>
+
+        <!-- New Order Section -->
+        <section class="card" id="new-order-section">
+            <h2>Place New Order</h2>
+            <form id="order-form" class="order-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="symbol">Symbol</label>
+                        <input type="text" id="symbol" name="symbol" placeholder="AAPL" required
+                               pattern="[A-Z]+" title="Stock symbol (uppercase letters only)">
+                    </div>
+                    <div class="form-group">
+                        <label for="side">Side</label>
+                        <select id="side" name="side" required>
+                            <option value="buy">Buy</option>
+                            <option value="sell">Sell</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="qty">Quantity</label>
+                        <input type="number" id="qty" name="qty" min="1" step="1" placeholder="1" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="order-type">Order Type</label>
+                        <select id="order-type" name="order-type" required>
+                            <option value="market">Market</option>
+                            <option value="limit">Limit</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="limit-price">Limit Price</label>
+                        <input type="number" id="limit-price" name="limit-price" step="0.01" placeholder="Optional">
+                    </div>
+                    <div class="form-group">
+                        <label for="time-in-force">Time in Force</label>
+                        <select id="time-in-force" name="time-in-force" required>
+                            <option value="gtc">Good Till Cancelled</option>
+                            <option value="day">Day</option>
+                            <option value="ioc">Immediate or Cancel</option>
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="btn-primary" id="submit-order">Place Order</button>
+            </form>
+            <div id="order-success" class="success-message" style="display: none;"></div>
+            <div id="order-error" class="error-message" style="display: none;"></div>
+        </section>
+
+        <footer>
+            <p>Educational Trading Platform | <a href="https://alpaca.markets" target="_blank">Alpaca Markets</a></p>
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
