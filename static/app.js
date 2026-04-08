@@ -445,11 +445,6 @@ if (orderForm) {
         }
     });
 }
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Place Order';
-        }
-    });
-}
 
 // Show/hide limit price based on order type
 const orderTypeSelect = document.getElementById('order-type');
