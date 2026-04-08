@@ -131,7 +131,10 @@
                     </div>
                     <div class="form-group">
                         <label for="limit-price">Limit Price</label>
-                        <input type="number" id="limit-price" name="limit-price" step="0.01" placeholder="Optional">
+                        <div class="input-with-button">
+                            <input type="number" id="limit-price" name="limit-price" step="0.01" placeholder="Optional">
+                            <button type="button" id="fill-price-btn" class="btn-fill-price" style="display: none;">Fill Market Price</button>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label for="time-in-force">Time in Force</label>

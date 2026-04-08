@@ -5,6 +5,7 @@ use crate::models::order::OrderRequest;
 
 const ALPACA_PAPER_URL: &str = "https://paper-api.alpaca.markets/v2";
 const ALPACA_LIVE_URL: &str = "https://api.alpaca.markets/v2";
+const ALPACA_DATA_URL: &str = "https://data.alpaca.markets/v2";
 
 #[derive(Clone)]
 pub struct AlpacaClient {
@@ -143,6 +144,19 @@ impl AlpacaClient {
         let url = format!("{}/orders", self.base_url);
         let response = self.client
             .delete(&url)
+            .headers(self.build_headers())
+            .send()
+            .await?;
+
+        response.json().await
+    }
+
+    /// Get current price for a symbol
+    pub async fn get_current_price(&self, symbol: &str) -> Result<Value, reqwest::Error> {
+        // Use the market data API endpoint
+        let url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
+        let response = self.client
+            .get(&url)
             .headers(self.build_headers())
             .send()
             .await?;

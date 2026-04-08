@@ -365,15 +365,78 @@ if (orderForm) {
 
 // Show/hide limit price based on order type
 const orderTypeSelect = document.getElementById('order-type');
+const fillPriceBtn = document.getElementById('fill-price-btn');
+const limitPriceInput = document.getElementById('limit-price');
+const symbolInput = document.getElementById('symbol');
+
 if (orderTypeSelect) {
     orderTypeSelect.addEventListener('change', (e) => {
-        const limitPriceInput = document.getElementById('limit-price');
         if (e.target.value === 'limit') {
             limitPriceInput.required = true;
             limitPriceInput.placeholder = 'Required';
+            fillPriceBtn.style.display = 'block';
         } else {
             limitPriceInput.required = false;
             limitPriceInput.placeholder = 'Optional';
+            fillPriceBtn.style.display = 'none';
+        }
+    });
+}
+
+// Fill market price button
+if (fillPriceBtn) {
+    fillPriceBtn.addEventListener('click', async () => {
+        const symbol = symbolInput.value.toUpperCase();
+        if (!symbol) {
+            alert('Please enter a symbol first');
+            return;
+        }
+
+        fillPriceBtn.disabled = true;
+        fillPriceBtn.textContent = 'Loading...';
+
+        try {
+            const response = await fetch(`${API_BASE}/api/price/${symbol}`, {
+                headers: getAuthHeaders()
+            });
+
+            if (response.status === 401) {
+                localStorage.removeItem('token');
+                window.location.href = '/login.html';
+                return;
+            }
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to get price');
+            }
+
+            // Alpaca returns quote with:
+            // - bp: bid price
+            // - ap: ask price (may be 0 when market closed)
+            // - For buy orders, use ask price; for sell orders, use bid price
+            const side = document.getElementById('side').value;
+            let price;
+
+            if (data.quote) {
+                const askPrice = data.quote.ap || data.quote.bp; // fallback to bid if ask is 0
+                const bidPrice = data.quote.bp;
+                price = side === 'buy' ? askPrice : bidPrice;
+            } else {
+                throw new Error('Price data not available');
+            }
+
+            if (!price || price === 0) {
+                throw new Error('Price not available (market may be closed)');
+            }
+
+            limitPriceInput.value = parseFloat(price).toFixed(2);
+        } catch (err) {
+            alert(`Error: ${err.message}`);
+        } finally {
+            fillPriceBtn.disabled = false;
+            fillPriceBtn.textContent = 'Fill Market Price';
         }
     });
 }

@@ -1,5 +1,5 @@
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     Json,
 };
@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::api::alpaca::AlpacaClient;
 use crate::models::order::OrderRequest;
-use crate::routes::auth::{get_username_from_headers, get_authenticated_client};
+use crate::routes::auth::get_authenticated_client;
 
 /// Get account information
 pub async fn get_account(
@@ -107,6 +107,32 @@ pub async fn create_order(
             tracing::error!("Failed to create order: {}", e);
             Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
                 "error": format!("API Error: {}", e)
+            }))))
+        }
+    }
+}
+
+/// Get current price for a symbol
+pub async fn get_price(
+    State(client): State<Option<AlpacaClient>>,
+    headers: axum::http::HeaderMap,
+    Path(symbol): Path<String>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let api_client = match get_authenticated_client(headers).await {
+        Ok(c) => c,
+        Err(_) => {
+            client.ok_or((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "error": "No API keys configured"
+            }))))?
+        }
+    };
+
+    match api_client.get_current_price(&symbol).await {
+        Ok(quote) => Ok(Json(quote)),
+        Err(e) => {
+            tracing::error!("Failed to get price for {}: {}", symbol, e);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "error": format!("Failed to get price: {}", e)
             }))))
         }
     }

@@ -58,6 +58,7 @@ async fn main() {
         .route("/api/positions", get(routes::trading::get_positions))
         .route("/api/orders", get(routes::trading::get_orders))
         .route("/api/orders", post(routes::trading::create_order))
+        .route("/api/price/{symbol}", get(routes::trading::get_price))
 
         // Order management routes (authenticated)
         .route("/api/orders/{id}", get(routes::orders::get_order_by_id))
