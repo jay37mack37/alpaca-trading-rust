@@ -113,6 +113,42 @@ impl AlpacaClient {
 
         response.json().await
     }
+
+    /// Get order by ID
+    pub async fn get_order_by_id(&self, order_id: &str) -> Result<Value, reqwest::Error> {
+        let url = format!("{}/orders/{}", self.base_url, order_id);
+        let response = self.client
+            .get(&url)
+            .headers(self.build_headers())
+            .send()
+            .await?;
+
+        response.json().await
+    }
+
+    /// Cancel an order by ID
+    pub async fn cancel_order(&self, order_id: &str) -> Result<Value, reqwest::Error> {
+        let url = format!("{}/orders/{}", self.base_url, order_id);
+        let response = self.client
+            .delete(&url)
+            .headers(self.build_headers())
+            .send()
+            .await?;
+
+        response.json().await
+    }
+
+    /// Cancel all open orders
+    pub async fn cancel_all_orders(&self) -> Result<Vec<Value>, reqwest::Error> {
+        let url = format!("{}/orders", self.base_url);
+        let response = self.client
+            .delete(&url)
+            .headers(self.build_headers())
+            .send()
+            .await?;
+
+        response.json().await
+    }
 }
 
 impl Default for AlpacaClient {

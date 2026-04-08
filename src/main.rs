@@ -1,4 +1,4 @@
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Router;
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
@@ -53,11 +53,15 @@ async fn main() {
         .route("/api/config/api-keys", post(routes::auth::save_api_keys))
         .route("/api/config/password", post(routes::auth::change_password))
 
-        // Trading routes (authenticated) - wrapped to handle optional client
+        // Trading routes (authenticated)
         .route("/api/account", get(routes::trading::get_account))
         .route("/api/positions", get(routes::trading::get_positions))
         .route("/api/orders", get(routes::trading::get_orders))
         .route("/api/orders", post(routes::trading::create_order))
+
+        // Order management routes (authenticated)
+        .route("/api/orders/{id}", get(routes::orders::get_order_by_id))
+        .route("/api/orders/{id}", delete(routes::orders::cancel_order))
 
         // Static files
         .nest_service("/static", ServeDir::new("static"))

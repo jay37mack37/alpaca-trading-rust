@@ -236,7 +236,7 @@ async function fetchOrders() {
         const data = await response.json();
 
         if (!response.ok) {
-            throw new Error(data.message || 'Failed to fetch orders');
+            throw new Error(data.message || data.error || 'Failed to fetch orders');
         }
 
         ordersLoading.style.display = 'none';
@@ -247,14 +247,19 @@ async function fetchOrders() {
         }
 
         ordersTable.style.display = 'table';
-        ordersBody.innerHTML = data.slice(0, 10).map(order => `
+        ordersBody.innerHTML = data.slice(0, 20).map(order => `
             <tr>
                 <td><strong>${order.symbol}</strong></td>
                 <td class="${order.side === 'buy' ? 'positive' : 'negative'}">${order.side.toUpperCase()}</td>
                 <td>${order.qty}</td>
                 <td>${order.type}</td>
-                <td>${order.status}</td>
+                <td><span class="status-${order.status}">${order.status}</span></td>
                 <td>${formatDate(order.created_at)}</td>
+                <td>
+                    ${order.status === 'open' || order.status === 'pending_new'
+                        ? `<button class="btn-cancel" onclick="cancelOrder('${order.id}')">Cancel</button>`
+                        : ''}
+                </td>
             </tr>
         `).join('');
     } catch (err) {
@@ -263,6 +268,32 @@ async function fetchOrders() {
         ordersError.textContent = `Error: ${err.message}`;
     }
 }
+
+// Cancel an order
+async function cancelOrder(orderId) {
+    if (!confirm('Are you sure you want to cancel this order?')) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/orders/${orderId}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || data.message || 'Failed to cancel order');
+        }
+
+        alert('Order cancelled successfully!');
+        fetchOrders();
+    } catch (err) {
+        alert(`Error: ${err.message}`);
+    }
+}
+
+// Make cancelOrder available globally
+window.cancelOrder = cancelOrder;
 
 // Handle order form submission
 if (orderForm) {

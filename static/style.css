@@ -165,6 +165,37 @@ td {
     color: #ddd;
 }
 
+/* Order status styles */
+.status-new, .status-pending_new {
+    color: #ffa500;
+}
+
+.status-open, .status-partially_filled {
+    color: #4a9eff;
+}
+
+.status-filled {
+    color: #00ff88;
+}
+
+.status-canceled, .status-expired, .status-rejected {
+    color: #ff4444;
+}
+
+.btn-cancel {
+    background: rgba(255, 68, 68, 0.2);
+    color: #ff4444;
+    border: 1px solid #ff4444;
+    padding: 5px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.btn-cancel:hover {
+    background: rgba(255, 68, 68, 0.4);
+}
+
 /* Order Form Styles */
 .order-form {
     display: flex;
