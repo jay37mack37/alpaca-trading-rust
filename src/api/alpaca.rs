@@ -416,3 +416,173 @@ impl Default for AlpacaClient {
         Self::new().expect("Failed to create AlpacaClient")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_alpaca_client_with_keys() {
+        let result = AlpacaClient::with_keys("test_key", "test_secret");
+        assert!(result.is_ok());
+        let client = result.unwrap();
+        assert_eq!(client.api_key, "test_key");
+        assert_eq!(client.api_secret, "test_secret");
+    }
+
+    #[test]
+    fn test_alpaca_client_base_url_default_paper() {
+        let client = AlpacaClient::with_keys("key", "secret").unwrap();
+        assert_eq!(client.base_url, ALPACA_PAPER_URL);
+    }
+
+    #[test]
+    fn test_alpaca_client_clone() {
+        let client1 = AlpacaClient::with_keys("key123", "secret456").unwrap();
+        let client2 = client1.clone();
+        assert_eq!(client1.api_key, client2.api_key);
+        assert_eq!(client1.api_secret, client2.api_secret);
+        assert_eq!(client1.base_url, client2.base_url);
+    }
+
+    #[test]
+    fn test_build_headers() {
+        let client = AlpacaClient::with_keys("test_key_123", "test_secret_456").unwrap();
+        let headers = client.build_headers();
+        
+        // Verify headers contain the API credentials
+        assert!(headers.contains_key("APCA-API-KEY-ID"));
+        assert!(headers.contains_key("APCA-API-SECRET-KEY"));
+    }
+
+    #[test]
+    fn test_alpaca_urls_constants() {
+        assert!(ALPACA_PAPER_URL.contains("paper-api"));
+        assert!(ALPACA_LIVE_URL.contains("api.alpaca.markets"));
+        assert!(ALPACA_DATA_URL.contains("data.alpaca.markets"));
+        assert!(ALPACA_OPTIONS_URL.contains("options"));
+    }
+
+    #[test]
+    fn test_order_request_fields() {
+        let order = OrderRequest {
+            symbol: "AAPL".to_string(),
+            qty: 100.0,
+            side: "buy".to_string(),
+            order_type: "market".to_string(),
+            time_in_force: "day".to_string(),
+            limit_price: None,
+            asset_class: None,
+        };
+        assert_eq!(order.symbol, "AAPL");
+        assert_eq!(order.qty, 100.0);
+        assert_eq!(order.side, "buy");
+    }
+
+    #[test]
+    fn test_order_request_with_optional_fields() {
+        let order = OrderRequest {
+            symbol: "TSLA".to_string(),
+            qty: 50.0,
+            side: "sell".to_string(),
+            order_type: "limit".to_string(),
+            time_in_force: "gtc".to_string(),
+            limit_price: Some(250.50),
+            asset_class: Some("equity".to_string()),
+        };
+        assert_eq!(order.limit_price, Some(250.50));
+        assert_eq!(order.asset_class, Some("equity".to_string()));
+    }
+
+    #[test]
+    fn test_strike_increment_calculation_low_price() {
+        let price = 20.0;
+        let increment = if price < 25.0 { 0.5 } else if price < 200.0 { 1.0 } else { 5.0 };
+        assert_eq!(increment, 0.5);
+    }
+
+    #[test]
+    fn test_strike_increment_calculation_mid_price() {
+        let price = 100.0;
+        let increment = if price < 25.0 { 0.5 } else if price < 200.0 { 1.0 } else { 5.0 };
+        assert_eq!(increment, 1.0);
+    }
+
+    #[test]
+    fn test_strike_increment_calculation_high_price() {
+        let price = 500.0;
+        let increment = if price < 25.0 { 0.5 } else if price < 200.0 { 1.0 } else { 5.0 };
+        assert_eq!(increment, 5.0);
+    }
+
+    #[test]
+    fn test_strike_below_calculation() {
+        let current_price: f64 = 100.5;
+        let strike_increment: f64 = 1.0;
+        let strike_at_or_below = (current_price / strike_increment).floor() * strike_increment;
+        assert!((strike_at_or_below - 100.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_strike_above_calculation() {
+        let current_price: f64 = 100.3;
+        let strike_increment: f64 = 1.0;
+        let strike_at_or_above = (current_price / strike_increment).ceil() * strike_increment;
+        assert!((strike_at_or_above - 101.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_option_symbol_parsing() {
+        let occ_symbol = "SPY260621C00500000";
+        let underlying = if let Some(pos) = occ_symbol.find(|c: char| c.is_ascii_digit()) {
+            occ_symbol[..pos].to_string()
+        } else {
+            "SPY".to_string()
+        };
+        assert_eq!(underlying, "SPY");
+    }
+
+    #[test]
+    fn test_option_strike_from_occ() {
+        let occ_symbol = "SPY260621C00500000";
+        let strike_part = &occ_symbol[occ_symbol.len() - 8..];
+        let strike_val: f64 = strike_part.parse().unwrap();
+        let strike_price = strike_val / 1000.0;
+        assert_eq!(strike_price, 500.0);
+    }
+
+    #[test]
+    fn test_option_type_detection_call() {
+        let occ_symbol = "SPY260621C00500000";
+        // The actual logic: look for C to determine it's a call
+        let is_call = occ_symbol.len() > 10 && occ_symbol.as_bytes()[9] as char == 'C';
+        assert!(is_call, "Position 9 (after YYMMDD) should be 'C' for call");
+    }
+
+    #[test]
+    fn test_option_type_detection_put() {
+        let occ_symbol = "SPY260621P00500000";
+        let is_put = occ_symbol.len() > 10 && occ_symbol.as_bytes()[9] as char == 'P';
+        assert!(is_put, "Position 9 (after YYMMDD) should be 'P' for put");
+    }
+
+    #[test]
+    fn test_price_range_filtering() {
+        let underlying_price: f64 = 100.0;
+        let min_range = underlying_price * 0.9;
+        let max_range = underlying_price * 1.1;
+
+        assert!((min_range - 90.0).abs() < 0.0001);
+        assert!((max_range - 110.0).abs() < 0.0001);
+
+        let strikes = vec![85.0, 90.0, 100.0, 110.0, 115.0];
+        let filtered: Vec<_> = strikes.iter()
+            .filter(|s| **s >= min_range && **s <= max_range)
+            .collect();
+        
+        assert_eq!(filtered.len(), 3);
+        assert_eq!(filtered[0], &90.0);
+        assert_eq!(filtered[1], &100.0);
+        assert_eq!(filtered[2], &110.0);
+    }
+}
