@@ -189,14 +189,27 @@ impl AlpacaClient {
         // Determine strike increment based on price level
         let strike_increment = if current_price < 25.0 { 0.5 } else if current_price < 200.0 { 1.0 } else { 5.0 };
 
-        // For ITM Call: find highest strike below current price (nearest ITM)
-        // Round down to nearest strike increment for call
-        let call_strike = ((current_price / strike_increment).floor() - 1.0) * strike_increment;
-        let call_strike = if call_strike < strike_increment { strike_increment } else { call_strike };
+        // For ITM Call: closest strike below current price
+        // floor(price/inc) * inc gives the strike at or below price
+        // If exactly on a strike, go one below (strictly ITM)
+        let strike_at_or_below = (current_price / strike_increment).floor() * strike_increment;
+        let call_strike = if (strike_at_or_below - current_price).abs() < 0.001 {
+            // Price is exactly on a strike, go one below for ITM
+            strike_at_or_below - strike_increment
+        } else {
+            strike_at_or_below
+        };
 
-        // For ITM Put: find lowest strike above current price (nearest ITM)
-        // Round up to nearest strike increment for put
-        let put_strike = ((current_price / strike_increment).ceil() + 1.0) * strike_increment;
+        // For ITM Put: closest strike above current price
+        // ceil(price/inc) * inc gives the strike at or above price
+        // If exactly on a strike, go one above (strictly ITM)
+        let strike_at_or_above = (current_price / strike_increment).ceil() * strike_increment;
+        let put_strike = if (strike_at_or_above - current_price).abs() < 0.001 {
+            // Price is exactly on a strike, go one above for ITM
+            strike_at_or_above + strike_increment
+        } else {
+            strike_at_or_above
+        };
 
         // Return ITM strikes for call and put
         Ok(serde_json::json!({
