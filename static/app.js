@@ -870,6 +870,7 @@ let selectedStrike = null;
 
 const loadOptionsBtn = document.getElementById('load-options-btn');
 const optionsSymbolInput = document.getElementById('options-symbol');
+const optionsExpirationInput = document.getElementById('options-expiration');
 const optionsLoading = document.getElementById('options-loading');
 const optionsChartContainer = document.getElementById('options-chart-container');
 const optionsError = document.getElementById('options-error');
@@ -877,11 +878,22 @@ const stockPriceValue = document.getElementById('stock-price-value');
 const optionsCanvas = document.getElementById('options-chart');
 const selectedOptionInfo = document.getElementById('selected-option-info');
 
+// Set default expiration date to next Friday
+if (optionsExpirationInput) {
+    optionsExpirationInput.value = getNextFriday();
+}
+
 if (loadOptionsBtn) {
     loadOptionsBtn.addEventListener('click', async () => {
         const symbol = optionsSymbolInput.value.toUpperCase();
+        const expiration = optionsExpirationInput.value;
+
         if (!symbol) {
             alert('Please enter a symbol');
+            return;
+        }
+        if (!expiration) {
+            alert('Please select an expiration date');
             return;
         }
 
@@ -909,19 +921,8 @@ if (loadOptionsBtn) {
                 stockPrice = priceData.quote.ap || priceData.quote.bp || 0;
             }
 
-            // Get options chain data (calls and puts)
-            const [callsResponse, putsResponse] = await Promise.all([
-                fetch(`${API_BASE}/api/option-chain/${symbol}?type=call`, {
-                    headers: getAuthHeaders()
-                }),
-                fetch(`${API_BASE}/api/option-chain/${symbol}?type=put`, {
-                    headers: getAuthHeaders()
-                })
-            ]);
-
-            // Since we don't have an option-chain endpoint, use the strike data
-            // Fetch ITM strikes from option-quote endpoint
-            const strikesResponse = await fetch(`${API_BASE}/api/option-quote/${symbol}`, {
+            // Fetch strike data with expiration date
+            const strikesResponse = await fetch(`${API_BASE}/api/option-quote/${symbol}?expiration=${expiration}`, {
                 headers: getAuthHeaders()
             });
 
@@ -931,13 +932,19 @@ if (loadOptionsBtn) {
 
             const strikesData = await strikesResponse.json();
 
+            // Format expiration date for display
+            const expDate = new Date(expiration);
+            const expFormatted = expDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
             // Store data for charting
             optionsData = {
                 symbol: symbol,
                 stockPrice: stockPrice,
                 callStrike: strikesData.call_strike,
                 putStrike: strikesData.put_strike,
-                strikeIncrement: strikesData.strike_increment
+                strikeIncrement: strikesData.strike_increment,
+                expiration: expiration,
+                expirationFormatted: expFormatted
             };
 
             // Display data
@@ -1144,7 +1151,10 @@ function drawOptionsChart() {
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 14px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(`${optionsData.symbol} Options Chain`, width / 2, 20);
+    const title = optionsData.expirationFormatted
+        ? `${optionsData.symbol} Options Chain - ${optionsData.expirationFormatted}`
+        : `${optionsData.symbol} Options Chain`;
+    ctx.fillText(title, width / 2, 20);
 
     // Add click handler for strike selection
     optionsCanvas.onclick = (e) => {

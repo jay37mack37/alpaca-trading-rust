@@ -166,7 +166,7 @@ impl AlpacaClient {
     }
 
     /// Get option chain for a symbol (returns available strikes)
-    pub async fn get_option_strikes(&self, symbol: &str) -> Result<Value, reqwest::Error> {
+    pub async fn get_option_strikes(&self, symbol: &str, expiration: Option<&str>) -> Result<Value, reqwest::Error> {
         // Get snapshot data for the underlying to determine ATM strike
         let url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
         let response = self.client
@@ -211,13 +211,21 @@ impl AlpacaClient {
             strike_at_or_above
         };
 
-        // Return ITM strikes for call and put
-        Ok(serde_json::json!({
+        // If expiration is provided, try to fetch options chain for that date
+        // For now, return the basic strike data with expiration info
+        let mut result = serde_json::json!({
             "underlying_price": current_price,
             "call_strike": call_strike,
             "put_strike": put_strike,
             "strike_increment": strike_increment
-        }))
+        });
+
+        // Add expiration to result if provided
+        if let Some(exp) = expiration {
+            result["expiration"] = serde_json::json!(exp);
+        }
+
+        Ok(result)
     }
 
     /// Get current price for an option
