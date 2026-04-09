@@ -7,6 +7,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::api::alpaca::AlpacaClient;
+use crate::models::option_chain::OptionChainResponse;
 use crate::models::order::OrderRequest;
 use crate::routes::auth::get_authenticated_client;
 
@@ -38,6 +39,32 @@ pub async fn get_account(
             tracing::error!("Failed to get account: {}", e);
             Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
                 "message": format!("API Error: {}", e)
+            }))))
+        }
+    }
+}
+
+/// Get option chain for a symbol
+pub async fn get_option_chain(
+    State(client): State<Option<AlpacaClient>>,
+    headers: axum::http::HeaderMap,
+    Path(symbol): Path<String>,
+) -> Result<Json<OptionChainResponse>, (StatusCode, Json<Value>)> {
+    let api_client = match get_authenticated_client(headers).await {
+        Ok(c) => c,
+        Err(_) => {
+            client.ok_or((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "error": "No API keys configured"
+            }))))?
+        }
+    };
+
+    match api_client.get_option_chain(&symbol).await {
+        Ok(chain) => Ok(Json(chain)),
+        Err(e) => {
+            tracing::error!("Failed to get option chain for {}: {}", symbol, e);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "error": format!("Failed to get option chain: {}", e)
             }))))
         }
     }
