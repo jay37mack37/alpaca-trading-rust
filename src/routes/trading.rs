@@ -1,14 +1,21 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::api::alpaca::AlpacaClient;
 use crate::models::option_chain::OptionChainResponse;
 use crate::models::order::OrderRequest;
 use crate::routes::auth::get_authenticated_client;
+
+/// Query parameters for options chain
+#[derive(Debug, Deserialize)]
+pub struct OptionsQuery {
+    pub expiration: Option<String>,
+}
 
 /// Get account information
 pub async fn get_account(
@@ -170,6 +177,7 @@ pub async fn get_option_strikes(
     State(client): State<Option<AlpacaClient>>,
     headers: axum::http::HeaderMap,
     Path(symbol): Path<String>,
+    Query(params): Query<OptionsQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let api_client = match get_authenticated_client(headers).await {
         Ok(c) => c,
@@ -180,7 +188,8 @@ pub async fn get_option_strikes(
         }
     };
 
-    match api_client.get_option_strikes(&symbol).await {
+    let expiration = params.expiration.as_deref();
+    match api_client.get_option_strikes(&symbol, expiration).await {
         Ok(strikes) => Ok(Json(strikes)),
         Err(e) => {
             tracing::error!("Failed to get option strikes for {}: {}", symbol, e);
