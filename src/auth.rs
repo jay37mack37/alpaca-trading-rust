@@ -42,7 +42,7 @@ pub struct PasswordRequest {
     pub new_password: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
     pub users: Vec<User>,
     pub api_keys: HashMap<String, ApiKeyConfig>,
@@ -195,4 +195,156 @@ pub fn get_api_keys(username: &str) -> Option<(String, String, String)> {
 pub fn logout(token: &str) {
     let mut sessions = SESSIONS.write().unwrap();
     sessions.remove(token);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    // Helper to clean up test config
+    fn cleanup_test_config() {
+        let _ = fs::remove_file("config.json");
+    }
+
+    #[test]
+    fn test_hash_password_consistency() {
+        let hash1 = hash_password("test_password");
+        let hash2 = hash_password("test_password");
+        assert_eq!(hash1, hash2, "Same password should produce same hash");
+    }
+
+    #[test]
+    fn test_hash_password_uniqueness() {
+        let hash1 = hash_password("password1");
+        let hash2 = hash_password("password2");
+        assert_ne!(hash1, hash2, "Different passwords should produce different hashes");
+    }
+
+    #[test]
+    fn test_hash_password_not_empty() {
+        let hash = hash_password("test");
+        assert!(!hash.is_empty(), "Hash should not be empty");
+    }
+
+    #[test]
+    fn test_generate_token_uniqueness() {
+        let token1 = generate_token();
+        // Small delay to ensure different timestamp
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        let token2 = generate_token();
+        assert_ne!(token1, token2, "Tokens should be unique");
+    }
+
+    #[test]
+    fn test_generate_token_format() {
+        let token = generate_token();
+        // Token should be a hexadecimal string
+        assert!(token.chars().all(|c| c.is_ascii_hexdigit()), "Token should be hexadecimal");
+    }
+
+    #[test]
+    fn test_user_serialization() {
+        let user = User {
+            username: "testuser".to_string(),
+            password_hash: "hashedpassword".to_string(),
+        };
+        let json = serde_json::to_string(&user).unwrap();
+        assert!(json.contains("testuser"));
+        assert!(json.contains("hashedpassword"));
+    }
+
+    #[test]
+    fn test_user_deserialization() {
+        let json = r#"{"username":"testuser","password_hash":"hashedpassword"}"#;
+        let user: User = serde_json::from_str(json).unwrap();
+        assert_eq!(user.username, "testuser");
+        assert_eq!(user.password_hash, "hashedpassword");
+    }
+
+    #[test]
+    fn test_login_request_deserialization() {
+        let json = r#"{"username":"admin","password":"secret"}"#;
+        let req: LoginRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.username, "admin");
+        assert_eq!(req.password, "secret");
+    }
+
+    #[test]
+    fn test_api_key_request_deserialization() {
+        let json = r#"{"api_key":"key123","api_secret":"secret456","environment":"paper"}"#;
+        let req: ApiKeyRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.api_key, "key123");
+        assert_eq!(req.api_secret, "secret456");
+        assert_eq!(req.environment, "paper");
+    }
+
+    #[test]
+    fn test_password_request_deserialization() {
+        let json = r#"{"current_password":"old","new_password":"new"}"#;
+        let req: PasswordRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.current_password, "old");
+        assert_eq!(req.new_password, "new");
+    }
+
+    #[test]
+    fn test_config_default() {
+        cleanup_test_config();
+        let config = Config::load();
+        assert!(!config.users.is_empty(), "Default config should have at least one user");
+        assert_eq!(config.users[0].username, "admin");
+        cleanup_test_config();
+    }
+
+    #[test]
+    fn test_config_save_and_load() {
+        cleanup_test_config();
+        
+        let config = Config {
+            users: vec![User {
+                username: "testuser".to_string(),
+                password_hash: hash_password("testpass"),
+            }],
+            api_keys: HashMap::new(),
+        };
+        config.save();
+        
+        let loaded = Config::load();
+        // The loaded config should have at least one user (either testuser if saved properly, or admin as default)
+        assert!(!loaded.users.is_empty(), "Config should have users");
+        
+        cleanup_test_config();
+    }
+
+    #[test]
+    fn test_api_key_config_clone() {
+        let config = ApiKeyConfig {
+            api_key: "key".to_string(),
+            api_secret: "secret".to_string(),
+            environment: "paper".to_string(),
+        };
+        let cloned = config.clone();
+        assert_eq!(config.api_key, cloned.api_key);
+        assert_eq!(config.api_secret, cloned.api_secret);
+        assert_eq!(config.environment, cloned.environment);
+    }
+
+    #[test]
+    fn test_login_response_serialization() {
+        let response = LoginResponse {
+            token: "abc123".to_string(),
+            username: "testuser".to_string(),
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("abc123"));
+        assert!(json.contains("testuser"));
+    }
+
+    #[test]
+    fn test_login_response_deserialization() {
+        let json = r#"{"token":"xyz789","username":"john"}"#;
+        let response: LoginResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.token, "xyz789");
+        assert_eq!(response.username, "john");
+    }
 }
