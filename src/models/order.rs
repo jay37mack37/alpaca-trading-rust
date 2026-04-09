@@ -9,6 +9,8 @@ pub struct OrderRequest {
     pub time_in_force: String, // "day", "gtc", etc.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit_price: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset_class: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -36,6 +38,7 @@ mod tests {
             order_type: "market".to_string(),
             time_in_force: "gtc".to_string(),
             limit_price: None,
+            asset_class: None,
         };
 
         let json = serde_json::to_string(&order).unwrap();
@@ -53,6 +56,7 @@ mod tests {
             order_type: "limit".to_string(),
             time_in_force: "day".to_string(),
             limit_price: Some(150.50),
+            asset_class: None,
         };
 
         let json = serde_json::to_string(&order).unwrap();

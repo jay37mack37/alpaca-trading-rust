@@ -61,6 +61,7 @@ async fn main() {
         .route("/api/price/{symbol}", get(routes::trading::get_price))
         .route("/api/option-quote/{symbol}", get(routes::trading::get_option_strikes))
         .route("/api/option-strikes/{symbol}", get(routes::trading::get_option_price))
+        .route("/api/option-chain/{symbol}", get(routes::trading::get_option_chain))
 
         // Order management routes (authenticated)
         .route("/api/orders/{id}", get(routes::orders::get_order_by_id))
