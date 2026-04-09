@@ -29,6 +29,27 @@ pub async fn cancel_order(
     }
 }
 
+/// Cancel all open orders
+pub async fn cancel_all_orders(
+    headers: axum::http::HeaderMap,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let api_client = get_authenticated_client(headers).await?;
+
+    match api_client.cancel_all_orders().await {
+        Ok(orders) => Ok(Json(json!({
+            "success": true,
+            "message": format!("Cancelled {} orders", orders.len()),
+            "orders": orders
+        }))),
+        Err(e) => {
+            tracing::error!("Failed to cancel all orders: {}", e);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                "error": format!("Failed to cancel all orders: {}", e)
+            }))))
+        }
+    }
+}
+
 /// Get a specific order by ID
 pub async fn get_order_by_id(
     headers: axum::http::HeaderMap,

@@ -137,3 +137,55 @@ pub async fn get_price(
         }
     }
 }
+
+/// Get option strikes for a symbol
+pub async fn get_option_strikes(
+    State(client): State<Option<AlpacaClient>>,
+    headers: axum::http::HeaderMap,
+    Path(symbol): Path<String>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let api_client = match get_authenticated_client(headers).await {
+        Ok(c) => c,
+        Err(_) => {
+            client.ok_or((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "error": "No API keys configured"
+            }))))?
+        }
+    };
+
+    match api_client.get_option_strikes(&symbol).await {
+        Ok(strikes) => Ok(Json(strikes)),
+        Err(e) => {
+            tracing::error!("Failed to get option strikes for {}: {}", symbol, e);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "error": format!("Failed to get option strikes: {}", e)
+            }))))
+        }
+    }
+}
+
+/// Get current price for an option
+pub async fn get_option_price(
+    State(client): State<Option<AlpacaClient>>,
+    headers: axum::http::HeaderMap,
+    Path(symbol): Path<String>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let api_client = match get_authenticated_client(headers).await {
+        Ok(c) => c,
+        Err(_) => {
+            client.ok_or((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "error": "No API keys configured"
+            }))))?
+        }
+    };
+
+    match api_client.get_option_price(&symbol).await {
+        Ok(quote) => Ok(Json(quote)),
+        Err(e) => {
+            tracing::error!("Failed to get option price for {}: {}", symbol, e);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "error": format!("Failed to get option price: {}", e)
+            }))))
+        }
+    }
+}

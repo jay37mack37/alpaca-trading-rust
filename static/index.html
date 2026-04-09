@@ -76,20 +76,66 @@
             <div id="positions-error" class="error-message" style="display: none;"></div>
         </section>
 
+        <!-- Options Chain Section -->
+        <section class="card" id="options-section">
+            <h2>Options Chain</h2>
+            <div class="options-controls">
+                <div class="form-group">
+                    <label for="options-symbol">Symbol</label>
+                    <input type="text" id="options-symbol" value="SPY" style="width: 80px;">
+                </div>
+                <button type="button" id="load-options-btn" class="btn-primary">Load Options</button>
+            </div>
+            <div class="loading" id="options-loading" style="display: none;">Loading options chain...</div>
+            <div id="options-chart-container" style="display: none;">
+                <div class="options-price-display">
+                    <div class="stock-price-box">
+                        <span class="label">Stock Price</span>
+                        <span id="stock-price-value" class="value">-</span>
+                    </div>
+                </div>
+                <canvas id="options-chart" width="800" height="400"></canvas>
+                <div class="options-legend">
+                    <span class="legend-item call-legend">📈 Call Ask</span>
+                    <span class="legend-item call-bid-legend">📉 Call Bid</span>
+                    <span class="legend-item put-legend">📉 Put Ask</span>
+                    <span class="legend-item put-bid-legend">📈 Put Bid</span>
+                    <span class="legend-item atm-line">| ATM Strike</span>
+                </div>
+                <div id="options-details" style="margin-top: 20px;">
+                    <h3>Selected Option Details</h3>
+                    <div id="selected-option-info">Click on a strike in the chart to see details</div>
+                </div>
+            </div>
+            <div id="options-error" class="error-message" style="display: none;"></div>
+        </section>
+
         <!-- Orders Section -->
         <section class="card" id="orders-section">
             <h2>Recent Orders</h2>
+            <div class="orders-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                        <input type="checkbox" id="select-all-orders">
+                        <span>Select All</span>
+                    </label>
+                    <button type="button" id="cancel-selected-btn" class="btn-cancel-selected" style="display: none;">Cancel Selected</button>
+                </div>
+                <button type="button" id="cancel-all-orders-btn" class="btn-cancel-all" style="display: none;">Cancel All Orders</button>
+            </div>
             <div class="loading" id="orders-loading">Loading orders...</div>
             <div id="orders-container">
                 <table id="orders-table" style="display: none;">
                     <thead>
                         <tr>
+                            <th style="width: 30px;"></th>
                             <th>Symbol</th>
                             <th>Side</th>
                             <th>Qty</th>
                             <th>Type</th>
                             <th>Status</th>
                             <th>Created</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody id="orders-body"></tbody>
@@ -180,7 +226,10 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label for="strike-price">Strike Price</label>
-                            <input type="number" id="strike-price" name="strike-price" step="0.5" placeholder="500" required>
+                            <div class="input-with-button">
+                                <input type="number" id="strike-price" name="strike-price" step="0.5" placeholder="500" required>
+                                <button type="button" id="fill-strike-btn" class="btn-fill-strike">Strike</button>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label for="expiration-date">Expiration Date</label>
@@ -212,7 +261,10 @@
                         </div>
                         <div class="form-group">
                             <label for="option-limit-price">Limit Price (per contract)</label>
-                            <input type="number" id="option-limit-price" name="option-limit-price" step="0.01" placeholder="Optional">
+                            <div class="input-with-button">
+                                <input type="number" id="option-limit-price" name="option-limit-price" step="0.01" placeholder="Optional">
+                                <button type="button" id="fill-option-price-btn" class="btn-fill-price" style="display: none;">Fill Market Price</button>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label for="option-tif">Time in Force</label>

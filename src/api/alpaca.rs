@@ -6,6 +6,7 @@ use crate::models::order::OrderRequest;
 const ALPACA_PAPER_URL: &str = "https://paper-api.alpaca.markets/v2";
 const ALPACA_LIVE_URL: &str = "https://api.alpaca.markets/v2";
 const ALPACA_DATA_URL: &str = "https://data.alpaca.markets/v2";
+const ALPACA_OPTIONS_URL: &str = "https://data.alpaca.markets/v1beta1/options";
 
 #[derive(Clone)]
 pub struct AlpacaClient {
@@ -162,6 +163,132 @@ impl AlpacaClient {
             .await?;
 
         response.json().await
+    }
+
+    /// Get option chain for a symbol (returns available strikes)
+    pub async fn get_option_strikes(&self, symbol: &str) -> Result<Value, reqwest::Error> {
+        // Get snapshot data for the underlying to determine ATM strike
+        let url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
+        let response = self.client
+            .get(&url)
+            .headers(self.build_headers())
+            .send()
+            .await?;
+
+        let quote: Value = response.json().await?;
+
+        // Get current stock price to determine ITM strikes
+        // The quote object has 'ap' (ask price) and 'bp' (bid price)
+        let quote_obj = quote.get("quote").unwrap_or(&quote);
+        let ask_price = quote_obj.get("ap").and_then(|p| p.as_f64()).unwrap_or(0.0);
+        let bid_price = quote_obj.get("bp").and_then(|p| p.as_f64()).unwrap_or(0.0);
+
+        // Use ask price if available, otherwise bid price
+        let current_price = if ask_price > 0.0 { ask_price } else { bid_price };
+
+        // Determine strike increment based on price level
+        let strike_increment = if current_price < 25.0 { 0.5 } else if current_price < 200.0 { 1.0 } else { 5.0 };
+
+        // For ITM Call: find highest strike below current price (nearest ITM)
+        // Round down to nearest strike increment for call
+        let call_strike = ((current_price / strike_increment).floor() - 1.0) * strike_increment;
+        let call_strike = if call_strike < strike_increment { strike_increment } else { call_strike };
+
+        // For ITM Put: find lowest strike above current price (nearest ITM)
+        // Round up to nearest strike increment for put
+        let put_strike = ((current_price / strike_increment).ceil() + 1.0) * strike_increment;
+
+        // Return ITM strikes for call and put
+        Ok(serde_json::json!({
+            "underlying_price": current_price,
+            "call_strike": call_strike,
+            "put_strike": put_strike,
+            "strike_increment": strike_increment
+        }))
+    }
+
+    /// Get current price for an option
+    pub async fn get_option_price(&self, option_symbol: &str) -> Result<Value, reqwest::Error> {
+        // Extract underlying symbol from OCC format
+        // OCC format: SYMBOL + YYMMDD + C/P + STRIKE (8 chars)
+        // For short symbols (like SPY), no padding: SPY260408C00670000
+        // For longer symbols (like GOOGL), no padding: GOOGL260408C00670000
+
+        // Find where the date starts (6 digits for YYMMDD)
+        let underlying = if let Some(pos) = option_symbol.find(|c: char| c.is_ascii_digit()) {
+            let date_part: String = option_symbol[pos..].chars().take_while(|c| c.is_ascii_digit()).collect();
+            if date_part.len() >= 6 {
+                option_symbol[..pos].to_string()
+            } else {
+                option_symbol.chars().take(6).collect::<String>().trim().to_string()
+            }
+        } else {
+            option_symbol.chars().take(6).collect::<String>().trim().to_string()
+        };
+
+        // Determine if call or put from the option symbol
+        // Format: SYMBOL + YYMMDD + C/P + STRIKE
+        // After 6-digit date, next char is C (call) or P (put)
+        let normalized = option_symbol.replace(" ", "");
+        let option_type = if let Some(pos) = normalized.find(|c: char| c.is_ascii_digit()) {
+            // pos is start of date, date is 6 chars, then C/P
+            let after_date = pos + 6;
+            if after_date < normalized.len() {
+                let type_char = normalized.chars().nth(after_date);
+                if type_char == Some('P') {
+                    "put"
+                } else {
+                    "call"
+                }
+            } else {
+                "call"
+            }
+        } else {
+            "call"
+        };
+
+        // Use the options snapshots API with type filter
+        let url = format!(
+            "{}/snapshots/{}?feed=indicative&type={}",
+            ALPACA_OPTIONS_URL,
+            underlying,
+            option_type
+        );
+
+        let response = self.client
+            .get(&url)
+            .headers(self.build_headers())
+            .send()
+            .await?;
+
+        let data: Value = response.json().await?;
+
+        // Find the specific option in the snapshots
+        let normalized_search = normalized;
+
+        if let Some(snapshots) = data.get("snapshots") {
+            if let Some(obj) = snapshots.as_object() {
+                for key in obj.keys() {
+                    if key.replace(" ", "") == normalized_search {
+                        if let Some(snapshot) = snapshots.get(key) {
+                            if let Some(quote) = snapshot.get("latestQuote") {
+                                return Ok(serde_json::json!({
+                                    "quote": quote,
+                                    "symbol": key
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Return error if not found
+        Ok(serde_json::json!({
+            "error": format!("Option {} not found in chain", option_symbol),
+            "underlying": underlying,
+            "type": option_type
+        }))
     }
 }
 

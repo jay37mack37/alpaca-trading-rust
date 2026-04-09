@@ -59,15 +59,16 @@ async fn main() {
         .route("/api/orders", get(routes::trading::get_orders))
         .route("/api/orders", post(routes::trading::create_order))
         .route("/api/price/{symbol}", get(routes::trading::get_price))
+        .route("/api/option-quote/{symbol}", get(routes::trading::get_option_strikes))
+        .route("/api/option-strikes/{symbol}", get(routes::trading::get_option_price))
 
         // Order management routes (authenticated)
         .route("/api/orders/{id}", get(routes::orders::get_order_by_id))
         .route("/api/orders/{id}", delete(routes::orders::cancel_order))
-
-        // Static files
-        .nest_service("/static", ServeDir::new("static"))
-        .fallback_service(ServeDir::new("static"))
+        .route("/api/orders/cancel-all", post(routes::orders::cancel_all_orders))
         .with_state(alpaca_client)
+        .fallback_service(ServeDir::new("static"))
+        .nest_service("/static", ServeDir::new("static"))
         .layer(cors);
 
     // Start server
