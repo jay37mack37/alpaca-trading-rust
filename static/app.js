@@ -53,34 +53,38 @@ function getAuthHeaders() {
     };
 }
 
-// DOM Elements
-const statusDot = document.querySelector('.status-dot');
-const statusText = document.getElementById('status-text');
+// DOM Elements — lazily resolved after DOMContentLoaded
+let statusDot, statusText;
+let accountLoading, accountInfo, accountError;
+let positionsLoading, positionsTable, positionsBody, noPositions, positionsError;
+let ordersLoading, ordersTable, ordersBody, noOrders, ordersError;
+let orderForm, orderSuccess, orderError, submitBtn;
 
-// Account Elements
-const accountLoading = document.getElementById('account-loading');
-const accountInfo = document.getElementById('account-info');
-const accountError = document.getElementById('account-error');
+function resolveElements() {
+    statusDot = document.querySelector('.status-dot');
+    statusText = document.getElementById('status-text');
 
-// Positions Elements
-const positionsLoading = document.getElementById('positions-loading');
-const positionsTable = document.getElementById('positions-table');
-const positionsBody = document.getElementById('positions-body');
-const noPositions = document.getElementById('no-positions');
-const positionsError = document.getElementById('positions-error');
+    accountLoading = document.getElementById('account-loading');
+    accountInfo = document.getElementById('account-info');
+    accountError = document.getElementById('account-error');
 
-// Orders Elements
-const ordersLoading = document.getElementById('orders-loading');
-const ordersTable = document.getElementById('orders-table');
-const ordersBody = document.getElementById('orders-body');
-const noOrders = document.getElementById('no-orders');
-const ordersError = document.getElementById('orders-error');
+    positionsLoading = document.getElementById('positions-loading');
+    positionsTable = document.getElementById('positions-table');
+    positionsBody = document.getElementById('positions-body');
+    noPositions = document.getElementById('no-positions');
+    positionsError = document.getElementById('positions-error');
 
-// Order Form Elements
-const orderForm = document.getElementById('order-form');
-const orderSuccess = document.getElementById('order-success');
-const orderError = document.getElementById('order-error');
-const submitBtn = document.getElementById('submit-order');
+    ordersLoading = document.getElementById('orders-loading');
+    ordersTable = document.getElementById('orders-table');
+    ordersBody = document.getElementById('orders-body');
+    noOrders = document.getElementById('no-orders');
+    ordersError = document.getElementById('orders-error');
+
+    orderForm = document.getElementById('order-form');
+    orderSuccess = document.getElementById('order-success');
+    orderError = document.getElementById('order-error');
+    submitBtn = document.getElementById('submit-order');
+}
 
 // Format currency
 function formatCurrency(value) {
@@ -438,60 +442,20 @@ window.cancelSelectedOrders = cancelSelectedOrders;
 window.toggleSelectAllOrders = toggleSelectAllOrders;
 window.updateCancelSelectedButton = updateCancelSelectedButton;
 
-// Add event listeners for order management buttons
-document.addEventListener('DOMContentLoaded', () => {
+function initOrderButtons() {
     const cancelAllBtn = document.getElementById('cancel-all-orders-btn');
-    if (cancelAllBtn) {
-        cancelAllBtn.addEventListener('click', cancelAllOrders);
-    }
+    if (cancelAllBtn) cancelAllBtn.addEventListener('click', cancelAllOrders);
 
     const cancelSelectedBtn = document.getElementById('cancel-selected-btn');
-    if (cancelSelectedBtn) {
-        cancelSelectedBtn.addEventListener('click', cancelSelectedOrders);
-    }
+    if (cancelSelectedBtn) cancelSelectedBtn.addEventListener('click', cancelSelectedOrders);
 
     const selectAllCheckbox = document.getElementById('select-all-orders');
-    if (selectAllCheckbox) {
-        selectAllCheckbox.addEventListener('change', toggleSelectAllOrders);
-    }
-});
+    if (selectAllCheckbox) selectAllCheckbox.addEventListener('change', toggleSelectAllOrders);
+}
 
 // Asset class toggle
 let currentAssetClass = 'stock';
-
-document.querySelectorAll('.toggle-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        currentAssetClass = btn.dataset.class;
-
-        // Toggle visibility
-        document.getElementById('stock-fields').style.display = currentAssetClass === 'stock' ? 'block' : 'none';
-        document.getElementById('option-fields').style.display = currentAssetClass === 'option' ? 'block' : 'none';
-
-        // When switching to option, default to CALL
-        if (currentAssetClass === 'option') {
-            document.querySelectorAll('.option-type-btn').forEach(b => b.classList.remove('active'));
-            const callBtn = document.querySelector('.option-type-btn.call-btn');
-            if (callBtn) {
-                callBtn.classList.add('active');
-                selectedOptionType = 'call';
-                document.getElementById('option-type-hidden').value = 'call';
-            }
-        }
-    });
-});
-
-// Option type toggle
-let selectedOptionType = null;
-document.querySelectorAll('.option-type-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.option-type-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        selectedOptionType = btn.dataset.type;
-        document.getElementById('option-type-hidden').value = selectedOptionType;
-    });
-});
+let selectedOptionType = 'call'; // default to CALL
 
 // Set default expiration date to next Friday
 function getNextFriday() {
@@ -502,352 +466,320 @@ function getNextFriday() {
     nextFriday.setDate(today.getDate() + daysUntilFriday);
     return nextFriday.toISOString().split('T')[0];
 }
-document.getElementById('expiration-date').value = getNextFriday();
 
-// Handle order form submission
-if (orderForm) {
-    orderForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
+function initAssetToggle() {
+    document.querySelectorAll('.toggle-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentAssetClass = btn.dataset.class;
 
-        orderSuccess.style.display = 'none';
-        orderError.style.display = 'none';
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Placing Order...';
+            // Toggle visibility
+            const stockFields = document.getElementById('stock-fields');
+            const optionFields = document.getElementById('option-fields');
+            if (stockFields) stockFields.style.display = currentAssetClass === 'stock' ? 'block' : 'none';
+            if (optionFields) optionFields.style.display = currentAssetClass === 'option' ? 'block' : 'none';
 
-        let orderData = {};
-
-        try {
-            if (currentAssetClass === 'stock') {
-                // Stock order
-                const symbol = document.getElementById('symbol').value.toUpperCase();
-                const side = document.getElementById('side').value;
-                const qty = parseFloat(document.getElementById('qty').value);
-                const orderType = document.getElementById('order-type').value;
-                const limitPrice = document.getElementById('limit-price').value;
-                const timeInForce = document.getElementById('time-in-force').value;
-
-                orderData = {
-                    symbol,
-                    qty,
-                    side,
-                    order_type: orderType,
-                    time_in_force: timeInForce
-                };
-
-                if (orderType === 'limit' && limitPrice) {
-                    orderData.limit_price = parseFloat(limitPrice);
+            // When switching to option, default to CALL
+            if (currentAssetClass === 'option') {
+                document.querySelectorAll('.option-type-btn').forEach(b => b.classList.remove('active'));
+                const callBtn = document.querySelector('.option-type-btn.call-btn');
+                if (callBtn) {
+                    callBtn.classList.add('active');
+                    selectedOptionType = 'call';
+                    const hiddenInput = document.getElementById('option-type-hidden');
+                    if (hiddenInput) hiddenInput.value = 'call';
                 }
+            }
+        });
+    });
+
+    // Option type toggle
+    document.querySelectorAll('.option-type-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.option-type-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            selectedOptionType = btn.dataset.type;
+            const hiddenInput = document.getElementById('option-type-hidden');
+            if (hiddenInput) hiddenInput.value = selectedOptionType;
+        });
+    });
+
+    // Set CALL as default active on load
+    const callBtn = document.querySelector('.option-type-btn.call-btn');
+    if (callBtn) {
+        callBtn.classList.add('active');
+        const hiddenInput = document.getElementById('option-type-hidden');
+        if (hiddenInput) hiddenInput.value = 'call';
+    }
+
+    // Set default expiration dates
+    const expirationDateEl = document.getElementById('expiration-date');
+    if (expirationDateEl) expirationDateEl.value = getNextFriday();
+}
+
+function initOrderForm() {
+    // Attach order form submit handler (orderForm is resolved via resolveElements())
+    if (orderForm) {
+        orderForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            orderSuccess.style.display = 'none';
+            orderError.style.display = 'none';
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Placing Order...';
+
+            let orderData = {};
+
+            try {
+                if (currentAssetClass === 'stock') {
+                    // Stock order
+                    const symbol = document.getElementById('symbol').value.toUpperCase();
+                    const side = document.getElementById('side').value;
+                    const qty = parseFloat(document.getElementById('qty').value);
+                    const orderType = document.getElementById('order-type').value;
+                    const limitPrice = document.getElementById('limit-price').value;
+                    const timeInForce = document.getElementById('time-in-force').value;
+
+                    orderData = { symbol, qty, side, order_type: orderType, time_in_force: timeInForce };
+                    if (orderType === 'limit' && limitPrice) orderData.limit_price = parseFloat(limitPrice);
+                } else {
+                    // Option order
+                    const underlying = document.getElementById('option-symbol').value.toUpperCase();
+                    const optionType = document.getElementById('option-type-hidden').value;
+                    const strike = parseFloat(document.getElementById('strike-price').value);
+                    const expiration = document.getElementById('expiration-date').value;
+                    const side = document.getElementById('option-side').value;
+                    const qty = parseInt(document.getElementById('option-qty').value);
+                    const orderType = document.getElementById('option-order-type').value;
+                    const limitPrice = document.getElementById('option-limit-price').value;
+                    const timeInForce = document.getElementById('option-tif').value;
+
+                    if (!optionType) throw new Error('Please select Call or Put');
+
+                    // Build OCC symbol: SPY240408C00500000
+                    // Parse date as local time — new Date('YYYY-MM-DD') is UTC which shifts the day
+                    const [expYear, expMonth, expDay] = expiration.split('-').map(Number);
+                    const yy = String(expYear).slice(-2);
+                    const mm = String(expMonth).padStart(2, '0');
+                    const dd = String(expDay).padStart(2, '0');
+                    const cp = optionType === 'call' ? 'C' : 'P';
+                    const strikeStr = (strike * 1000).toFixed(0).padStart(8, '0');
+                    const symbol = underlying.padEnd(6, ' ') + yy + mm + dd + cp + strikeStr;
+
+                    orderData = {
+                        symbol: symbol.replace(/\s/g, ''),
+                        qty, side,
+                        order_type: orderType,
+                        time_in_force: timeInForce,
+                        asset_class: 'us_option'
+                    };
+                    if (orderType === 'limit' && limitPrice) orderData.limit_price = parseFloat(limitPrice);
+                }
+
+                const response = await fetch(`${API_BASE}/api/orders`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(orderData)
+                });
+
+                if (response.status === 401) {
+                    localStorage.removeItem('token');
+                    window.location.href = '/login.html';
+                    return;
+                }
+
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || data.error || 'Failed to place order');
+
+                orderSuccess.style.display = 'block';
+                orderSuccess.textContent = `Order placed successfully! Order ID: ${data.id || 'N/A'}`;
+                orderForm.reset();
+                const symEl = document.getElementById('symbol');
+                const optSymEl = document.getElementById('option-symbol');
+                const expEl = document.getElementById('expiration-date');
+                if (symEl) symEl.value = 'SPY';
+                if (optSymEl) optSymEl.value = 'SPY';
+                if (expEl) expEl.value = getNextFriday();
+
+                setTimeout(() => { fetchOrders(); fetchAccount(); }, 1000);
+
+            } catch (err) {
+                orderError.style.display = 'block';
+                orderError.textContent = `Error: ${err.message}`;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Place Order';
+            }
+        });
+    }
+
+    // Show/hide limit price based on stock order type
+    const orderTypeSelect = document.getElementById('order-type');
+    const fillPriceBtn = document.getElementById('fill-price-btn');
+    const limitPriceInput = document.getElementById('limit-price');
+    const symbolInput = document.getElementById('symbol');
+
+    if (orderTypeSelect) {
+        orderTypeSelect.addEventListener('change', (e) => {
+            if (e.target.value === 'limit') {
+                if (limitPriceInput) { limitPriceInput.required = true; limitPriceInput.placeholder = 'Required'; }
+                if (fillPriceBtn) fillPriceBtn.style.display = 'block';
             } else {
-                // Option order
-                const underlying = document.getElementById('option-symbol').value.toUpperCase();
-                const optionType = document.getElementById('option-type-hidden').value;
-                const strike = parseFloat(document.getElementById('strike-price').value);
-                const expiration = document.getElementById('expiration-date').value;
-                const side = document.getElementById('option-side').value;
-                const qty = parseInt(document.getElementById('option-qty').value);
-                const orderType = document.getElementById('option-order-type').value;
-                const limitPrice = document.getElementById('option-limit-price').value;
-                const timeInForce = document.getElementById('option-tif').value;
+                if (limitPriceInput) { limitPriceInput.required = false; limitPriceInput.placeholder = 'Optional'; }
+                if (fillPriceBtn) fillPriceBtn.style.display = 'none';
+            }
+        });
+    }
 
-                if (!optionType) {
-                    throw new Error('Please select Call or Put');
-                }
+    // Fill stock market price button
+    if (fillPriceBtn) {
+        fillPriceBtn.addEventListener('click', async () => {
+            const symbol = symbolInput ? symbolInput.value.toUpperCase() : '';
+            if (!symbol) { alert('Please enter a symbol first'); return; }
 
-                // Build OCC symbol: SPY   240408C00500000
-                // Format: Symbol (6 chars) + YYMMDD + C/P + Strike (8 chars, 3 decimal places)
-                const expDate = new Date(expiration);
-                const yy = expDate.getFullYear().toString().slice(-2);
-                const mm = (expDate.getMonth() + 1).toString().padStart(2, '0');
-                const dd = expDate.getDate().toString().padStart(2, '0');
+            fillPriceBtn.disabled = true;
+            fillPriceBtn.textContent = 'Loading...';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/price/${symbol}`, { headers: getAuthHeaders() });
+                if (response.status === 401) { localStorage.removeItem('token'); window.location.href = '/login.html'; return; }
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Failed to get price');
+
+                // For buy orders use ask, for sell orders use bid
+                const side = document.getElementById('side') ? document.getElementById('side').value : 'buy';
+                let price;
+                if (data.quote) {
+                    const askPrice = data.quote.ap || data.quote.bp;
+                    const bidPrice = data.quote.bp;
+                    price = side === 'buy' ? askPrice : bidPrice;
+                } else { throw new Error('Price data not available'); }
+
+                if (!price || price === 0) throw new Error('Price not available (market may be closed)');
+                if (limitPriceInput) limitPriceInput.value = parseFloat(price).toFixed(2);
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            } finally {
+                fillPriceBtn.disabled = false;
+                fillPriceBtn.textContent = 'Fill Market Price';
+            }
+        });
+    }
+
+    // Show/hide limit price based on option order type
+    const optionOrderTypeSelect = document.getElementById('option-order-type');
+    const fillOptionPriceBtn = document.getElementById('fill-option-price-btn');
+    const optionLimitPriceInput = document.getElementById('option-limit-price');
+    const optionSymbolInput = document.getElementById('option-symbol');
+    const fillStrikeBtn = document.getElementById('fill-strike-btn');
+    const strikePriceInput = document.getElementById('strike-price');
+
+    if (optionOrderTypeSelect) {
+        optionOrderTypeSelect.addEventListener('change', (e) => {
+            if (e.target.value === 'limit') {
+                if (optionLimitPriceInput) { optionLimitPriceInput.required = true; optionLimitPriceInput.placeholder = 'Required'; }
+                if (fillOptionPriceBtn) fillOptionPriceBtn.style.display = 'block';
+            } else {
+                if (optionLimitPriceInput) { optionLimitPriceInput.required = false; optionLimitPriceInput.placeholder = 'Optional'; }
+                if (fillOptionPriceBtn) fillOptionPriceBtn.style.display = 'none';
+            }
+        });
+    }
+
+    // Fill strike button
+    if (fillStrikeBtn) {
+        fillStrikeBtn.addEventListener('click', async () => {
+            const symbol = optionSymbolInput ? optionSymbolInput.value.toUpperCase() : '';
+            if (!symbol) { alert('Please enter an underlying symbol first'); return; }
+            if (!selectedOptionType) { alert('Please select Call or Put first'); return; }
+
+            fillStrikeBtn.disabled = true;
+            fillStrikeBtn.textContent = 'Loading...';
+            try {
+                const data = await getOptionStrikes(symbol);
+                if (data) {
+                    const strike = selectedOptionType === 'call' ? data.call_strike : data.put_strike;
+                    if (strike) {
+                        if (strikePriceInput) strikePriceInput.value = strike;
+                    } else { alert(`No ${selectedOptionType} strikes available`); }
+                } else { alert('No strikes available'); }
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            } finally {
+                fillStrikeBtn.disabled = false;
+                fillStrikeBtn.textContent = 'Strike';
+            }
+        });
+    }
+
+    // Fill option market price button
+    if (fillOptionPriceBtn) {
+        fillOptionPriceBtn.addEventListener('click', async () => {
+            const underlying = optionSymbolInput ? optionSymbolInput.value.toUpperCase() : '';
+            const strike = strikePriceInput ? strikePriceInput.value : '';
+            const expiration = document.getElementById('expiration-date') ? document.getElementById('expiration-date').value : '';
+            const optionType = document.getElementById('option-type-hidden') ? document.getElementById('option-type-hidden').value : '';
+
+            if (!underlying || !strike || !expiration || !optionType) {
+                alert('Please fill in all option details first');
+                return;
+            }
+
+            fillOptionPriceBtn.disabled = true;
+            fillOptionPriceBtn.textContent = 'Loading...';
+
+            try {
+                // Parse date as local time — new Date('YYYY-MM-DD') is UTC which shifts the day
+                const [expYear, expMonth, expDay] = expiration.split('-').map(Number);
+                const yy = String(expYear).slice(-2);
+                const mm = String(expMonth).padStart(2, '0');
+                const dd = String(expDay).padStart(2, '0');
                 const cp = optionType === 'call' ? 'C' : 'P';
-                const strikeStr = (strike * 1000).toFixed(0).padStart(8, '0');
-                const symbol = underlying.padEnd(6, ' ') + yy + mm + dd + cp + strikeStr;
+                const strikeStr = (parseFloat(strike) * 1000).toFixed(0).padStart(8, '0');
+                const optionSymbol = underlying.padEnd(6, ' ') + yy + mm + dd + cp + strikeStr;
 
-                orderData = {
-                    symbol: symbol.replace(/\s/g, ''),
-                    qty,
-                    side,
-                    order_type: orderType,
-                    time_in_force: timeInForce,
-                    asset_class: 'us_option'
-                };
+                const response = await fetch(`${API_BASE}/api/option-strikes/${optionSymbol.replace(/\s/g, '')}`, { headers: getAuthHeaders() });
+                if (response.status === 401) { localStorage.removeItem('token'); window.location.href = '/login.html'; return; }
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Failed to get option price');
 
-                if (orderType === 'limit' && limitPrice) {
-                    orderData.limit_price = parseFloat(limitPrice);
-                }
+                let price;
+                const side = document.getElementById('option-side') ? document.getElementById('option-side').value : 'buy_to_open';
+                if (data.quote) {
+                    const askPrice = data.quote.ap || data.quote.bp;
+                    const bidPrice = data.quote.bp;
+                    price = side.includes('buy') ? askPrice : bidPrice;
+                } else { throw new Error('Price data not available'); }
+
+                if (!price || price === 0) throw new Error('Price not available (market may be closed)');
+                if (optionLimitPriceInput) optionLimitPriceInput.value = parseFloat(price).toFixed(2);
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            } finally {
+                fillOptionPriceBtn.disabled = false;
+                fillOptionPriceBtn.textContent = 'Fill Market Price';
             }
-
-            const response = await fetch(`${API_BASE}/api/orders`, {
-                method: 'POST',
-                headers: getAuthHeaders(),
-                body: JSON.stringify(orderData)
-            });
-
-            if (response.status === 401) {
-                localStorage.removeItem('token');
-                window.location.href = '/login.html';
-                return;
-            }
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.message || data.error || 'Failed to place order');
-            }
-
-            orderSuccess.style.display = 'block';
-            orderSuccess.textContent = `Order placed successfully! Order ID: ${data.id || 'N/A'}`;
-            orderForm.reset();
-            document.getElementById('symbol').value = 'SPY';
-            document.getElementById('option-symbol').value = 'SPY';
-            document.getElementById('expiration-date').value = getNextFriday();
-
-            // Refresh orders and account
-            setTimeout(() => {
-                fetchOrders();
-                fetchAccount();
-            }, 1000);
-
-        } catch (err) {
-            orderError.style.display = 'block';
-            orderError.textContent = `Error: ${err.message}`;
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Place Order';
-        }
-    });
+        });
+    }
 }
-
-// Show/hide limit price based on order type (stock)
-const orderTypeSelect = document.getElementById('order-type');
-const fillPriceBtn = document.getElementById('fill-price-btn');
-const limitPriceInput = document.getElementById('limit-price');
-const symbolInput = document.getElementById('symbol');
-
-if (orderTypeSelect) {
-    orderTypeSelect.addEventListener('change', (e) => {
-        if (e.target.value === 'limit') {
-            limitPriceInput.required = true;
-            limitPriceInput.placeholder = 'Required';
-            fillPriceBtn.style.display = 'block';
-        } else {
-            limitPriceInput.required = false;
-            limitPriceInput.placeholder = 'Optional';
-            fillPriceBtn.style.display = 'none';
-        }
-    });
-}
-
-// Fill market price button
-if (fillPriceBtn) {
-    fillPriceBtn.addEventListener('click', async () => {
-        const symbol = symbolInput.value.toUpperCase();
-        if (!symbol) {
-            alert('Please enter a symbol first');
-            return;
-        }
-
-        fillPriceBtn.disabled = true;
-        fillPriceBtn.textContent = 'Loading...';
-
-        try {
-            const response = await fetch(`${API_BASE}/api/price/${symbol}`, {
-                headers: getAuthHeaders()
-            });
-
-            if (response.status === 401) {
-                localStorage.removeItem('token');
-                window.location.href = '/login.html';
-                return;
-            }
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Failed to get price');
-            }
-
-            // Alpaca returns quote with:
-            // - bp: bid price
-            // - ap: ask price (may be 0 when market closed)
-            // - For buy orders, use ask price; for sell orders, use bid price
-            const side = document.getElementById('side').value;
-            let price;
-
-            if (data.quote) {
-                const askPrice = data.quote.ap || data.quote.bp; // fallback to bid if ask is 0
-                const bidPrice = data.quote.bp;
-                price = side === 'buy' ? askPrice : bidPrice;
-            } else {
-                throw new Error('Price data not available');
-            }
-
-            if (!price || price === 0) {
-                throw new Error('Price not available (market may be closed)');
-            }
-
-            limitPriceInput.value = parseFloat(price).toFixed(2);
-        } catch (err) {
-            alert(`Error: ${err.message}`);
-        } finally {
-            fillPriceBtn.disabled = false;
-            fillPriceBtn.textContent = 'Fill Market Price';
-        }
-    });
-}
-
-// Show/hide limit price based on option order type
-const optionOrderTypeSelect = document.getElementById('option-order-type');
-const fillOptionPriceBtn = document.getElementById('fill-option-price-btn');
-const optionLimitPriceInput = document.getElementById('option-limit-price');
-const optionSymbolInput = document.getElementById('option-symbol');
-
-if (optionOrderTypeSelect) {
-    optionOrderTypeSelect.addEventListener('change', (e) => {
-        if (e.target.value === 'limit') {
-            optionLimitPriceInput.required = true;
-            optionLimitPriceInput.placeholder = 'Required';
-            fillOptionPriceBtn.style.display = 'block';
-        } else {
-            optionLimitPriceInput.required = false;
-            optionLimitPriceInput.placeholder = 'Optional';
-            fillOptionPriceBtn.style.display = 'none';
-        }
-    });
-}
-
-// Fill strike button (uses selected call/put)
-const fillStrikeBtn = document.getElementById('fill-strike-btn');
-const strikePriceInput = document.getElementById('strike-price');
 
 async function getOptionStrikes(underlying) {
-    const response = await fetch(`${API_BASE}/api/option-quote/${underlying}`, {
-        headers: getAuthHeaders()
-    });
-
-    if (response.status === 401) {
-        localStorage.removeItem('token');
-        window.location.href = '/login.html';
-        return null;
-    }
-
+    const response = await fetch(`${API_BASE}/api/option-quote/${underlying}`, { headers: getAuthHeaders() });
+    if (response.status === 401) { localStorage.removeItem('token'); window.location.href = '/login.html'; return null; }
     const data = await response.json();
-
-    if (!response.ok) {
-        throw new Error(data.error || 'Failed to get option strikes');
-    }
-
+    if (!response.ok) throw new Error(data.error || 'Failed to get option strikes');
     return data;
 }
 
-if (fillStrikeBtn) {
-    fillStrikeBtn.addEventListener('click', async () => {
-        const symbol = optionSymbolInput.value.toUpperCase();
-        if (!symbol) {
-            alert('Please enter an underlying symbol first');
-            return;
-        }
-
-        if (!selectedOptionType) {
-            alert('Please select Call or Put first');
-            return;
-        }
-
-        fillStrikeBtn.disabled = true;
-        fillStrikeBtn.textContent = 'Loading...';
-
-        try {
-            const data = await getOptionStrikes(symbol);
-            if (data) {
-                const strike = selectedOptionType === 'call' ? data.call_strike : data.put_strike;
-                if (strike) {
-                    strikePriceInput.value = strike;
-                } else {
-                    alert(`No ${selectedOptionType} strikes available`);
-                }
-            } else {
-                alert('No strikes available');
-            }
-        } catch (err) {
-            alert(`Error: ${err.message}`);
-        } finally {
-            fillStrikeBtn.disabled = false;
-            fillStrikeBtn.textContent = 'Strike';
-        }
-    });
-}
-
-// Fill option market price button
-if (fillOptionPriceBtn) {
-    fillOptionPriceBtn.addEventListener('click', async () => {
-        const underlying = optionSymbolInput.value.toUpperCase();
-        const strike = strikePriceInput.value;
-        const expiration = document.getElementById('expiration-date').value;
-        const optionType = document.getElementById('option-type-hidden').value;
-
-        if (!underlying || !strike || !expiration || !optionType) {
-            alert('Please fill in all option details first');
-            return;
-        }
-
-        fillOptionPriceBtn.disabled = true;
-        fillOptionPriceBtn.textContent = 'Loading...';
-
-        try {
-            // Build OCC symbol for the option
-            const expDate = new Date(expiration);
-            const yy = expDate.getFullYear().toString().slice(-2);
-            const mm = (expDate.getMonth() + 1).toString().padStart(2, '0');
-            const dd = expDate.getDate().toString().padStart(2, '0');
-            const cp = optionType === 'call' ? 'C' : 'P';
-            const strikeStr = (parseFloat(strike) * 1000).toFixed(0).padStart(8, '0');
-            const optionSymbol = underlying.padEnd(6, ' ') + yy + mm + dd + cp + strikeStr;
-
-            const response = await fetch(`${API_BASE}/api/option-strikes/${optionSymbol.replace(/\s/g, '')}`, {
-                headers: getAuthHeaders()
-            });
-
-            if (response.status === 401) {
-                localStorage.removeItem('token');
-                window.location.href = '/login.html';
-                return;
-            }
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Failed to get option price');
-            }
-
-            // For options, use bid/ask similar to stocks
-            let price;
-            const side = document.getElementById('option-side').value;
-
-            if (data.quote) {
-                const askPrice = data.quote.ap || data.quote.bp;
-                const bidPrice = data.quote.bp;
-                // For buy orders use ask, for sell orders use bid
-                price = side.includes('buy') ? askPrice : bidPrice;
-            } else {
-                throw new Error('Price data not available');
-            }
-
-            if (!price || price === 0) {
-                throw new Error('Price not available (market may be closed)');
-            }
-
-            optionLimitPriceInput.value = parseFloat(price).toFixed(2);
-        } catch (err) {
-            alert(`Error: ${err.message}`);
-        } finally {
-            fillOptionPriceBtn.disabled = false;
-            fillOptionPriceBtn.textContent = 'Fill Market Price';
-        }
-    });
-}
-
-// Initial load
+// Single consolidated DOMContentLoaded — all init happens here
 document.addEventListener('DOMContentLoaded', () => {
+    resolveElements();
+    initOrderButtons();
+    initAssetToggle();
+    initOrderForm();
+    initOptionsChain();
+
     if (checkAuth()) {
         fetchAccount();
         fetchPositions();
@@ -867,103 +799,84 @@ setInterval(() => {
 // Options Chain Chart
 let optionsData = null;
 let selectedStrike = null;
+let optionsCanvas = null;
+let selectedOptionInfo = null;
 
-const loadOptionsBtn = document.getElementById('load-options-btn');
-const optionsSymbolInput = document.getElementById('options-symbol');
-const optionsExpirationInput = document.getElementById('options-expiration');
-const optionsLoading = document.getElementById('options-loading');
-const optionsChartContainer = document.getElementById('options-chart-container');
-const optionsError = document.getElementById('options-error');
-const stockPriceValue = document.getElementById('stock-price-value');
-const optionsCanvas = document.getElementById('options-chart');
-const selectedOptionInfo = document.getElementById('selected-option-info');
+function initOptionsChain() {
+    const loadOptionsBtn = document.getElementById('load-options-btn');
+    const optionsSymbolInput = document.getElementById('options-symbol');
+    const optionsExpirationInput = document.getElementById('options-expiration');
+    const optionsLoading = document.getElementById('options-loading');
+    const optionsChartContainer = document.getElementById('options-chart-container');
+    const optionsError = document.getElementById('options-error');
+    const stockPriceValue = document.getElementById('stock-price-value');
+    // Assign module-level refs used by drawOptionsChart/showStrikeDetails
+    optionsCanvas = document.getElementById('options-chart');
+    selectedOptionInfo = document.getElementById('selected-option-info');
 
-// Set default expiration date to next Friday
-if (optionsExpirationInput) {
-    optionsExpirationInput.value = getNextFriday();
-}
+    // Set default expiration date to next Friday
+    if (optionsExpirationInput) optionsExpirationInput.value = getNextFriday();
+    if (!loadOptionsBtn) return;
 
-if (loadOptionsBtn) {
+
     loadOptionsBtn.addEventListener('click', async () => {
-        const symbol = optionsSymbolInput.value.toUpperCase();
-        const expiration = optionsExpirationInput.value;
+        const symbol = optionsSymbolInput ? optionsSymbolInput.value.toUpperCase() : '';
+        const expiration = optionsExpirationInput ? optionsExpirationInput.value : '';
 
-        if (!symbol) {
-            alert('Please enter a symbol');
-            return;
-        }
-        if (!expiration) {
-            alert('Please select an expiration date');
-            return;
-        }
+        if (!symbol) { alert('Please enter a symbol'); return; }
+        if (!expiration) { alert('Please select an expiration date'); return; }
 
         loadOptionsBtn.disabled = true;
         loadOptionsBtn.textContent = 'Loading...';
-        optionsLoading.style.display = 'block';
-        optionsChartContainer.style.display = 'none';
-        optionsError.style.display = 'none';
+        if (optionsLoading) optionsLoading.style.display = 'block';
+        if (optionsChartContainer) optionsChartContainer.style.display = 'none';
+        if (optionsError) optionsError.style.display = 'none';
 
         try {
             // Get current stock price first
-            const priceResponse = await fetch(`${API_BASE}/api/price/${symbol}`, {
-                headers: getAuthHeaders()
-            });
-
-            if (priceResponse.status === 401) {
-                localStorage.removeItem('token');
-                window.location.href = '/login.html';
-                return;
-            }
+            const priceResponse = await fetch(`${API_BASE}/api/price/${symbol}`, { headers: getAuthHeaders() });
+            if (priceResponse.status === 401) { localStorage.removeItem('token'); window.location.href = '/login.html'; return; }
 
             const priceData = await priceResponse.json();
             let stockPrice = 0;
-            if (priceData.quote) {
-                stockPrice = priceData.quote.ap || priceData.quote.bp || 0;
-            }
+            if (priceData.quote) stockPrice = priceData.quote.ap || priceData.quote.bp || 0;
 
-            // Get real options chain data from the new Rust endpoint
-            const response = await fetch(`${API_BASE}/api/option-chain/${symbol}`, {
-                headers: getAuthHeaders()
-            });
-
+            // Get real options chain data
+            const response = await fetch(`${API_BASE}/api/option-chain/${symbol}`, { headers: getAuthHeaders() });
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.error || 'Failed to load options data');
             }
-
             const chainData = await response.json();
 
-            // Format expiration date for display
-            const expDate = new Date(expiration);
+            // Format expiration date for display (parse locally to avoid UTC shift)
+            const [eY, eM, eD] = expiration.split('-').map(Number);
+            const expDate = new Date(eY, eM - 1, eD);
             const expFormatted = expDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
-            // Store data for charting
             optionsData = {
-                symbol: symbol,
+                symbol,
                 stockPrice: chainData.underlying_price,
                 strikes: chainData.strikes,
-                expiration: expiration,
+                expiration,
                 expirationFormatted: expFormatted
             };
 
-            // Display data
-            stockPriceValue.textContent = formatCurrency(stockPrice);
-            optionsLoading.style.display = 'none';
-            optionsChartContainer.style.display = 'block';
+            if (stockPriceValue) stockPriceValue.textContent = formatCurrency(stockPrice);
+            if (optionsLoading) optionsLoading.style.display = 'none';
+            if (optionsChartContainer) optionsChartContainer.style.display = 'block';
 
-            // Draw the chart
             drawOptionsChart();
 
         } catch (err) {
-            optionsLoading.style.display = 'none';
-            optionsError.style.display = 'block';
-            optionsError.textContent = `Error: ${err.message}`;
+            if (optionsLoading) optionsLoading.style.display = 'none';
+            if (optionsError) { optionsError.style.display = 'block'; optionsError.textContent = `Error: ${err.message}`; }
         } finally {
             loadOptionsBtn.disabled = false;
             loadOptionsBtn.textContent = 'Load Options';
         }
     });
-}
+} // end initOptionsChain
 
 function drawOptionsChart() {
     if (!optionsData || !optionsCanvas || !optionsData.strikes || optionsData.strikes.length === 0) return;
