@@ -1,5 +1,146 @@
+// ============================================================
+// DEVELOPMENT TOOLS - Console Logging & Network Inspector
+// ============================================================
+
+const DEV_MODE = true;
+const LOG_BUFFER = [];
+const MAX_LOG_SIZE = 100;
+
+// Log to console AND dev buffer
+function devLog(category, message, data = null) {
+    if (!DEV_MODE) return;
+
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = {
+        time: timestamp,
+        category,
+        message,
+        data,
+        type: 'log'
+    };
+
+    LOG_BUFFER.push(logEntry);
+    if (LOG_BUFFER.length > MAX_LOG_SIZE) LOG_BUFFER.shift();
+
+    const style = `color: #0066cc; font-weight: bold;`;
+    console.log(`%c[${timestamp}] ${category}: ${message}`, style, data || '');
+}
+
+function devWarn(category, message, data = null) {
+    if (!DEV_MODE) return;
+
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = {
+        time: timestamp,
+        category,
+        message,
+        data,
+        type: 'warn'
+    };
+
+    LOG_BUFFER.push(logEntry);
+    if (LOG_BUFFER.length > MAX_LOG_SIZE) LOG_BUFFER.shift();
+
+    const style = `color: #ff9900; font-weight: bold;`;
+    console.warn(`%c[${timestamp}] ${category}: ${message}`, style, data || '');
+}
+
+function devError(category, message, data = null) {
+    if (!DEV_MODE) return;
+
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = {
+        time: timestamp,
+        category,
+        message,
+        data,
+        type: 'error'
+    };
+
+    LOG_BUFFER.push(logEntry);
+    if (LOG_BUFFER.length > MAX_LOG_SIZE) LOG_BUFFER.shift();
+
+    const style = `color: #cc0000; font-weight: bold;`;
+    console.error(`%c[${timestamp}] ${category}: ${message}`, style, data || '');
+}
+
+// Network logging array
+const NETWORK_LOG = [];
+
+// Network logging wrapper
+async function fetchWithLogging(url, options = {}) {
+    const method = options.method || 'GET';
+    const startTime = performance.now();
+    const shortUrl = url.replace(API_BASE, '');
+
+    devLog('API', `${method} ${shortUrl}`, options.headers || {});
+
+    try {
+        const response = await fetch(url, options);
+        const duration = (performance.now() - startTime).toFixed(2);
+        const contentType = response.headers.get('content-type');
+
+        let data;
+        let size = 0;
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.clone().json();
+            size = JSON.stringify(data).length;
+        } else {
+            data = await response.clone().text();
+            size = data.length;
+        }
+
+        const logEntry = {
+            time: new Date().toLocaleTimeString(),
+            method,
+            url: shortUrl,
+            status: response.status,
+            duration: parseFloat(duration),
+            size
+        };
+        NETWORK_LOG.push(logEntry);
+
+        devLog('API', `${method} ${shortUrl} → ${response.status} (${duration}ms)`, {
+            status: response.status,
+            statusText: response.statusText,
+            duration: `${duration}ms`,
+            size: `${(size / 1024).toFixed(2)}KB`,
+            body: data
+        });
+
+        // Re-attach the body for the caller
+        response._body = data;
+        return response;
+    } catch (error) {
+        const duration = (performance.now() - startTime).toFixed(2);
+        const logEntry = {
+            time: new Date().toLocaleTimeString(),
+            method,
+            url: shortUrl,
+            status: 0,
+            duration: parseFloat(duration),
+            size: 0
+        };
+        NETWORK_LOG.push(logEntry);
+        devError('API', `${method} ${shortUrl} failed (${duration}ms)`, error.message);
+        throw error;
+    }
+}
+
+// Open dev console in new window
+function openDevConsole() {
+    devLog('DEV', 'Opening developer console...');
+    const devWindow = window.open('/dev-console.html', 'dev-console', 'width=1200,height=600,resizable=yes');
+    devWindow.focus();
+}
+
+// ============================================================
 // API Base URL
+// ============================================================
+
 const API_BASE = window.location.origin;
+
+devLog('INIT', 'Application started', { apiBase: API_BASE, timestamp: new Date().toISOString() });
 
 // Auth check
 function checkAuth() {
@@ -17,20 +158,20 @@ function checkAuth() {
     fetch(`${API_BASE}/api/verify`, {
         headers: { 'Authorization': `Bearer ${token}` }
     })
-    .then(res => {
-        if (!res.ok) {
-            localStorage.removeItem('token');
-            localStorage.removeItem('username');
+        .then(res => {
+            if (!res.ok) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('username');
+                window.location.href = '/login.html';
+                return;
+            }
+            if (authCheck) authCheck.style.display = 'none';
+            const username = localStorage.getItem('username');
+            if (userDisplay) userDisplay.textContent = `👤 ${username}`;
+        })
+        .catch(() => {
             window.location.href = '/login.html';
-            return;
-        }
-        if (authCheck) authCheck.style.display = 'none';
-        const username = localStorage.getItem('username');
-        if (userDisplay) userDisplay.textContent = `👤 ${username}`;
-    })
-    .catch(() => {
-        window.location.href = '/login.html';
-    });
+        });
 
     // Logout handler
     if (logoutBtn) {
@@ -779,6 +920,20 @@ document.addEventListener('DOMContentLoaded', () => {
     initAssetToggle();
     initOrderForm();
     initOptionsChain();
+
+    // Initialize dev console button
+    const devConsoleBtn = document.getElementById('dev-console-btn');
+    if (devConsoleBtn) {
+        devConsoleBtn.addEventListener('click', openDevConsole);
+    }
+
+    // Keyboard shortcut: Ctrl+Shift+D to open dev console
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+            e.preventDefault();
+            openDevConsole();
+        }
+    });
 
     if (checkAuth()) {
         fetchAccount();

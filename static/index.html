@@ -1,12 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Alpaca Trading Dashboard - manage your stock and options portfolio with real-time data.">
+    <meta name="description"
+        content="Alpaca Trading Dashboard - manage your stock and options portfolio with real-time data.">
     <title>Alpaca Trading Dashboard</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -14,6 +17,8 @@
             <div class="header-controls">
                 <span id="user-display" style="margin-right: 15px; color: #888;"></span>
                 <a href="/settings.html" class="btn-refresh">⚙️ Settings</a>
+                <button id="dev-console-btn" class="btn-refresh" style="margin-left: 10px; background-color: #333;">🛠️
+                    Dev Console</button>
                 <button id="logout-btn" class="btn-refresh" style="margin-left: 10px;">Logout</button>
             </div>
         </header>
@@ -118,15 +123,18 @@
         <!-- Orders Section -->
         <section class="card" id="orders-section">
             <h2>Recent Orders</h2>
-            <div class="orders-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <div class="orders-header"
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                 <div style="display: flex; gap: 10px; align-items: center;">
                     <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
                         <input type="checkbox" id="select-all-orders">
                         <span>Select All</span>
                     </label>
-                    <button type="button" id="cancel-selected-btn" class="btn-cancel-selected" style="display: none;">Cancel Selected</button>
+                    <button type="button" id="cancel-selected-btn" class="btn-cancel-selected"
+                        style="display: none;">Cancel Selected</button>
                 </div>
-                <button type="button" id="cancel-all-orders-btn" class="btn-cancel-all" style="display: none;">Cancel All Orders</button>
+                <button type="button" id="cancel-all-orders-btn" class="btn-cancel-all" style="display: none;">Cancel
+                    All Orders</button>
             </div>
             <div class="loading" id="orders-loading">Loading orders...</div>
             <div id="orders-container">
@@ -171,7 +179,7 @@
                         <div class="form-group">
                             <label for="symbol">Symbol</label>
                             <input type="text" id="symbol" name="symbol" placeholder="SPY" value="SPY" required
-                                   pattern="[A-Z]+" title="Stock symbol (uppercase letters only)">
+                                pattern="[A-Z]+" title="Stock symbol (uppercase letters only)">
                         </div>
                         <div class="form-group">
                             <label for="side">Side</label>
@@ -182,7 +190,8 @@
                         </div>
                         <div class="form-group">
                             <label for="qty">Quantity</label>
-                            <input type="number" id="qty" name="qty" min="1" step="1" placeholder="1" value="1" required>
+                            <input type="number" id="qty" name="qty" min="1" step="1" placeholder="1" value="1"
+                                required>
                         </div>
                     </div>
                     <div class="form-row">
@@ -196,8 +205,10 @@
                         <div class="form-group">
                             <label for="limit-price">Limit Price</label>
                             <div class="input-with-button">
-                                <input type="number" id="limit-price" name="limit-price" step="0.01" placeholder="Optional">
-                                <button type="button" id="fill-price-btn" class="btn-fill-price" style="display: none;">Fill Market Price</button>
+                                <input type="number" id="limit-price" name="limit-price" step="0.01"
+                                    placeholder="Optional">
+                                <button type="button" id="fill-price-btn" class="btn-fill-price"
+                                    style="display: none;">Fill Market Price</button>
                             </div>
                         </div>
                         <div class="form-group">
@@ -217,7 +228,7 @@
                         <div class="form-group">
                             <label for="option-symbol">Underlying Symbol</label>
                             <input type="text" id="option-symbol" name="option-symbol" placeholder="SPY" value="SPY"
-                                   pattern="[A-Z]+" title="Stock symbol (uppercase letters only)">
+                                pattern="[A-Z]+" title="Stock symbol (uppercase letters only)">
                         </div>
                         <div class="form-group">
                             <label for="option-type">Option Type</label>
@@ -253,7 +264,8 @@
                         </div>
                         <div class="form-group">
                             <label for="option-qty">Contracts</label>
-                            <input type="number" id="option-qty" name="option-qty" min="1" step="1" placeholder="1" value="1">
+                            <input type="number" id="option-qty" name="option-qty" min="1" step="1" placeholder="1"
+                                value="1">
                         </div>
                     </div>
                     <div class="form-row">
@@ -267,8 +279,10 @@
                         <div class="form-group">
                             <label for="option-limit-price">Limit Price (per contract)</label>
                             <div class="input-with-button">
-                                <input type="number" id="option-limit-price" name="option-limit-price" step="0.01" placeholder="Optional">
-                                <button type="button" id="fill-option-price-btn" class="btn-fill-price" style="display: none;">Fill Market Price</button>
+                                <input type="number" id="option-limit-price" name="option-limit-price" step="0.01"
+                                    placeholder="Optional">
+                                <button type="button" id="fill-option-price-btn" class="btn-fill-price"
+                                    style="display: none;">Fill Market Price</button>
                             </div>
                         </div>
                         <div class="form-group">
@@ -294,4 +308,5 @@
 
     <script src="/static/app.js?v=4"></script>
 </body>
+
 </html>
