@@ -909,35 +909,23 @@ if (loadOptionsBtn) {
                 stockPrice = priceData.quote.ap || priceData.quote.bp || 0;
             }
 
-            // Get options chain data (calls and puts)
-            const [callsResponse, putsResponse] = await Promise.all([
-                fetch(`${API_BASE}/api/option-chain/${symbol}?type=call`, {
-                    headers: getAuthHeaders()
-                }),
-                fetch(`${API_BASE}/api/option-chain/${symbol}?type=put`, {
-                    headers: getAuthHeaders()
-                })
-            ]);
-
-            // Since we don't have an option-chain endpoint, use the strike data
-            // Fetch ITM strikes from option-quote endpoint
-            const strikesResponse = await fetch(`${API_BASE}/api/option-quote/${symbol}`, {
+            // Get real options chain data from the new Rust endpoint
+            const response = await fetch(`${API_BASE}/api/option-chain/${symbol}`, {
                 headers: getAuthHeaders()
             });
 
-            if (!strikesResponse.ok) {
-                throw new Error('Failed to load options data');
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to load options data');
             }
 
-            const strikesData = await strikesResponse.json();
+            const chainData = await response.json();
 
             // Store data for charting
             optionsData = {
                 symbol: symbol,
-                stockPrice: stockPrice,
-                callStrike: strikesData.call_strike,
-                putStrike: strikesData.put_strike,
-                strikeIncrement: strikesData.strike_increment
+                stockPrice: chainData.underlying_price,
+                strikes: chainData.strikes
             };
 
             // Display data
@@ -960,7 +948,7 @@ if (loadOptionsBtn) {
 }
 
 function drawOptionsChart() {
-    if (!optionsData || !optionsCanvas) return;
+    if (!optionsData || !optionsCanvas || !optionsData.strikes || optionsData.strikes.length === 0) return;
 
     const ctx = optionsCanvas.getContext('2d');
     const width = optionsCanvas.width;
@@ -970,13 +958,15 @@ function drawOptionsChart() {
     ctx.clearRect(0, 0, width, height);
 
     const stockPrice = optionsData.stockPrice;
-    const strikeIncrement = optionsData.strikeIncrement || 5;
 
-    // Calculate strikes range (±15 strikes from current price)
-    const numStrikes = 15;
-    const baseStrike = Math.floor(stockPrice / strikeIncrement) * strikeIncrement;
-    const minStrike = baseStrike - (numStrikes * strikeIncrement);
-    const maxStrike = baseStrike + (numStrikes * strikeIncrement);
+    // Get strikes from data
+    const strikes = optionsData.strikes.map(s => s.strike);
+    const minStrike = Math.min(...strikes);
+    const maxStrike = Math.max(...strikes);
+
+    // Calculate a reasonable strike increment for grid lines
+    const range = maxStrike - minStrike;
+    const strikeIncrement = range / 10;
 
     // Chart dimensions
     const margin = { top: 40, right: 60, bottom: 50, left: 80 };
@@ -1046,88 +1036,63 @@ function drawOptionsChart() {
     ctx.fillStyle = 'rgba(255, 68, 68, 0.1)';
     ctx.fillRect(putITMStart, margin.top, putITMEnd - putITMStart, chartHeight);
 
-    // Draw simulated option prices (ITM options have intrinsic value)
-    // Call price increases as strike decreases (ITM)
-    // Put price increases as strike increases (ITM)
-
-    const maxPrice = stockPrice * 0.15; // Max expected option price
+    // Draw real option prices from data
+    const allPrices = optionsData.strikes.flatMap(s => [s.call.ask, s.put.ask]);
+    const maxPrice = Math.max(...allPrices, 1);
 
     const yScale = (price) => {
         return margin.top + chartHeight - (price / maxPrice) * chartHeight;
     };
 
+    // Sort strikes for drawing lines
+    const sortedStrikes = [...optionsData.strikes].sort((a, b) => a.strike - b.strike);
+
     // Draw call price curve (ask)
     ctx.strokeStyle = '#00ff88';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    for (let strike = minStrike; strike <= maxStrike; strike += strikeIncrement / 2) {
-        const x = xScale(strike);
-        // Simulate call price: higher when strike is lower (ITM)
-        const intrinsic = Math.max(0, stockPrice - strike);
-        const timeValue = Math.max(0.5, (stockPrice * 0.02) * (1 - Math.abs(strike - stockPrice) / stockPrice));
-        const askPrice = intrinsic + timeValue;
-        const y = yScale(askPrice);
-        if (strike === minStrike) {
-            ctx.moveTo(x, y);
-        } else {
-            ctx.lineTo(x, y);
-        }
-    }
+    sortedStrikes.forEach((s, i) => {
+        const x = xScale(s.strike);
+        const y = yScale(s.call.ask);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
     ctx.stroke();
 
-    // Draw call price curve (bid) - slightly lower
+    // Draw call price curve (bid)
     ctx.strokeStyle = '#88ffaa';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    for (let strike = minStrike; strike <= maxStrike; strike += strikeIncrement / 2) {
-        const x = xScale(strike);
-        const intrinsic = Math.max(0, stockPrice - strike);
-        const timeValue = Math.max(0.5, (stockPrice * 0.02) * (1 - Math.abs(strike - stockPrice) / stockPrice));
-        const bidPrice = intrinsic + timeValue - 0.1;
-        const y = yScale(bidPrice);
-        if (strike === minStrike) {
-            ctx.moveTo(x, y);
-        } else {
-            ctx.lineTo(x, y);
-        }
-    }
+    sortedStrikes.forEach((s, i) => {
+        const x = xScale(s.strike);
+        const y = yScale(s.call.bid);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
     ctx.stroke();
 
     // Draw put price curve (ask)
     ctx.strokeStyle = '#ff4444';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    for (let strike = minStrike; strike <= maxStrike; strike += strikeIncrement / 2) {
-        const x = xScale(strike);
-        // Simulate put price: higher when strike is higher (ITM)
-        const intrinsic = Math.max(0, strike - stockPrice);
-        const timeValue = Math.max(0.5, (stockPrice * 0.02) * (1 - Math.abs(strike - stockPrice) / stockPrice));
-        const askPrice = intrinsic + timeValue;
-        const y = yScale(askPrice);
-        if (strike === minStrike) {
-            ctx.moveTo(x, y);
-        } else {
-            ctx.lineTo(x, y);
-        }
-    }
+    sortedStrikes.forEach((s, i) => {
+        const x = xScale(s.strike);
+        const y = yScale(s.put.ask);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
     ctx.stroke();
 
     // Draw put price curve (bid)
     ctx.strokeStyle = '#ff8888';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    for (let strike = minStrike; strike <= maxStrike; strike += strikeIncrement / 2) {
-        const x = xScale(strike);
-        const intrinsic = Math.max(0, strike - stockPrice);
-        const timeValue = Math.max(0.5, (stockPrice * 0.02) * (1 - Math.abs(strike - stockPrice) / stockPrice));
-        const bidPrice = intrinsic + timeValue - 0.1;
-        const y = yScale(bidPrice);
-        if (strike === minStrike) {
-            ctx.moveTo(x, y);
-        } else {
-            ctx.lineTo(x, y);
-        }
-    }
+    sortedStrikes.forEach((s, i) => {
+        const x = xScale(s.strike);
+        const y = yScale(s.put.bid);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
     ctx.stroke();
 
     // Draw Y-axis labels
@@ -1151,33 +1116,73 @@ function drawOptionsChart() {
         const rect = optionsCanvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const strike = minStrike + ((x - margin.left) / chartWidth) * (maxStrike - minStrike);
-        const roundedStrike = Math.round(strike / strikeIncrement) * strikeIncrement;
 
-        showStrikeDetails(roundedStrike);
+        // Find closest strike in data
+        let closest = sortedStrikes[0];
+        let minDist = Math.abs(strike - closest.strike);
+
+        sortedStrikes.forEach(s => {
+            const dist = Math.abs(strike - s.strike);
+            if (dist < minDist) {
+                minDist = dist;
+                closest = s;
+            }
+        });
+
+        showStrikeDetails(closest);
     };
 }
 
-function showStrikeDetails(strike) {
-    if (!optionsData) return;
+function selectOptionForOrder(symbol, type, strike, price) {
+    // Switch to option tab
+    const optionToggle = document.querySelector('.toggle-btn[data-class="option"]');
+    if (optionToggle) optionToggle.click();
+
+    // Fill fields
+    document.getElementById('option-symbol').value = symbol;
+    document.getElementById('option-type-hidden').value = type;
+    document.getElementById('strike-price').value = strike;
+    document.getElementById('option-limit-price').value = price;
+    document.getElementById('option-order-type').value = 'limit';
+
+    // Trigger display updates
+    const event = new Event('change');
+    document.getElementById('option-order-type').dispatchEvent(event);
+
+    // Update buttons UI
+    document.querySelectorAll('.option-type-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.type === type) btn.classList.add('active');
+    });
+
+    // Scroll to order form
+    document.getElementById('new-order-section').scrollIntoView({ behavior: 'smooth' });
+}
+
+window.selectOptionForOrder = selectOptionForOrder;
+
+function showStrikeDetails(strikeData) {
+    if (!optionsData || !strikeData) return;
 
     const stockPrice = optionsData.stockPrice;
-    const strikeIncrement = optionsData.strikeIncrement || 5;
+    const strike = strikeData.strike;
 
-    // Calculate approximate prices
-    const callIntrinsic = Math.max(0, stockPrice - strike);
-    const putIntrinsic = Math.max(0, strike - stockPrice);
-    const timeValue = Math.max(0.5, (stockPrice * 0.02) * (1 - Math.abs(strike - stockPrice) / stockPrice));
-
-    const callAsk = (callIntrinsic + timeValue).toFixed(2);
-    const callBid = (callIntrinsic + timeValue - 0.1).toFixed(2);
-    const putAsk = (putIntrinsic + timeValue).toFixed(2);
-    const putBid = (putIntrinsic + timeValue - 0.1).toFixed(2);
+    const callAsk = strikeData.call.ask.toFixed(2);
+    const callBid = strikeData.call.bid.toFixed(2);
+    const putAsk = strikeData.put.ask.toFixed(2);
+    const putBid = strikeData.put.bid.toFixed(2);
 
     const callMoneyness = strike < stockPrice ? 'ITM' : (strike > stockPrice ? 'OTM' : 'ATM');
     const putMoneyness = strike > stockPrice ? 'ITM' : (strike < stockPrice ? 'OTM' : 'ATM');
 
     selectedOptionInfo.innerHTML = `
         <div class="option-detail-grid">
+            <div class="option-detail-item">
+                <button class="btn-fill-price" onclick="selectOptionForOrder('${strikeData.call.symbol}', 'call', ${strike}, ${callAsk})">Select Call</button>
+            </div>
+            <div class="option-detail-item">
+                <button class="btn-fill-price" style="background: linear-gradient(135deg, #ff4444 0%, #cc0000 100%);" onclick="selectOptionForOrder('${strikeData.put.symbol}', 'put', ${strike}, ${putAsk})">Select Put</button>
+            </div>
             <div class="option-detail-item">
                 <span class="label">Strike</span>
                 <span class="value">$${strike.toFixed(2)}</span>

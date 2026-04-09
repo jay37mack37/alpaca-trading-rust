@@ -1,6 +1,7 @@
 use reqwest::Client;
 use serde_json::Value;
 
+use crate::models::option_chain::{OptionChainResponse, OptionEntry, StrikeData};
 use crate::models::order::OrderRequest;
 
 const ALPACA_PAPER_URL: &str = "https://paper-api.alpaca.markets/v2";
@@ -104,6 +105,10 @@ impl AlpacaClient {
 
         if let Some(price) = order.limit_price {
             body["limit_price"] = serde_json::json!(price.to_string());
+        }
+
+        if let Some(asset_class) = order.asset_class {
+            body["asset_class"] = serde_json::json!(asset_class);
         }
 
         let response = self.client
@@ -218,6 +223,99 @@ impl AlpacaClient {
             "put_strike": put_strike,
             "strike_increment": strike_increment
         }))
+    }
+
+    /// Get real option chain for a symbol
+    pub async fn get_option_chain(&self, symbol: &str) -> Result<OptionChainResponse, reqwest::Error> {
+        // 1. Get current stock price
+        let price_url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
+        let price_response = self.client
+            .get(&price_url)
+            .headers(self.build_headers())
+            .send()
+            .await?;
+
+        let price_data: Value = price_response.json().await?;
+        let quote_obj = price_data.get("quote").unwrap_or(&price_data);
+        let ask_price = quote_obj.get("ap").and_then(|p| p.as_f64()).unwrap_or(0.0);
+        let bid_price = quote_obj.get("bp").and_then(|p| p.as_f64()).unwrap_or(0.0);
+        let underlying_price = if ask_price > 0.0 { ask_price } else { bid_price };
+
+        // 2. Get option snapshots for the underlying
+        // We fetch for both calls and puts to build the chain
+        let mut strikes_map: std::collections::BTreeMap<String, StrikeData> = std::collections::BTreeMap::new();
+
+        for option_type in &["call", "put"] {
+            let url = format!(
+                "{}/snapshots/{}?feed=indicative&type={}",
+                ALPACA_OPTIONS_URL,
+                symbol,
+                option_type
+            );
+
+            let response = self.client
+                .get(&url)
+                .headers(self.build_headers())
+                .send()
+                .await?;
+
+            let data: Value = response.json().await?;
+
+            if let Some(snapshots) = data.get("snapshots").and_then(|s| s.as_object()) {
+                for (occ_symbol, snapshot) in snapshots {
+                    if let Some(quote) = snapshot.get("latestQuote") {
+                        let bid = quote.get("bp").and_then(|p| p.as_f64()).unwrap_or(0.0);
+                        let ask = quote.get("ap").and_then(|p| p.as_f64()).unwrap_or(0.0);
+                        let size = quote.get("as").and_then(|p| p.as_i64()).unwrap_or(0);
+
+                        // Parse strike from OCC symbol: SYMBOLYYMMDDC/PSTRIKE
+                        // Strike is the last 8 digits
+                        if occ_symbol.len() >= 8 {
+                            let strike_part = &occ_symbol[occ_symbol.len() - 8..];
+                            if let Ok(strike_val) = strike_part.parse::<f64>() {
+                                let strike_price = strike_val / 1000.0;
+                                let strike_key = format!("{:.3}", strike_price);
+
+                                let entry = OptionEntry {
+                                    symbol: occ_symbol.clone(),
+                                    bid,
+                                    ask,
+                                    size,
+                                };
+
+                                let strike_data = strikes_map.entry(strike_key).or_insert_with(|| StrikeData {
+                                    strike: strike_price,
+                                    call: OptionEntry { symbol: "".into(), bid: 0.0, ask: 0.0, size: 0 },
+                                    put: OptionEntry { symbol: "".into(), bid: 0.0, ask: 0.0, size: 0 },
+                                });
+
+                                if *option_type == "call" {
+                                    strike_data.call = entry;
+                                } else {
+                                    strike_data.put = entry;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Filter strikes to be around the underlying price (blazing fast in Rust)
+        // Let's take ±10% range around underlying price
+        let min_range = underlying_price * 0.9;
+        let max_range = underlying_price * 1.1;
+
+        let filtered_strikes: Vec<StrikeData> = strikes_map
+            .into_values()
+            .filter(|s| s.strike >= min_range && s.strike <= max_range)
+            .collect();
+
+        Ok(OptionChainResponse {
+            symbol: symbol.to_string(),
+            underlying_price,
+            strikes: filtered_strikes,
+        })
     }
 
     /// Get current price for an option
