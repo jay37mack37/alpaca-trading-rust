@@ -515,6 +515,80 @@ footer a:hover {
     text-decoration: underline;
 }
 
+/* Tab System */
+.tabs-nav {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.tab-btn {
+    padding: 12px 24px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #888;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.tab-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.tab-btn.active {
+    background: linear-gradient(135deg, #4a9eff 0%, #0066cc 100%);
+    color: #fff;
+    border-color: #4a9eff;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* History Filters */
+.history-filters {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+}
+
+.history-filters .form-group {
+    min-width: 120px;
+}
+
+.sortable {
+    cursor: pointer;
+    position: relative;
+    user-select: none;
+}
+
+.sortable:hover {
+    color: #fff;
+    background: rgba(74, 158, 255, 0.3);
+}
+
+.event-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.event-placed { background: rgba(74, 158, 255, 0.2); color: #4a9eff; }
+.event-cancelled { background: rgba(255, 68, 68, 0.2); color: #ff4444; }
+.event-filled { background: rgba(0, 255, 136, 0.2); color: #00ff88; }
+.event-status_change { background: rgba(255, 255, 255, 0.1); color: #ccc; }
+
 /* Responsive */
 @media (max-width: 768px) {
     header {
