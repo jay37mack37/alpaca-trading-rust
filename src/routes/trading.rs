@@ -25,26 +25,17 @@ pub struct OrdersQuery {
 
 /// Get account information
 pub async fn get_account(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    // First try to get user's specific API keys
-    let api_client = match get_authenticated_client(headers).await {
-        Ok(c) => c,
-        Err(_) => {
-            // Fall back to environment client
-            state.alpaca.ok_or((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": "No API keys configured. Please configure in Settings."
-            }))))?
-        }
-    };
+    let api_client = get_authenticated_client(&headers).await?;
 
     match api_client.get_account().await {
         Ok(account) => Ok(Json(account)),
         Err(e) => {
             tracing::error!("Failed to get account: {}", e);
             Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "message": format!("API Error: {}", e)
+                "error": format!("API Error: {}", e)
             }))))
         }
     }
@@ -52,18 +43,11 @@ pub async fn get_account(
 
 /// Get option chain for a symbol
 pub async fn get_option_chain(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(symbol): Path<String>,
 ) -> Result<Json<OptionChainResponse>, (StatusCode, Json<Value>)> {
-    let api_client = match get_authenticated_client(headers).await {
-        Ok(c) => c,
-        Err(_) => {
-            state.alpaca.ok_or((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": "No API keys configured"
-            }))))?
-        }
-    };
+    let api_client = get_authenticated_client(&headers).await?;
 
     match api_client.get_option_chain(&symbol).await {
         Ok(chain) => Ok(Json(chain)),
@@ -78,17 +62,10 @@ pub async fn get_option_chain(
 
 /// Get all open positions
 pub async fn get_positions(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Vec<Value>>, (StatusCode, Json<Value>)> {
-    let api_client = match get_authenticated_client(headers).await {
-        Ok(c) => c,
-        Err(_) => {
-            state.alpaca.ok_or((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": "No API keys configured"
-            }))))?
-        }
-    };
+    let api_client = get_authenticated_client(&headers).await?;
 
     match api_client.get_positions().await {
         Ok(positions) => Ok(Json(positions)),
@@ -103,18 +80,11 @@ pub async fn get_positions(
 
 /// Get orders
 pub async fn get_orders(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     headers: axum::http::HeaderMap,
     Query(query): Query<OrdersQuery>,
 ) -> Result<Json<Vec<Value>>, (StatusCode, Json<Value>)> {
-    let api_client = match get_authenticated_client(headers).await {
-        Ok(c) => c,
-        Err(_) => {
-            state.alpaca.ok_or((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": "No API keys configured"
-            }))))?
-        }
-    };
+    let api_client = get_authenticated_client(&headers).await?;
 
     match api_client.get_orders(query.status.as_deref()).await {
         Ok(orders) => Ok(Json(orders)),
@@ -129,23 +99,32 @@ pub async fn get_orders(
 
 /// Create a new order
 pub async fn create_order(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     headers: axum::http::HeaderMap,
     Json(order): Json<OrderRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let api_client = match get_authenticated_client(headers).await {
-        Ok(c) => c,
-        Err(_) => {
-            state.alpaca.ok_or((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": "No API keys configured"
-            }))))?
-        }
-    };
+    let api_client = get_authenticated_client(&headers).await?;
+
+    // Get username for auditing
+    let username = crate::routes::auth::get_username_from_headers(&headers).unwrap_or_else(|_| "unknown".to_string());
+
+    // Validate order request
+    if let Err(e) = order.validate() {
+        tracing::warn!(user = %username, symbol = %order.symbol, "Order validation failed: {}", e);
+        return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "error": format!("Validation Error: {}", e)
+        }))));
+    }
+
+    tracing::info!(user = %username, symbol = %order.symbol, qty = %order.qty, side = %order.side, "Placing order");
 
     match api_client.create_order(order).await {
-        Ok(order) => Ok(Json(order)),
+        Ok(order) => {
+            tracing::info!(user = %username, order_id = ?order.get("id"), "Order placed successfully");
+            Ok(Json(order))
+        },
         Err(e) => {
-            tracing::error!("Failed to create order: {}", e);
+            tracing::error!(user = %username, "Failed to create order: {}", e);
             Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
                 "error": format!("API Error: {}", e)
             }))))
@@ -155,18 +134,11 @@ pub async fn create_order(
 
 /// Get current price for a symbol
 pub async fn get_price(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(symbol): Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let api_client = match get_authenticated_client(headers).await {
-        Ok(c) => c,
-        Err(_) => {
-            state.alpaca.ok_or((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": "No API keys configured"
-            }))))?
-        }
-    };
+    let api_client = get_authenticated_client(&headers).await?;
 
     match api_client.get_current_price(&symbol).await {
         Ok(quote) => Ok(Json(quote)),
@@ -181,19 +153,12 @@ pub async fn get_price(
 
 /// Get option strikes for a symbol
 pub async fn get_option_strikes(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(symbol): Path<String>,
     Query(params): Query<OptionsQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let api_client = match get_authenticated_client(headers).await {
-        Ok(c) => c,
-        Err(_) => {
-            state.alpaca.ok_or((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": "No API keys configured"
-            }))))?
-        }
-    };
+    let api_client = get_authenticated_client(&headers).await?;
 
     let expiration = params.expiration.as_deref();
     match api_client.get_option_strikes(&symbol, expiration).await {
@@ -209,18 +174,11 @@ pub async fn get_option_strikes(
 
 /// Get current price for an option
 pub async fn get_option_price(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(symbol): Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let api_client = match get_authenticated_client(headers).await {
-        Ok(c) => c,
-        Err(_) => {
-            state.alpaca.ok_or((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": "No API keys configured"
-            }))))?
-        }
-    };
+    let api_client = get_authenticated_client(&headers).await?;
 
     match api_client.get_option_price(&symbol).await {
         Ok(quote) => Ok(Json(quote)),

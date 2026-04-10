@@ -13,6 +13,47 @@ pub struct OrderRequest {
     pub asset_class: Option<String>,
 }
 
+impl OrderRequest {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.symbol.is_empty() {
+            return Err("Symbol is required".to_string());
+        }
+
+        if self.qty <= 0.0 {
+            return Err("Quantity must be greater than zero".to_string());
+        }
+
+        let side = self.side.to_lowercase();
+        if side != "buy" && side != "sell" {
+            return Err("Side must be 'buy' or 'sell'".to_string());
+        }
+
+        let order_type = self.order_type.to_lowercase();
+        let valid_types = vec!["market", "limit", "stop", "stop_limit", "trailing_stop"];
+        if !valid_types.contains(&order_type.as_str()) {
+            return Err(format!("Invalid order type. Must be one of: {:?}", valid_types));
+        }
+
+        let tif = self.time_in_force.to_lowercase();
+        let valid_tifs = vec!["day", "gtc", "opg", "cls", "ioc", "fok"];
+        if !valid_tifs.contains(&tif.as_str()) {
+            return Err(format!("Invalid time in force. Must be one of: {:?}", valid_tifs));
+        }
+
+        if order_type == "limit" && self.limit_price.is_none() {
+            return Err("Limit price is required for limit orders".to_string());
+        }
+
+        if let Some(price) = self.limit_price {
+            if price <= 0.0 {
+                return Err("Limit price must be greater than zero".to_string());
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Order {
     pub id: String,
