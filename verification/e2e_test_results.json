@@ -1,0 +1,74 @@
+[
+  {
+    "test": "Login Invalid Credentials",
+    "passed": true,
+    "message": "Error message displayed",
+    "timestamp": "2026-04-09T11:29:23.661443"
+  },
+  {
+    "test": "Login Valid Credentials",
+    "passed": true,
+    "message": "Token stored in localStorage",
+    "timestamp": "2026-04-09T11:29:24.310404"
+  },
+  {
+    "test": "Dashboard Loads",
+    "passed": true,
+    "message": "",
+    "timestamp": "2026-04-09T11:29:24.445585"
+  },
+  {
+    "test": "Account Info Displays",
+    "passed": true,
+    "message": "Account: PA33NYK167B9, Buying Power: $199,454.94",
+    "timestamp": "2026-04-09T11:29:35.965854"
+  },
+  {
+    "test": "Positions Load",
+    "passed": true,
+    "message": "",
+    "timestamp": "2026-04-09T11:29:36.651138"
+  },
+  {
+    "test": "Orders Load",
+    "passed": true,
+    "message": "",
+    "timestamp": "2026-04-09T11:29:36.801937"
+  },
+  {
+    "test": "Order Creation Workflow",
+    "passed": true,
+    "message": "Form filled and submit enabled",
+    "timestamp": "2026-04-09T11:29:37.049356"
+  },
+  {
+    "test": "Order Validation",
+    "passed": true,
+    "message": "Validation working",
+    "timestamp": "2026-04-09T11:29:37.086853"
+  },
+  {
+    "test": "Options Chain Load",
+    "passed": true,
+    "message": "Options chain displayed",
+    "timestamp": "2026-04-09T11:29:38.582203"
+  },
+  {
+    "test": "Options Chart Display",
+    "passed": true,
+    "message": "Chart is interactive",
+    "timestamp": "2026-04-09T11:29:38.684959"
+  },
+  {
+    "test": "Settings Page Loads",
+    "passed": true,
+    "message": "",
+    "timestamp": "2026-04-09T11:29:38.875777"
+  },
+  {
+    "test": "Settings API Key Form",
+    "passed": true,
+    "message": "Found 5 input fields",
+    "timestamp": "2026-04-09T11:29:38.986208"
+  }
+]
