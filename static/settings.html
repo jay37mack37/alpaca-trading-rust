@@ -85,6 +85,7 @@
         </footer>
     </div>
 
+<script src="/static/auth-helper.js"></script>
     <script>
         // Check auth
         const token = localStorage.getItem('token');
@@ -94,9 +95,7 @@
 
         // Logout
         document.getElementById('logout-btn').addEventListener('click', () => {
-            localStorage.removeItem('token');
-            localStorage.removeItem('username');
-            window.location.href = '/login.html';
+            performLogout('', token);
         });
 
         // Environment warning
