@@ -11,6 +11,10 @@ mod models;
 mod routes;
 
 use api::alpaca::AlpacaClient;
+use api::price_streamer::PriceStreamer;
+use api::ws_manager::WsManager;
+use routes::websocket::AppState;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
@@ -27,15 +31,27 @@ async fn main() {
     auth::init();
 
     // Initialize Alpaca client (for demo/fallback)
-    let alpaca_client = match AlpacaClient::new() {
+    let (alpaca_client, api_key, api_secret) = match AlpacaClient::new() {
         Ok(client) => {
             tracing::info!("Alpaca client initialized from environment variables");
-            Some(client)
+            let key = std::env::var("ALPACA_API_KEY").ok();
+            let secret = std::env::var("ALPACA_API_SECRET").ok();
+            (Some(client), key, secret)
         }
         Err(_) => {
             tracing::info!("No Alpaca API keys in environment. Configure in Settings.");
-            None
+            (None, None, None)
         }
+    };
+
+    // Initialize WebSocket Manager and Streamer
+    let ws_manager = Arc::new(WsManager::new());
+    let streamer = PriceStreamer::new(ws_manager.clone(), api_key, api_secret);
+    streamer.start().await;
+
+    let state = AppState {
+        alpaca: alpaca_client,
+        ws_manager,
     };
 
     // Build CORS layer for development
@@ -67,7 +83,10 @@ async fn main() {
         .route("/api/orders/{id}", get(routes::orders::get_order_by_id))
         .route("/api/orders/{id}", delete(routes::orders::cancel_order))
         .route("/api/orders/cancel-all", post(routes::orders::cancel_all_orders))
-        .with_state(alpaca_client)
+
+        // WebSocket route
+        .route("/api/ws/prices", get(routes::websocket::ws_handler))
+        .with_state(state)
         .fallback_service(ServeDir::new("static"))
         .nest_service("/static", ServeDir::new("static"))
         .layer(cors);
