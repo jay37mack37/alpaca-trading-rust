@@ -1,10 +1,8 @@
 use axum::{
-    extract::State,
     http::StatusCode,
     Json,
 };
 use serde_json::{json, Value};
-use std::sync::Arc;
 
 use crate::api::alpaca::AlpacaClient;
 use crate::auth;
