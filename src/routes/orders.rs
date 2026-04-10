@@ -4,11 +4,13 @@ use axum::{
 };
 use serde_json::{json, Value};
 
-use crate::api::alpaca::AlpacaClient;
 use crate::routes::auth::get_authenticated_client;
+use crate::routes::websocket::AppState;
+use axum::extract::State;
 
 /// Cancel an order by ID
 pub async fn cancel_order(
+    State(_state): State<AppState>,
     headers: axum::http::HeaderMap,
     path: axum::extract::Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
@@ -31,6 +33,7 @@ pub async fn cancel_order(
 
 /// Cancel all open orders
 pub async fn cancel_all_orders(
+    State(_state): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let api_client = get_authenticated_client(headers).await?;
@@ -52,6 +55,7 @@ pub async fn cancel_all_orders(
 
 /// Get a specific order by ID
 pub async fn get_order_by_id(
+    State(_state): State<AppState>,
     headers: axum::http::HeaderMap,
     path: axum::extract::Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
