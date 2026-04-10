@@ -111,6 +111,14 @@
                 const response = await fetch('/api/config/status', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
+
+                if (response.status === 401) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('username');
+                    window.location.href = '/login.html';
+                    return;
+                }
+
                 const data = await response.json();
 
                 if (data.configured) {
@@ -151,6 +159,13 @@
                     },
                     body: JSON.stringify({ api_key: apiKey, api_secret: apiSecret, environment })
                 });
+
+                if (response.status === 401) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('username');
+                    window.location.href = '/login.html';
+                    return;
+                }
 
                 const data = await response.json();
 
@@ -199,6 +214,13 @@
                     },
                     body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
                 });
+
+                if (response.status === 401) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('username');
+                    window.location.href = '/login.html';
+                    return;
+                }
 
                 const data = await response.json();
 
