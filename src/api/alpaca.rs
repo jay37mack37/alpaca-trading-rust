@@ -50,8 +50,12 @@ impl AlpacaClient {
 
     fn build_headers(&self) -> reqwest::header::HeaderMap {
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("APCA-API-KEY-ID", self.api_key.parse().unwrap());
-        headers.insert("APCA-API-SECRET-KEY", self.api_secret.parse().unwrap());
+        if let Ok(key) = self.api_key.parse() {
+            headers.insert("APCA-API-KEY-ID", key);
+        }
+        if let Ok(secret) = self.api_secret.parse() {
+            headers.insert("APCA-API-SECRET-KEY", secret);
+        }
         headers
     }
 
@@ -64,7 +68,7 @@ impl AlpacaClient {
             .send()
             .await?;
 
-        response.json().await
+        response.error_for_status()?.json().await
     }
 
     /// Get all open positions
@@ -76,7 +80,7 @@ impl AlpacaClient {
             .send()
             .await?;
 
-        response.json().await
+        response.error_for_status()?.json().await
     }
 
     /// Get orders
@@ -91,7 +95,7 @@ impl AlpacaClient {
             .send()
             .await?;
 
-        response.json().await
+        response.error_for_status()?.json().await
     }
 
     /// Create a new order
@@ -192,7 +196,14 @@ impl AlpacaClient {
         let bid_price = quote_obj.get("bp").and_then(|p| p.as_f64()).unwrap_or(0.0);
 
         // Use ask price if available, otherwise bid price
-        let current_price = if ask_price > 0.0 { ask_price } else { bid_price };
+        let current_price = if ask_price > 0.0 {
+            ask_price
+        } else if bid_price > 0.0 {
+            bid_price
+        } else {
+            // If neither ask nor bid is available, check for 'price' or 'last' in case of different data format
+            quote_obj.get("price").and_then(|p| p.as_f64()).unwrap_or(0.0)
+        };
 
         // Determine strike increment based on price level
         let strike_increment = if current_price < 25.0 { 0.5 } else if current_price < 200.0 { 1.0 } else { 5.0 };
@@ -250,7 +261,13 @@ impl AlpacaClient {
         let quote_obj = price_data.get("quote").unwrap_or(&price_data);
         let ask_price = quote_obj.get("ap").and_then(|p| p.as_f64()).unwrap_or(0.0);
         let bid_price = quote_obj.get("bp").and_then(|p| p.as_f64()).unwrap_or(0.0);
-        let underlying_price = if ask_price > 0.0 { ask_price } else { bid_price };
+        let underlying_price = if ask_price > 0.0 {
+            ask_price
+        } else if bid_price > 0.0 {
+            bid_price
+        } else {
+            quote_obj.get("price").and_then(|p| p.as_f64()).unwrap_or(0.0)
+        };
 
         // 2. Get option snapshots for the underlying
         // We fetch for both calls and puts to build the chain
@@ -416,7 +433,15 @@ impl AlpacaClient {
 
 impl Default for AlpacaClient {
     fn default() -> Self {
-        Self::new().expect("Failed to create AlpacaClient")
+        Self::new().unwrap_or_else(|e| {
+            tracing::error!("Failed to create default AlpacaClient: {}", e);
+            Self {
+                client: Client::new(),
+                api_key: "".to_string(),
+                api_secret: "".to_string(),
+                base_url: ALPACA_PAPER_URL.to_string(),
+            }
+        })
     }
 }
 

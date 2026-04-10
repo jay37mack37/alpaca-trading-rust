@@ -298,7 +298,7 @@ async function fetchAccount() {
         const data = await response.json();
 
         if (!response.ok) {
-            throw new Error(data.message || 'Failed to fetch account');
+            throw new Error(data.error || data.message || 'Failed to fetch account');
         }
 
         accountLoading.style.display = 'none';
@@ -342,7 +342,7 @@ async function fetchPositions() {
         const data = await response.json();
 
         if (!response.ok) {
-            throw new Error(data.message || 'Failed to fetch positions');
+            throw new Error(data.error || data.message || 'Failed to fetch positions');
         }
 
         positionsLoading.style.display = 'none';
@@ -898,7 +898,7 @@ function initOrderForm() {
                 const strikeStr = (parseFloat(strike) * 1000).toFixed(0).padStart(8, '0');
                 const optionSymbol = underlying.padEnd(6, ' ') + yy + mm + dd + cp + strikeStr;
 
-                const response = await fetch(`${API_BASE}/api/option-strikes/${optionSymbol.replace(/\s/g, '')}`, { headers: getAuthHeaders() });
+                const response = await fetch(`${API_BASE}/api/option-quote/${optionSymbol.replace(/\s/g, '')}`, { headers: getAuthHeaders() });
                 if (response.status === 401) { localStorage.removeItem('token'); window.location.href = '/login.html'; return; }
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.error || 'Failed to get option price');
@@ -924,7 +924,7 @@ function initOrderForm() {
 }
 
 async function getOptionStrikes(underlying) {
-    const response = await fetch(`${API_BASE}/api/option-quote/${underlying}`, { headers: getAuthHeaders() });
+    const response = await fetch(`${API_BASE}/api/option-strikes/${underlying}`, { headers: getAuthHeaders() });
     if (response.status === 401) { localStorage.removeItem('token'); window.location.href = '/login.html'; return null; }
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Failed to get option strikes');
