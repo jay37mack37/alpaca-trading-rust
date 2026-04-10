@@ -1435,7 +1435,7 @@ function initOptionsChain() {
             if (priceData.quote) stockPrice = priceData.quote.ap || priceData.quote.bp || 0;
 
             // Get real options chain data
-            const response = await fetchWithLogging(`${API_BASE}/api/option-chain/${symbol}`, { headers: getAuthHeaders() });
+            const response = await fetchWithLogging(`${API_BASE}/api/option-chain/${symbol}?expiration=${encodeURIComponent(expiration)}`, { headers: getAuthHeaders() });
             if (!response.ok) {
                 const errorData = response._body;
                 throw new Error(errorData.error || 'Failed to load options data');

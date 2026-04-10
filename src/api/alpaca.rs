@@ -15,36 +15,36 @@ pub struct AlpacaClient {
     api_key: String,
     api_secret: String,
     base_url: String,
+    data_url: String,
+    options_url: String,
 }
 
 impl AlpacaClient {
     pub fn new() -> Result<Self, &'static str> {
-        let api_key = std::env::var("ALPACA_API_KEY")
-            .map_err(|_| "ALPACA_API_KEY not set")?;
-        let api_secret = std::env::var("ALPACA_API_SECRET")
-            .map_err(|_| "ALPACA_API_SECRET not set")?;
+        let api_key = std::env::var("ALPACA_API_KEY").map_err(|_| "ALPACA_API_KEY not set")?;
+        let api_secret =
+            std::env::var("ALPACA_API_SECRET").map_err(|_| "ALPACA_API_SECRET not set")?;
         let environment = std::env::var("ALPACA_ENV").unwrap_or_else(|_| "paper".to_string());
 
-        let base_url = if environment == "live" {
-            ALPACA_LIVE_URL.to_string()
-        } else {
-            ALPACA_PAPER_URL.to_string()
-        };
-
-        Ok(Self {
-            client: Client::new(),
-            api_key,
-            api_secret,
-            base_url,
-        })
+        Self::with_keys_and_environment(&api_key, &api_secret, &environment)
     }
 
     pub fn with_keys(api_key: &str, api_secret: &str) -> Result<Self, &'static str> {
+        Self::with_keys_and_environment(api_key, api_secret, "paper")
+    }
+
+    pub fn with_keys_and_environment(
+        api_key: &str,
+        api_secret: &str,
+        environment: &str,
+    ) -> Result<Self, &'static str> {
         Ok(Self {
             client: Client::new(),
             api_key: api_key.to_string(),
             api_secret: api_secret.to_string(),
-            base_url: ALPACA_PAPER_URL.to_string(), // Default to paper
+            base_url: trading_base_url(environment),
+            data_url: data_base_url(),
+            options_url: options_base_url(),
         })
     }
 
@@ -62,7 +62,8 @@ impl AlpacaClient {
     /// Get account information
     pub async fn get_account(&self) -> Result<Value, reqwest::Error> {
         let url = format!("{}/account", self.base_url);
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .headers(self.build_headers())
             .send()
@@ -80,7 +81,8 @@ impl AlpacaClient {
     /// Get all open positions
     pub async fn get_positions(&self) -> Result<Vec<Value>, reqwest::Error> {
         let url = format!("{}/positions", self.base_url);
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .headers(self.build_headers())
             .send()
@@ -95,7 +97,8 @@ impl AlpacaClient {
         if let Some(s) = status {
             url = format!("{}?status={}", url, s);
         }
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .headers(self.build_headers())
             .send()
@@ -124,7 +127,8 @@ impl AlpacaClient {
             body["asset_class"] = serde_json::json!(asset_class);
         }
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .headers(self.build_headers())
             .json(&body)
@@ -133,7 +137,10 @@ impl AlpacaClient {
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_json: Value = response.json().await.unwrap_or_else(|_| serde_json::json!({"message": "Unknown error"}));
+            let error_json: Value = response
+                .json()
+                .await
+                .unwrap_or_else(|_| serde_json::json!({"message": "Unknown error"}));
             tracing::error!("Alpaca API error ({}): {:?}", status, error_json);
 
             // Return the error JSON as the result so the frontend can display the message from Alpaca
@@ -146,57 +153,72 @@ impl AlpacaClient {
     /// Get order by ID
     pub async fn get_order_by_id(&self, order_id: &str) -> Result<Value, reqwest::Error> {
         let url = format!("{}/orders/{}", self.base_url, order_id);
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .headers(self.build_headers())
             .send()
             .await?;
 
-        response.json().await
+        response.error_for_status()?.json().await
     }
 
     /// Cancel an order by ID
-    pub async fn cancel_order(&self, order_id: &str) -> Result<Value, reqwest::Error> {
+    pub async fn cancel_order(&self, order_id: &str) -> Result<(), reqwest::Error> {
         let url = format!("{}/orders/{}", self.base_url, order_id);
-        let response = self.client
+        let response = self
+            .client
             .delete(&url)
             .headers(self.build_headers())
             .send()
             .await?;
 
-        response.json().await
+        response.error_for_status()?;
+        Ok(())
     }
 
     /// Cancel all open orders
     pub async fn cancel_all_orders(&self) -> Result<Vec<Value>, reqwest::Error> {
         let url = format!("{}/orders", self.base_url);
-        let response = self.client
+        let response = self
+            .client
             .delete(&url)
             .headers(self.build_headers())
             .send()
             .await?;
 
-        response.json().await
+        let response = response.error_for_status()?;
+        if response.status() == reqwest::StatusCode::NO_CONTENT {
+            Ok(Vec::new())
+        } else {
+            response.json().await
+        }
     }
 
     /// Get current price for a symbol
     pub async fn get_current_price(&self, symbol: &str) -> Result<Value, reqwest::Error> {
         // Use the market data API endpoint
-        let url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
-        let response = self.client
+        let url = format!("{}/stocks/{}/quotes/latest", self.data_url, symbol);
+        let response = self
+            .client
             .get(&url)
             .headers(self.build_headers())
             .send()
             .await?;
 
-        response.json().await
+        response.error_for_status()?.json().await
     }
 
     /// Get option chain for a symbol (returns available strikes)
-    pub async fn get_option_strikes(&self, symbol: &str, expiration: Option<&str>) -> Result<Value, reqwest::Error> {
+    pub async fn get_option_strikes(
+        &self,
+        symbol: &str,
+        expiration: Option<&str>,
+    ) -> Result<Value, reqwest::Error> {
         // Get snapshot data for the underlying to determine ATM strike
-        let url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
-        let response = self.client
+        let url = format!("{}/stocks/{}/quotes/latest", self.data_url, symbol);
+        let response = self
+            .client
             .get(&url)
             .headers(self.build_headers())
             .send()
@@ -217,11 +239,20 @@ impl AlpacaClient {
             bid_price
         } else {
             // If neither ask nor bid is available, check for 'price' or 'last' in case of different data format
-            quote_obj.get("price").and_then(|p| p.as_f64()).unwrap_or(0.0)
+            quote_obj
+                .get("price")
+                .and_then(|p| p.as_f64())
+                .unwrap_or(0.0)
         };
 
         // Determine strike increment based on price level
-        let strike_increment = if current_price < 25.0 { 0.5 } else if current_price < 200.0 { 1.0 } else { 5.0 };
+        let strike_increment = if current_price < 25.0 {
+            0.5
+        } else if current_price < 200.0 {
+            1.0
+        } else {
+            5.0
+        };
 
         // For ITM Call: closest strike below current price
         // floor(price/inc) * inc gives the strike at or below price
@@ -263,10 +294,15 @@ impl AlpacaClient {
     }
 
     /// Get real option chain for a symbol
-    pub async fn get_option_chain(&self, symbol: &str) -> Result<OptionChainResponse, reqwest::Error> {
+    pub async fn get_option_chain(
+        &self,
+        symbol: &str,
+        expiration: Option<&str>,
+    ) -> Result<OptionChainResponse, reqwest::Error> {
         // 1. Get current stock price
-        let price_url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
-        let price_response = self.client
+        let price_url = format!("{}/stocks/{}/quotes/latest", self.data_url, symbol);
+        let price_response = self
+            .client
             .get(&price_url)
             .headers(self.build_headers())
             .send()
@@ -281,22 +317,25 @@ impl AlpacaClient {
         } else if bid_price > 0.0 {
             bid_price
         } else {
-            quote_obj.get("price").and_then(|p| p.as_f64()).unwrap_or(0.0)
+            quote_obj
+                .get("price")
+                .and_then(|p| p.as_f64())
+                .unwrap_or(0.0)
         };
 
         // 2. Get option snapshots for the underlying
         // We fetch for both calls and puts to build the chain
-        let mut strikes_map: std::collections::BTreeMap<String, StrikeData> = std::collections::BTreeMap::new();
+        let mut strikes_map: std::collections::BTreeMap<String, StrikeData> =
+            std::collections::BTreeMap::new();
 
         for option_type in &["call", "put"] {
             let url = format!(
                 "{}/snapshots/{}?feed=indicative&type={}",
-                ALPACA_OPTIONS_URL,
-                symbol,
-                option_type
+                self.options_url, symbol, option_type
             );
 
-            let response = self.client
+            let response = self
+                .client
                 .get(&url)
                 .headers(self.build_headers())
                 .send()
@@ -306,6 +345,11 @@ impl AlpacaClient {
 
             if let Some(snapshots) = data.get("snapshots").and_then(|s| s.as_object()) {
                 for (occ_symbol, snapshot) in snapshots {
+                    if let Some(filter) = expiration {
+                        if occ_expiration_date(occ_symbol).as_deref() != Some(filter) {
+                            continue;
+                        }
+                    }
                     if let Some(quote) = snapshot.get("latestQuote") {
                         let bid = quote.get("bp").and_then(|p| p.as_f64()).unwrap_or(0.0);
                         let ask = quote.get("ap").and_then(|p| p.as_f64()).unwrap_or(0.0);
@@ -326,11 +370,22 @@ impl AlpacaClient {
                                     size,
                                 };
 
-                                let strike_data = strikes_map.entry(strike_key).or_insert_with(|| StrikeData {
-                                    strike: strike_price,
-                                    call: OptionEntry { symbol: "".into(), bid: 0.0, ask: 0.0, size: 0 },
-                                    put: OptionEntry { symbol: "".into(), bid: 0.0, ask: 0.0, size: 0 },
-                                });
+                                let strike_data =
+                                    strikes_map.entry(strike_key).or_insert_with(|| StrikeData {
+                                        strike: strike_price,
+                                        call: OptionEntry {
+                                            symbol: "".into(),
+                                            bid: 0.0,
+                                            ask: 0.0,
+                                            size: 0,
+                                        },
+                                        put: OptionEntry {
+                                            symbol: "".into(),
+                                            bid: 0.0,
+                                            ask: 0.0,
+                                            size: 0,
+                                        },
+                                    });
 
                                 if *option_type == "call" {
                                     strike_data.call = entry;
@@ -370,14 +425,27 @@ impl AlpacaClient {
 
         // Find where the date starts (6 digits for YYMMDD)
         let underlying = if let Some(pos) = option_symbol.find(|c: char| c.is_ascii_digit()) {
-            let date_part: String = option_symbol[pos..].chars().take_while(|c| c.is_ascii_digit()).collect();
+            let date_part: String = option_symbol[pos..]
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
             if date_part.len() >= 6 {
                 option_symbol[..pos].to_string()
             } else {
-                option_symbol.chars().take(6).collect::<String>().trim().to_string()
+                option_symbol
+                    .chars()
+                    .take(6)
+                    .collect::<String>()
+                    .trim()
+                    .to_string()
             }
         } else {
-            option_symbol.chars().take(6).collect::<String>().trim().to_string()
+            option_symbol
+                .chars()
+                .take(6)
+                .collect::<String>()
+                .trim()
+                .to_string()
         };
 
         // Determine if call or put from the option symbol
@@ -404,12 +472,11 @@ impl AlpacaClient {
         // Use the options snapshots API with type filter
         let url = format!(
             "{}/snapshots/{}?feed=indicative&type={}",
-            ALPACA_OPTIONS_URL,
-            underlying,
-            option_type
+            self.options_url, underlying, option_type
         );
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .headers(self.build_headers())
             .send()
@@ -455,9 +522,47 @@ impl Default for AlpacaClient {
                 api_key: "".to_string(),
                 api_secret: "".to_string(),
                 base_url: ALPACA_PAPER_URL.to_string(),
+                data_url: ALPACA_DATA_URL.to_string(),
+                options_url: ALPACA_OPTIONS_URL.to_string(),
             }
         })
     }
+}
+
+fn trading_base_url(environment: &str) -> String {
+    if environment.eq_ignore_ascii_case("live") {
+        std::env::var("ALPACA_LIVE_URL_OVERRIDE").unwrap_or_else(|_| ALPACA_LIVE_URL.to_string())
+    } else {
+        std::env::var("ALPACA_PAPER_URL_OVERRIDE").unwrap_or_else(|_| ALPACA_PAPER_URL.to_string())
+    }
+}
+
+fn data_base_url() -> String {
+    std::env::var("ALPACA_DATA_URL_OVERRIDE").unwrap_or_else(|_| ALPACA_DATA_URL.to_string())
+}
+
+fn options_base_url() -> String {
+    std::env::var("ALPACA_OPTIONS_URL_OVERRIDE").unwrap_or_else(|_| ALPACA_OPTIONS_URL.to_string())
+}
+
+fn occ_expiration_date(occ_symbol: &str) -> Option<String> {
+    let start = occ_symbol.find(|c: char| c.is_ascii_digit())?;
+    let digits: String = occ_symbol[start..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .take(6)
+        .collect();
+
+    if digits.len() != 6 {
+        return None;
+    }
+
+    Some(format!(
+        "20{}-{}-{}",
+        &digits[0..2],
+        &digits[2..4],
+        &digits[4..6]
+    ))
 }
 
 #[cfg(test)]
@@ -492,7 +597,7 @@ mod tests {
     fn test_build_headers() {
         let client = AlpacaClient::with_keys("test_key_123", "test_secret_456").unwrap();
         let headers = client.build_headers();
-        
+
         // Verify headers contain the API credentials
         assert!(headers.contains_key("APCA-API-KEY-ID"));
         assert!(headers.contains_key("APCA-API-SECRET-KEY"));
@@ -540,21 +645,39 @@ mod tests {
     #[test]
     fn test_strike_increment_calculation_low_price() {
         let price = 20.0;
-        let increment = if price < 25.0 { 0.5 } else if price < 200.0 { 1.0 } else { 5.0 };
+        let increment = if price < 25.0 {
+            0.5
+        } else if price < 200.0 {
+            1.0
+        } else {
+            5.0
+        };
         assert_eq!(increment, 0.5);
     }
 
     #[test]
     fn test_strike_increment_calculation_mid_price() {
         let price = 100.0;
-        let increment = if price < 25.0 { 0.5 } else if price < 200.0 { 1.0 } else { 5.0 };
+        let increment = if price < 25.0 {
+            0.5
+        } else if price < 200.0 {
+            1.0
+        } else {
+            5.0
+        };
         assert_eq!(increment, 1.0);
     }
 
     #[test]
     fn test_strike_increment_calculation_high_price() {
         let price = 500.0;
-        let increment = if price < 25.0 { 0.5 } else if price < 200.0 { 1.0 } else { 5.0 };
+        let increment = if price < 25.0 {
+            0.5
+        } else if price < 200.0 {
+            1.0
+        } else {
+            5.0
+        };
         assert_eq!(increment, 5.0);
     }
 
@@ -618,11 +741,12 @@ mod tests {
         assert!((min_range - 90.0).abs() < 0.0001);
         assert!((max_range - 110.0).abs() < 0.0001);
 
-        let strikes = vec![85.0, 90.0, 100.0, 110.0, 115.0];
-        let filtered: Vec<_> = strikes.iter()
+        let strikes = [85.0, 90.0, 100.0, 110.0, 115.0];
+        let filtered: Vec<_> = strikes
+            .iter()
             .filter(|s| **s >= min_range && **s <= max_range)
             .collect();
-        
+
         assert_eq!(filtered.len(), 3);
         assert_eq!(filtered[0], &90.0);
         assert_eq!(filtered[1], &100.0);

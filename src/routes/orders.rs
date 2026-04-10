@@ -1,7 +1,4 @@
-use axum::{
-    http::StatusCode,
-    Json,
-};
+use axum::{http::StatusCode, Json};
 use serde_json::{json, Value};
 
 use crate::routes::auth::get_authenticated_client;
@@ -16,7 +13,8 @@ pub async fn cancel_order(
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let order_id = path.0;
     let api_client = get_authenticated_client(&headers).await?;
-    let username = crate::routes::auth::get_username_from_headers(&headers).unwrap_or_else(|_| "unknown".to_string());
+    let username = crate::routes::auth::get_username_from_headers(&headers)
+        .unwrap_or_else(|_| "unknown".to_string());
 
     tracing::info!(user = %username, order_id = %order_id, "Cancelling order");
 
@@ -27,12 +25,15 @@ pub async fn cancel_order(
                 "success": true,
                 "message": format!("Order {} cancelled", order_id)
             })))
-        },
+        }
         Err(e) => {
             tracing::error!(user = %username, order_id = %order_id, "Failed to cancel order: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "error": format!("Failed to cancel order: {}", e)
-            }))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "error": format!("Failed to cancel order: {}", e)
+                })),
+            ))
         }
     }
 }
@@ -43,7 +44,8 @@ pub async fn cancel_all_orders(
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let api_client = get_authenticated_client(&headers).await?;
-    let username = crate::routes::auth::get_username_from_headers(&headers).unwrap_or_else(|_| "unknown".to_string());
+    let username = crate::routes::auth::get_username_from_headers(&headers)
+        .unwrap_or_else(|_| "unknown".to_string());
 
     tracing::info!(user = %username, "Cancelling all orders");
 
@@ -55,12 +57,15 @@ pub async fn cancel_all_orders(
                 "message": format!("Cancelled {} orders", orders.len()),
                 "orders": orders
             })))
-        },
+        }
         Err(e) => {
             tracing::error!(user = %username, "Failed to cancel all orders: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "error": format!("Failed to cancel all orders: {}", e)
-            }))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "error": format!("Failed to cancel all orders: {}", e)
+                })),
+            ))
         }
     }
 }
@@ -78,9 +83,12 @@ pub async fn get_order_by_id(
         Ok(order) => Ok(Json(order)),
         Err(e) => {
             tracing::error!("Failed to get order: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "error": format!("Failed to get order: {}", e)
-            }))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "error": format!("Failed to get order: {}", e)
+                })),
+            ))
         }
     }
 }

@@ -1,7 +1,7 @@
+use crate::models::websocket::WsUpdate;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
-use crate::models::websocket::WsUpdate;
 
 pub struct WsManager {
     // Channel to broadcast updates to all connected clients
@@ -35,5 +35,11 @@ impl WsManager {
         // In a real app, we'd need to count how many clients are subscribed to each symbol
         // For simplicity here, we'll just keep them active or implement reference counting if needed.
         // For now, let's keep them active to avoid frequent re-subscribing to Alpaca.
+    }
+}
+
+impl Default for WsManager {
+    fn default() -> Self {
+        Self::new()
     }
 }

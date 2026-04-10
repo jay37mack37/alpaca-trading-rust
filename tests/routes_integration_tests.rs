@@ -1,402 +1,390 @@
-//! Integration tests for API routes
-//! 
-//! These tests verify the behavior of authentication routes, trading routes,
-//! and order management routes with mocked responses.
+use std::env;
+use std::fs;
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-#[cfg(test)]
-mod route_tests {
-    use serde_json::{json, Value};
+use alpaca_trading3web::api::ws_manager::WsManager;
+use alpaca_trading3web::{auth, build_app, AppState};
+use axum::body::{to_bytes, Body};
+use axum::extract::State;
+use axum::http::{Request, StatusCode};
+use axum::response::IntoResponse;
+use axum::routing::{delete, get, post};
+use axum::{Json, Router};
+use lazy_static::lazy_static;
+use serde_json::{json, Value};
+use tokio::net::TcpListener;
+use tokio::sync::Mutex;
+use tower::util::ServiceExt;
 
-    // Mock test for request/response structures
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    struct MockLoginRequest {
-        username: String,
-        password: String,
+lazy_static! {
+    static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
+}
+
+struct TestPaths {
+    config_path: PathBuf,
+    env_path: PathBuf,
+}
+
+impl TestPaths {
+    fn new() -> Self {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should be after epoch")
+            .as_nanos();
+        let base = env::temp_dir().join(format!("alpaca-trading-rust-tests-{unique}"));
+        fs::create_dir_all(&base).expect("temp dir should be created");
+        Self {
+            config_path: base.join("config.json"),
+            env_path: base.join(".env"),
+        }
     }
 
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    struct MockLoginResponse {
-        token: String,
-        username: String,
+    fn apply(&self) {
+        env::set_var("ALPACA_CONFIG_FILE", &self.config_path);
+        env::set_var("ALPACA_ENV_FILE", &self.env_path);
     }
+}
 
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    struct MockAccountResponse {
-        account_number: String,
-        status: String,
-        buying_power: String,
-        portfolio_value: String,
-        cash: String,
-        equity: String,
-    }
+impl Drop for TestPaths {
+    fn drop(&mut self) {
+        env::remove_var("ALPACA_CONFIG_FILE");
+        env::remove_var("ALPACA_ENV_FILE");
+        env::remove_var("ALPACA_PAPER_URL_OVERRIDE");
+        env::remove_var("ALPACA_LIVE_URL_OVERRIDE");
+        env::remove_var("ALPACA_DATA_URL_OVERRIDE");
+        env::remove_var("ALPACA_OPTIONS_URL_OVERRIDE");
 
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    struct MockPosition {
-        symbol: String,
-        qty: String,
-        avg_entry_price: String,
-        market_value: String,
-        current_price: String,
-        unrealized_pl: String,
+        if let Some(parent) = self.config_path.parent() {
+            let _ = fs::remove_dir_all(parent);
+        }
     }
+}
 
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    struct MockOrder {
-        id: String,
-        symbol: String,
-        qty: String,
-        side: String,
-        order_type: String,
-        status: String,
-    }
+#[derive(Clone)]
+struct MockOrderState {
+    last_order: Arc<Mutex<Option<Value>>>,
+}
 
-    #[test]
-    fn test_login_request_serialization() {
-        let request = MockLoginRequest {
-            username: "admin".to_string(),
-            password: "admin123".to_string(),
-        };
-        let json = serde_json::to_string(&request).unwrap();
-        assert!(json.contains("admin"));
-        assert!(json.contains("admin123"));
-    }
+async fn login(app: &Router) -> String {
+    let response = send_json(
+        app,
+        Request::builder()
+            .method("POST")
+            .uri("/api/login")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                json!({
+                    "username": "admin",
+                    "password": "admin123"
+                })
+                .to_string(),
+            ))
+            .expect("login request should build"),
+    )
+    .await;
 
-    #[test]
-    fn test_login_response_serialization() {
-        let response = MockLoginResponse {
-            token: "token_abc123".to_string(),
-            username: "admin".to_string(),
-        };
-        let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains("token_abc123"));
-        assert!(json.contains("admin"));
-    }
+    assert_eq!(response.status, StatusCode::OK);
+    response
+        .body
+        .get("token")
+        .and_then(Value::as_str)
+        .expect("login response should contain a token")
+        .to_string()
+}
 
-    #[test]
-    fn test_account_response_structure() {
-        let account = MockAccountResponse {
-            account_number: "PA123456789".to_string(),
-            status: "ACTIVE".to_string(),
-            buying_power: "100000.00".to_string(),
-            portfolio_value: "105000.00".to_string(),
-            cash: "50000.00".to_string(),
-            equity: "105000.00".to_string(),
-        };
-        assert_eq!(account.account_number, "PA123456789");
-        assert_eq!(account.status, "ACTIVE");
-        assert_eq!(account.buying_power, "100000.00");
-    }
+async fn save_api_keys(app: &Router, token: &str, environment: &str) {
+    let response = send_json(
+        app,
+        Request::builder()
+            .method("POST")
+            .uri("/api/config/api-keys")
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::from(
+                json!({
+                    "api_key": "test-key",
+                    "api_secret": "test-secret",
+                    "environment": environment
+                })
+                .to_string(),
+            ))
+            .expect("save api keys request should build"),
+    )
+    .await;
 
-    #[test]
-    fn test_position_response_serialization() {
-        let position = MockPosition {
-            symbol: "AAPL".to_string(),
-            qty: "100".to_string(),
-            avg_entry_price: "150.00".to_string(),
-            market_value: "15500.00".to_string(),
-            current_price: "155.00".to_string(),
-            unrealized_pl: "500.00".to_string(),
-        };
-        let json = serde_json::to_string(&position).unwrap();
-        assert!(json.contains("AAPL"));
-        assert!(json.contains("100"));
-        assert!(json.contains("500.00"));
-    }
+    assert_eq!(response.status, StatusCode::OK);
+}
 
-    #[test]
-    fn test_multiple_positions_response() {
-        let positions = vec![
-            MockPosition {
-                symbol: "AAPL".to_string(),
-                qty: "100".to_string(),
-                avg_entry_price: "150.00".to_string(),
-                market_value: "15500.00".to_string(),
-                current_price: "155.00".to_string(),
-                unrealized_pl: "500.00".to_string(),
-            },
-            MockPosition {
-                symbol: "TSLA".to_string(),
-                qty: "50".to_string(),
-                avg_entry_price: "800.00".to_string(),
-                market_value: "41000.00".to_string(),
-                current_price: "820.00".to_string(),
-                unrealized_pl: "1000.00".to_string(),
-            },
-        ];
-        assert_eq!(positions.len(), 2);
-        assert_eq!(positions[0].symbol, "AAPL");
-        assert_eq!(positions[1].symbol, "TSLA");
-    }
+fn test_app() -> Router {
+    auth::init();
+    build_app(AppState {
+        alpaca: None,
+        ws_manager: Arc::new(WsManager::new()),
+    })
+}
 
-    #[test]
-    fn test_order_response_serialization() {
-        let order = MockOrder {
-            id: "order_123".to_string(),
-            symbol: "AAPL".to_string(),
-            qty: "100".to_string(),
-            side: "buy".to_string(),
-            order_type: "market".to_string(),
-            status: "filled".to_string(),
-        };
-        let json = serde_json::to_string(&order).unwrap();
-        assert!(json.contains("order_123"));
-        assert!(json.contains("filled"));
-    }
+async fn send_json(app: &Router, request: Request<Body>) -> TestResponse {
+    let response = app
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("request should succeed");
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should be readable");
+    let body = if bytes.is_empty() {
+        json!({})
+    } else {
+        serde_json::from_slice(&bytes).expect("response body should be valid json")
+    };
 
-    #[test]
-    fn test_multiple_orders_response() {
-        let orders = vec![
-            MockOrder {
-                id: "order_1".to_string(),
-                symbol: "AAPL".to_string(),
-                qty: "100".to_string(),
-                side: "buy".to_string(),
-                order_type: "market".to_string(),
-                status: "filled".to_string(),
-            },
-            MockOrder {
-                id: "order_2".to_string(),
-                symbol: "TSLA".to_string(),
-                qty: "50".to_string(),
-                side: "sell".to_string(),
-                order_type: "limit".to_string(),
-                status: "pending".to_string(),
-            },
-        ];
-        assert_eq!(orders.len(), 2);
-        assert_eq!(orders[0].status, "filled");
-        assert_eq!(orders[1].status, "pending");
-    }
+    TestResponse { status, body }
+}
 
-    #[test]
-    fn test_auth_header_format() {
-        let token = "test_token_value";
-        let auth_header = format!("Bearer {}", token);
-        assert!(auth_header.starts_with("Bearer "));
-        assert_eq!(auth_header, "Bearer test_token_value");
-    }
+struct TestResponse {
+    status: StatusCode,
+    body: Value,
+}
 
-    #[test]
-    fn test_invalid_auth_header_format() {
-        let invalid_header = "Basic test_token";
-        assert!(!invalid_header.starts_with("Bearer "));
-    }
+async fn spawn_server(router: Router) -> SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener should bind");
+    let addr = listener
+        .local_addr()
+        .expect("listener should have a local address");
 
-    #[test]
-    fn test_api_error_response() {
-        let error_response = json!({
-            "error": "Invalid credentials",
-            "status": 401
-        });
-        assert_eq!(error_response["error"], "Invalid credentials");
-        assert_eq!(error_response["status"], 401);
-    }
+    tokio::spawn(async move {
+        axum::serve(listener, router)
+            .await
+            .expect("mock server should serve");
+    });
 
-    #[test]
-    fn test_api_key_config_response() {
-        let config_response = json!({
-            "configured": true,
-            "environment": "paper"
-        });
-        assert_eq!(config_response["configured"], true);
-        assert_eq!(config_response["environment"], "paper");
-    }
+    addr
+}
 
-    #[test]
-    fn test_order_create_request() {
-        let create_order = json!({
-            "symbol": "AAPL",
-            "qty": 100,
-            "side": "buy",
-            "order_type": "market",
-            "time_in_force": "day"
-        });
-        assert_eq!(create_order["symbol"], "AAPL");
-        assert_eq!(create_order["qty"], 100);
-        assert_eq!(create_order["side"], "buy");
-    }
+fn base_url(addr: SocketAddr, suffix: &str) -> String {
+    format!("http://{addr}{suffix}")
+}
 
-    #[test]
-    fn test_order_create_with_limit_price() {
-        let create_order = json!({
-            "symbol": "TSLA",
-            "qty": 50,
-            "side": "buy",
-            "order_type": "limit",
-            "time_in_force": "gtc",
-            "limit_price": 250.50
-        });
-        assert_eq!(create_order["order_type"], "limit");
-        assert_eq!(create_order["limit_price"], 250.50);
-    }
+#[tokio::test]
+async fn option_orders_accept_option_sides_and_reach_upstream() {
+    let _guard = TEST_MUTEX.lock().await;
+    let paths = TestPaths::new();
+    paths.apply();
 
-    #[test]
-    fn test_cancel_order_response() {
-        let response = json!({
-            "success": true,
-            "message": "Order order_123 cancelled"
-        });
-        assert_eq!(response["success"], true);
-        assert!(response["message"].as_str().unwrap().contains("cancelled"));
-    }
+    let order_state = MockOrderState {
+        last_order: Arc::new(Mutex::new(None)),
+    };
 
-    #[test]
-    fn test_cancel_all_orders_response() {
-        let response = json!({
-            "success": true,
-            "message": "Cancelled 3 orders",
-            "orders": [
-                {"id": "order_1"},
-                {"id": "order_2"},
-                {"id": "order_3"}
-            ]
-        });
-        assert_eq!(response["success"], true);
-        assert!(response["message"].as_str().unwrap().contains("3 orders"));
-    }
+    let mock_router = Router::new()
+        .route(
+            "/v2/orders",
+            post({
+                move |State(order_state): State<MockOrderState>, Json(payload): Json<Value>| async move {
+                    *order_state.last_order.lock().await = Some(payload.clone());
+                    Json(json!({
+                        "id": "order-123",
+                        "status": "accepted",
+                        "symbol": payload["symbol"],
+                        "side": payload["side"]
+                    }))
+                }
+            }),
+        )
+        .with_state(order_state.clone());
 
-    #[test]
-    fn test_get_price_response() {
-        let response = json!({
-            "symbol": "AAPL",
-            "price": 155.50,
-            "timestamp": "2024-04-09T14:30:00Z"
-        });
-        assert_eq!(response["symbol"], "AAPL");
-        assert_eq!(response["price"], 155.50);
-    }
+    let addr = spawn_server(mock_router).await;
+    env::set_var("ALPACA_PAPER_URL_OVERRIDE", base_url(addr, "/v2"));
 
-    #[test]
-    fn test_option_quote_response() {
-        let response = json!({
-            "symbol": "SPY240621C00500000",
-            "bid": 5.20,
-            "ask": 5.30,
-            "last": 5.25
-        });
-        assert_eq!(response["symbol"], "SPY240621C00500000");
-        assert_eq!(response["bid"], 5.20);
-        assert_eq!(response["ask"], 5.30);
-    }
+    let app = test_app();
+    let token = login(&app).await;
+    save_api_keys(&app, &token, "paper").await;
 
-    #[test]
-    fn test_status_code_success() {
-        // Simulate 200 OK status check
-        let status = 200;
-        assert!(status >= 200 && status < 300);
-    }
+    let response = send_json(
+        &app,
+        Request::builder()
+            .method("POST")
+            .uri("/api/orders")
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::from(
+                json!({
+                    "symbol": "SPY260619C00500000",
+                    "qty": 1,
+                    "side": "buy_to_open",
+                    "order_type": "limit",
+                    "time_in_force": "day",
+                    "limit_price": 5.25,
+                    "asset_class": "us_option"
+                })
+                .to_string(),
+            ))
+            .expect("option order request should build"),
+    )
+    .await;
 
-    #[test]
-    fn test_status_code_client_error() {
-        // Simulate 401 Unauthorized status check
-        let status = 401;
-        assert!(status >= 400 && status < 500);
-    }
+    assert_eq!(response.status, StatusCode::OK);
+    assert_eq!(response.body["id"], "order-123");
 
-    #[test]
-    fn test_status_code_server_error() {
-        // Simulate 500 Internal Server Error status check
-        let status = 500;
-        assert!(status >= 500 && status < 600);
-    }
+    let captured = order_state.last_order.lock().await.clone().unwrap();
+    assert_eq!(captured["side"], "buy_to_open");
+    assert_eq!(captured["asset_class"], "us_option");
+}
 
-    #[test]
-    fn test_json_response_parsing() {
-        let json_str = r#"{"symbol":"AAPL","qty":"100"}"#;
-        let parsed: Value = serde_json::from_str(json_str).unwrap();
-        assert_eq!(parsed["symbol"], "AAPL");
-        assert_eq!(parsed["qty"], "100");
-    }
+#[tokio::test]
+async fn account_route_uses_saved_live_environment() {
+    let _guard = TEST_MUTEX.lock().await;
+    let paths = TestPaths::new();
+    paths.apply();
 
-    #[test]
-    fn test_json_array_response_parsing() {
-        let json_str = r#"[
-            {"symbol":"AAPL","qty":"100"},
-            {"symbol":"TSLA","qty":"50"}
-        ]"#;
-        let parsed: Vec<Value> = serde_json::from_str(json_str).unwrap();
-        assert_eq!(parsed.len(), 2);
-        assert_eq!(parsed[0]["symbol"], "AAPL");
-        assert_eq!(parsed[1]["symbol"], "TSLA");
-    }
+    let paper_addr = spawn_server(Router::new().route(
+        "/v2/account",
+        get(|| async { Json(json!({ "account_number": "PAPER-ACCOUNT" })) }),
+    ))
+    .await;
+    let live_addr = spawn_server(Router::new().route(
+        "/v2/account",
+        get(|| async { Json(json!({ "account_number": "LIVE-ACCOUNT" })) }),
+    ))
+    .await;
 
-    #[test]
-    fn test_missing_auth_token_error() {
-        let error = json!({
-            "error": "Missing Authorization header"
-        });
-        assert!(error["error"].as_str().unwrap().contains("Authorization"));
-    }
+    env::set_var("ALPACA_PAPER_URL_OVERRIDE", base_url(paper_addr, "/v2"));
+    env::set_var("ALPACA_LIVE_URL_OVERRIDE", base_url(live_addr, "/v2"));
 
-    #[test]
-    fn test_invalid_token_error() {
-        let error = json!({
-            "error": "Invalid or expired token"
-        });
-        assert!(error["error"].as_str().unwrap().contains("Invalid"));
-    }
+    let app = test_app();
+    let token = login(&app).await;
+    save_api_keys(&app, &token, "live").await;
 
-    #[test]
-    fn test_no_api_keys_configured_error() {
-        let error = json!({
-            "error": "No API keys configured. Please configure in Settings."
-        });
-        assert!(error["error"].as_str().unwrap().contains("API keys"));
-    }
+    let response = send_json(
+        &app,
+        Request::builder()
+            .method("GET")
+            .uri("/api/account")
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::empty())
+            .expect("account request should build"),
+    )
+    .await;
 
-    #[test]
-    fn test_response_with_nested_data() {
-        let response = json!({
-            "account": {
-                "account_number": "PA123",
-                "status": "ACTIVE"
-            },
-            "timestamp": "2024-04-09T14:30:00Z"
-        });
-        assert_eq!(response["account"]["account_number"], "PA123");
-        assert_eq!(response["account"]["status"], "ACTIVE");
-    }
+    assert_eq!(response.status, StatusCode::OK);
+    assert_eq!(response.body["account_number"], "LIVE-ACCOUNT");
+}
 
-    #[test]
-    fn test_batch_order_operations() {
-        let orders = vec![
-            json!({"id": "1", "symbol": "AAPL", "status": "filled"}),
-            json!({"id": "2", "symbol": "TSLA", "status": "pending"}),
-            json!({"id": "3", "symbol": "GOOGL", "status": "cancelled"}),
-        ];
-        assert_eq!(orders.len(), 3);
-        let statuses: Vec<_> = orders.iter()
-            .map(|o| o["status"].as_str().unwrap())
-            .collect();
-        assert_eq!(statuses[0], "filled");
-        assert_eq!(statuses[1], "pending");
-        assert_eq!(statuses[2], "cancelled");
-    }
+#[tokio::test]
+async fn option_chain_route_filters_by_requested_expiration() {
+    let _guard = TEST_MUTEX.lock().await;
+    let paths = TestPaths::new();
+    paths.apply();
 
-    #[test]
-    fn test_order_validation_positive_quantity() {
-        let qty = 100.0;
-        assert!(qty > 0.0, "Order quantity must be positive");
-    }
+    let mock_router = Router::new()
+        .route(
+            "/v2/stocks/{symbol}/quotes/latest",
+            get(|| async { Json(json!({ "quote": { "ap": 500.0, "bp": 499.5 } })) }),
+        )
+        .route(
+            "/v1beta1/options/snapshots/{symbol}",
+            get(|request: axum::extract::Request| async move {
+                let query = request.uri().query().unwrap_or_default();
+                let snapshots = if query.contains("type=call") {
+                    json!({
+                        "SPY260619C00500000": {
+                            "latestQuote": { "bp": 5.0, "ap": 5.2, "as": 10 }
+                        },
+                        "SPY260626C00500000": {
+                            "latestQuote": { "bp": 6.1, "ap": 6.4, "as": 12 }
+                        }
+                    })
+                } else {
+                    json!({
+                        "SPY260619P00500000": {
+                            "latestQuote": { "bp": 4.8, "ap": 5.0, "as": 11 }
+                        },
+                        "SPY260626P00500000": {
+                            "latestQuote": { "bp": 5.9, "ap": 6.2, "as": 13 }
+                        }
+                    })
+                };
 
-    #[test]
-    fn test_order_validation_valid_side() {
-        let valid_sides = vec!["buy", "sell"];
-        let side = "buy";
-        assert!(valid_sides.contains(&side), "Side must be 'buy' or 'sell'");
-    }
+                Json(json!({ "snapshots": snapshots }))
+            }),
+        );
 
-    #[test]
-    fn test_order_validation_valid_time_in_force() {
-        let valid_tif = vec!["day", "gtc", "opg", "cls"];
-        let tif = "gtc";
-        assert!(valid_tif.contains(&tif), "Invalid time_in_force");
-    }
+    let addr = spawn_server(mock_router).await;
+    env::set_var("ALPACA_PAPER_URL_OVERRIDE", base_url(addr, "/v2"));
+    env::set_var("ALPACA_DATA_URL_OVERRIDE", base_url(addr, "/v2"));
+    env::set_var(
+        "ALPACA_OPTIONS_URL_OVERRIDE",
+        base_url(addr, "/v1beta1/options"),
+    );
 
-    #[test]
-    fn test_order_validation_option_symbol_format() {
-        let symbol = "SPY260621C00500000";
-        assert!(symbol.len() >= 15, "OCC symbol format too short");
-        assert!(symbol.contains('C') || symbol.contains('P'), "Must contain C or P");
-    }
+    let app = test_app();
+    let token = login(&app).await;
+    save_api_keys(&app, &token, "paper").await;
+
+    let response = send_json(
+        &app,
+        Request::builder()
+            .method("GET")
+            .uri("/api/option-chain/SPY?expiration=2026-06-19")
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::empty())
+            .expect("option chain request should build"),
+    )
+    .await;
+
+    assert_eq!(response.status, StatusCode::OK);
+    assert_eq!(response.body["symbol"], "SPY");
+    let strikes = response.body["strikes"]
+        .as_array()
+        .expect("option chain strikes should be an array");
+    assert_eq!(strikes.len(), 1);
+    assert_eq!(strikes[0]["call"]["symbol"], "SPY260619C00500000");
+    assert_eq!(strikes[0]["put"]["symbol"], "SPY260619P00500000");
+}
+
+#[tokio::test]
+async fn cancel_order_route_surfaces_upstream_errors() {
+    let _guard = TEST_MUTEX.lock().await;
+    let paths = TestPaths::new();
+    paths.apply();
+
+    let mock_router = Router::new().route(
+        "/v2/orders/{id}",
+        delete(|| async {
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({ "message": "order cannot be cancelled" })),
+            )
+                .into_response()
+        }),
+    );
+
+    let addr = spawn_server(mock_router).await;
+    env::set_var("ALPACA_PAPER_URL_OVERRIDE", base_url(addr, "/v2"));
+
+    let app = test_app();
+    let token = login(&app).await;
+    save_api_keys(&app, &token, "paper").await;
+
+    let response = send_json(
+        &app,
+        Request::builder()
+            .method("DELETE")
+            .uri("/api/orders/bad-order")
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::empty())
+            .expect("cancel request should build"),
+    )
+    .await;
+
+    assert_eq!(response.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response.body["error"]
+        .as_str()
+        .expect("error should be a string")
+        .contains("422"));
 }

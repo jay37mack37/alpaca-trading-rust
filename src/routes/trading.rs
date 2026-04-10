@@ -34,9 +34,12 @@ pub async fn get_account(
         Ok(account) => Ok(Json(account)),
         Err(e) => {
             tracing::error!("Failed to get account: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": format!("API Error: {}", e)
-            }))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": format!("API Error: {}", e)
+                })),
+            ))
         }
     }
 }
@@ -46,16 +49,23 @@ pub async fn get_option_chain(
     State(_state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(symbol): Path<String>,
+    Query(params): Query<OptionsQuery>,
 ) -> Result<Json<OptionChainResponse>, (StatusCode, Json<Value>)> {
     let api_client = get_authenticated_client(&headers).await?;
 
-    match api_client.get_option_chain(&symbol).await {
+    match api_client
+        .get_option_chain(&symbol, params.expiration.as_deref())
+        .await
+    {
         Ok(chain) => Ok(Json(chain)),
         Err(e) => {
             tracing::error!("Failed to get option chain for {}: {}", symbol, e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": format!("Failed to get option chain: {}", e)
-            }))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": format!("Failed to get option chain: {}", e)
+                })),
+            ))
         }
     }
 }
@@ -71,9 +81,12 @@ pub async fn get_positions(
         Ok(positions) => Ok(Json(positions)),
         Err(e) => {
             tracing::error!("Failed to get positions: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": format!("API Error: {}", e)
-            }))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": format!("API Error: {}", e)
+                })),
+            ))
         }
     }
 }
@@ -90,9 +103,12 @@ pub async fn get_orders(
         Ok(orders) => Ok(Json(orders)),
         Err(e) => {
             tracing::error!("Failed to get orders: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": format!("API Error: {}", e)
-            }))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": format!("API Error: {}", e)
+                })),
+            ))
         }
     }
 }
@@ -106,14 +122,18 @@ pub async fn create_order(
     let api_client = get_authenticated_client(&headers).await?;
 
     // Get username for auditing
-    let username = crate::routes::auth::get_username_from_headers(&headers).unwrap_or_else(|_| "unknown".to_string());
+    let username = crate::routes::auth::get_username_from_headers(&headers)
+        .unwrap_or_else(|_| "unknown".to_string());
 
     // Validate order request
     if let Err(e) = order.validate() {
         tracing::warn!(user = %username, symbol = %order.symbol, "Order validation failed: {}", e);
-        return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "error": format!("Validation Error: {}", e)
-        }))));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": format!("Validation Error: {}", e)
+            })),
+        ));
     }
 
     tracing::info!(user = %username, symbol = %order.symbol, qty = %order.qty, side = %order.side, "Placing order");
@@ -122,19 +142,25 @@ pub async fn create_order(
         Ok(order) => {
             if let Some(error) = order.get("message").and_then(|m| m.as_str()) {
                 if order.get("id").is_none() {
-                    return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({
-                        "error": error
-                    }))));
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({
+                            "error": error
+                        })),
+                    ));
                 }
             }
             tracing::info!(user = %username, order_id = ?order.get("id"), "Order placed successfully");
             Ok(Json(order))
-        },
+        }
         Err(e) => {
             tracing::error!(user = %username, "Failed to create order: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": format!("API Error: {}", e)
-            }))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": format!("API Error: {}", e)
+                })),
+            ))
         }
     }
 }
@@ -151,9 +177,12 @@ pub async fn get_price(
         Ok(quote) => Ok(Json(quote)),
         Err(e) => {
             tracing::error!("Failed to get price for {}: {}", symbol, e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": format!("Failed to get price: {}", e)
-            }))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": format!("Failed to get price: {}", e)
+                })),
+            ))
         }
     }
 }
@@ -172,9 +201,12 @@ pub async fn get_option_strikes(
         Ok(strikes) => Ok(Json(strikes)),
         Err(e) => {
             tracing::error!("Failed to get option strikes for {}: {}", symbol, e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": format!("Failed to get option strikes: {}", e)
-            }))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": format!("Failed to get option strikes: {}", e)
+                })),
+            ))
         }
     }
 }
@@ -191,9 +223,12 @@ pub async fn get_option_price(
         Ok(quote) => Ok(Json(quote)),
         Err(e) => {
             tracing::error!("Failed to get option price for {}: {}", symbol, e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": format!("Failed to get option price: {}", e)
-            }))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": format!("Failed to get option price: {}", e)
+                })),
+            ))
         }
     }
 }

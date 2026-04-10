@@ -1,12 +1,9 @@
-use axum::{
-    http::StatusCode,
-    Json,
-};
+use axum::{http::StatusCode, Json};
 use serde_json::{json, Value};
 
 use crate::api::alpaca::AlpacaClient;
 use crate::auth;
-use crate::auth::{LoginRequest, PasswordRequest, ApiKeyRequest};
+use crate::auth::{ApiKeyRequest, LoginRequest, PasswordRequest};
 
 /// Login endpoint
 pub async fn login(
@@ -17,9 +14,12 @@ pub async fn login(
             "token": response.token,
             "username": response.username
         }))),
-        None => Err((StatusCode::UNAUTHORIZED, Json(json!({
-            "error": "Invalid username or password"
-        })))),
+        None => Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "error": "Invalid username or password"
+            })),
+        )),
     }
 }
 
@@ -34,9 +34,12 @@ pub async fn verify_token(
             "valid": true,
             "username": username
         }))),
-        None => Err((StatusCode::UNAUTHORIZED, Json(json!({
-            "error": "Invalid or expired token"
-        })))),
+        None => Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "error": "Invalid or expired token"
+            })),
+        )),
     }
 }
 
@@ -69,11 +72,19 @@ pub async fn save_api_keys(
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let username = get_username_from_headers(&headers)?;
 
-    match auth::save_api_keys(&username, &payload.api_key, &payload.api_secret, &payload.environment) {
+    match auth::save_api_keys(
+        &username,
+        &payload.api_key,
+        &payload.api_secret,
+        &payload.environment,
+    ) {
         Ok(_) => Ok(Json(json!({ "success": true }))),
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-            "error": e
-        })))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "error": e
+            })),
+        )),
     }
 }
 
@@ -86,9 +97,12 @@ pub async fn change_password(
 
     match auth::change_password(&username, &payload.current_password, &payload.new_password) {
         Ok(_) => Ok(Json(json!({ "success": true }))),
-        Err(e) => Err((StatusCode::BAD_REQUEST, Json(json!({
-            "error": e
-        })))),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": e
+            })),
+        )),
     }
 }
 
@@ -97,26 +111,36 @@ fn extract_token(headers: &axum::http::HeaderMap) -> Result<String, (StatusCode,
     let auth_header = headers
         .get("Authorization")
         .and_then(|h| h.to_str().ok())
-        .ok_or((StatusCode::UNAUTHORIZED, Json(json!({
-            "error": "Missing Authorization header"
-        }))))?;
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "error": "Missing Authorization header"
+            })),
+        ))?;
 
     if !auth_header.starts_with("Bearer ") {
-        return Err((StatusCode::UNAUTHORIZED, Json(json!({
-            "error": "Invalid Authorization header format"
-        }))));
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "error": "Invalid Authorization header format"
+            })),
+        ));
     }
 
     Ok(auth_header[7..].to_string())
 }
 
 /// Helper to get username from auth headers
-pub fn get_username_from_headers(headers: &axum::http::HeaderMap) -> Result<String, (StatusCode, Json<Value>)> {
+pub fn get_username_from_headers(
+    headers: &axum::http::HeaderMap,
+) -> Result<String, (StatusCode, Json<Value>)> {
     let token = extract_token(headers)?;
-    auth::verify_token(&token)
-        .ok_or((StatusCode::UNAUTHORIZED, Json(json!({
+    auth::verify_token(&token).ok_or((
+        StatusCode::UNAUTHORIZED,
+        Json(json!({
             "error": "Invalid or expired token"
-        }))))
+        })),
+    ))
 }
 
 /// Middleware helper for authenticated routes with Alpaca client.
@@ -127,18 +151,27 @@ pub async fn get_authenticated_client(
     let username = get_username_from_headers(headers)?;
 
     match auth::get_api_keys(&username) {
-        Some((api_key, api_secret, _environment)) => {
+        Some((api_key, api_secret, environment)) => {
             // Create client with user's keys
-            AlpacaClient::with_keys(&api_key, &api_secret)
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                    "error": e
-                }))))
+            AlpacaClient::with_keys_and_environment(&api_key, &api_secret, &environment).map_err(
+                |e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({
+                            "error": e
+                        })),
+                    )
+                },
+            )
         }
         None => {
             // No user-specific keys found
-            Err((StatusCode::FORBIDDEN, Json(json!({
-                "error": "No API keys configured. Please configure your Alpaca API keys in Settings."
-            }))))
+            Err((
+                StatusCode::FORBIDDEN,
+                Json(json!({
+                    "error": "No API keys configured. Please configure your Alpaca API keys in Settings."
+                })),
+            ))
         }
     }
 }

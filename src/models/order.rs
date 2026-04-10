@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 pub struct OrderRequest {
     pub symbol: String,
     pub qty: f64,
-    pub side: String,        // "buy" or "sell"
-    pub order_type: String,  // "market", "limit", etc.
+    pub side: String,          // "buy" or "sell"
+    pub order_type: String,    // "market", "limit", etc.
     pub time_in_force: String, // "day", "gtc", etc.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit_price: Option<f64>,
@@ -24,20 +24,43 @@ impl OrderRequest {
         }
 
         let side = self.side.to_lowercase();
-        if side != "buy" && side != "sell" {
+        let is_option_order = self.asset_class.as_deref() == Some("us_option");
+        let valid_sides: &[&str] = if is_option_order {
+            &[
+                "buy_to_open",
+                "sell_to_open",
+                "buy_to_close",
+                "sell_to_close",
+            ]
+        } else {
+            &["buy", "sell"]
+        };
+        if !valid_sides.contains(&side.as_str()) {
+            if is_option_order {
+                return Err(
+                    "Option side must be one of: buy_to_open, sell_to_open, buy_to_close, sell_to_close"
+                        .to_string(),
+                );
+            }
             return Err("Side must be 'buy' or 'sell'".to_string());
         }
 
         let order_type = self.order_type.to_lowercase();
         let valid_types = vec!["market", "limit", "stop", "stop_limit", "trailing_stop"];
         if !valid_types.contains(&order_type.as_str()) {
-            return Err(format!("Invalid order type. Must be one of: {:?}", valid_types));
+            return Err(format!(
+                "Invalid order type. Must be one of: {:?}",
+                valid_types
+            ));
         }
 
         let tif = self.time_in_force.to_lowercase();
         let valid_tifs = vec!["day", "gtc", "opg", "cls", "ioc", "fok"];
         if !valid_tifs.contains(&tif.as_str()) {
-            return Err(format!("Invalid time in force. Must be one of: {:?}", valid_tifs));
+            return Err(format!(
+                "Invalid time in force. Must be one of: {:?}",
+                valid_tifs
+            ));
         }
 
         if order_type == "limit" && self.limit_price.is_none() {

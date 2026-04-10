@@ -6,10 +6,10 @@ use axum::{
     response::IntoResponse,
 };
 use futures_util::{sink::SinkExt, stream::StreamExt};
+use serde::Deserialize;
 use std::collections::HashSet;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
-use serde::Deserialize;
 use tokio::sync::mpsc;
 
 use crate::api::alpaca::AlpacaClient;
@@ -107,9 +107,11 @@ async fn handle_socket(socket: WebSocket, state: AppState, _username: String) {
                     }
 
                     if request_count > 5 {
-                        let _ = direct_tx.send(WsUpdate::Error {
-                            message: "Rate limit exceeded (5 requests per second)".to_string(),
-                        }).await;
+                        let _ = direct_tx
+                            .send(WsUpdate::Error {
+                                message: "Rate limit exceeded (5 requests per second)".to_string(),
+                            })
+                            .await;
                         continue;
                     }
 
@@ -129,10 +131,17 @@ async fn handle_socket(socket: WebSocket, state: AppState, _username: String) {
                                     }
                                 }
                                 ws_manager.add_symbols(&newly_added);
-                                let current_subs = subscribed_symbols_recv.read().unwrap().iter().cloned().collect();
-                                let _ = direct_tx.send(WsUpdate::SubscriptionStatus {
-                                    subscribed: current_subs,
-                                }).await;
+                                let current_subs = subscribed_symbols_recv
+                                    .read()
+                                    .unwrap()
+                                    .iter()
+                                    .cloned()
+                                    .collect();
+                                let _ = direct_tx
+                                    .send(WsUpdate::SubscriptionStatus {
+                                        subscribed: current_subs,
+                                    })
+                                    .await;
                             }
                             WsAction::Unsubscribe { symbols } => {
                                 {
@@ -141,10 +150,17 @@ async fn handle_socket(socket: WebSocket, state: AppState, _username: String) {
                                         subs.remove(&sym);
                                     }
                                 }
-                                let current_subs = subscribed_symbols_recv.read().unwrap().iter().cloned().collect();
-                                let _ = direct_tx.send(WsUpdate::SubscriptionStatus {
-                                    subscribed: current_subs,
-                                }).await;
+                                let current_subs = subscribed_symbols_recv
+                                    .read()
+                                    .unwrap()
+                                    .iter()
+                                    .cloned()
+                                    .collect();
+                                let _ = direct_tx
+                                    .send(WsUpdate::SubscriptionStatus {
+                                        subscribed: current_subs,
+                                    })
+                                    .await;
                             }
                         }
                     }
