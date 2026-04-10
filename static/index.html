@@ -26,6 +26,13 @@
         <!-- Connection Status -->
         <div id="auth-check" class="loading">Checking authentication...</div>
 
+        <!-- Tab Navigation -->
+        <nav class="tabs-nav">
+            <button class="tab-btn active" data-tab="dashboard-tab">📊 Dashboard</button>
+            <button class="tab-btn" data-tab="history-tab">📜 Transaction History</button>
+        </nav>
+
+        <div id="dashboard-tab" class="tab-content active">
         <!-- Account Info Section -->
         <section class="card" id="account-section">
             <h2>Account Overview</h2>
@@ -300,6 +307,60 @@
             <div id="order-success" class="success-message" style="display: none;"></div>
             <div id="order-error" class="error-message" style="display: none;"></div>
         </section>
+        </div> <!-- End Dashboard Tab -->
+
+        <!-- History Tab -->
+        <div id="history-tab" class="tab-content">
+            <section class="card">
+                <h2>Transaction History</h2>
+
+                <!-- Filters -->
+                <div class="history-filters">
+                    <div class="form-group">
+                        <label for="filter-symbol">Symbol</label>
+                        <input type="text" id="filter-symbol" placeholder="All">
+                    </div>
+                    <div class="form-group">
+                        <label for="filter-side">Side</label>
+                        <select id="filter-side">
+                            <option value="all">All</option>
+                            <option value="buy">Buy</option>
+                            <option value="sell">Sell</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="filter-start-date">Start Date</label>
+                        <input type="date" id="filter-start-date">
+                    </div>
+                    <div class="form-group">
+                        <label for="filter-end-date">End Date</label>
+                        <input type="date" id="filter-end-date">
+                    </div>
+                    <div class="form-group" style="flex: 0 0 auto;">
+                        <button id="export-csv-btn" class="btn-refresh" style="margin-left: 0; background-color: #2e7d32;">📥 Export CSV</button>
+                    </div>
+                </div>
+
+                <div id="history-container">
+                    <table id="history-table">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-sort="timestamp">Date/Time ↕</th>
+                                <th class="sortable" data-sort="symbol">Symbol ↕</th>
+                                <th>Side</th>
+                                <th>Qty</th>
+                                <th>Price</th>
+                                <th class="sortable" data-sort="amount">Amount ↕</th>
+                                <th>Status</th>
+                                <th>Event</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-body"></tbody>
+                    </table>
+                    <div id="no-history" style="display: none; text-align: center; padding: 20px; color: #888;">No transaction history found</div>
+                </div>
+            </section>
+        </div>
 
         <footer>
             <p>Educational Trading Platform | <a href="https://alpaca.markets" target="_blank">Alpaca Markets</a></p>
