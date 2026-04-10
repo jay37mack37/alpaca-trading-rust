@@ -134,10 +134,9 @@
         <!-- Orders Section -->
         <section class="card" id="orders-section">
             <h2>Recent Orders</h2>
-            <div class="orders-header"
-                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <div style="display: flex; gap: 10px; align-items: center;">
-                    <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+            <div class="orders-header">
+                <div class="orders-controls-left">
+                    <label class="checkbox-label">
                         <input type="checkbox" id="select-all-orders">
                         <span>Select All</span>
                     </label>
@@ -159,11 +158,24 @@
                             <th>Type</th>
                             <th>Status</th>
                             <th>Created</th>
-                            <th>Action</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="orders-body"></tbody>
                 </table>
+            </div>
+
+            <!-- Order Details Modal -->
+            <div id="order-details-modal" class="modal">
+                <div class="modal-content card">
+                    <div class="modal-header">
+                        <h3>Order Details</h3>
+                        <span class="close-modal">&times;</span>
+                    </div>
+                    <div id="order-details-content">
+                        <div class="loading">Loading details...</div>
+                    </div>
+                </div>
             </div>
             <div id="no-orders" style="display: none;">No recent orders</div>
             <div id="orders-error" class="error-message" style="display: none;"></div>
@@ -371,6 +383,7 @@
         </footer>
     </div>
 
+    <script src="/static/auth-helper.js"></script>
     <script src="/static/app.js?v=4"></script>
 </body>
 
