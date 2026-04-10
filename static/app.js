@@ -201,6 +201,10 @@ let positionsLoading, positionsTable, positionsBody, noPositions, positionsError
 let ordersLoading, ordersTable, ordersBody, noOrders, ordersError;
 let orderForm, orderSuccess, orderError, submitBtn;
 
+// History Elements
+let historyBody, noHistory, historyTable;
+let filterSymbol, filterSide, filterStartDate, filterEndDate;
+
 function resolveElements() {
     statusDot = document.querySelector('.status-dot');
     statusText = document.getElementById('status-text');
@@ -225,6 +229,14 @@ function resolveElements() {
     orderSuccess = document.getElementById('order-success');
     orderError = document.getElementById('order-error');
     submitBtn = document.getElementById('submit-order');
+
+    historyBody = document.getElementById('history-body');
+    noHistory = document.getElementById('no-history');
+    historyTable = document.getElementById('history-table');
+    filterSymbol = document.getElementById('filter-symbol');
+    filterSide = document.getElementById('filter-side');
+    filterStartDate = document.getElementById('filter-start-date');
+    filterEndDate = document.getElementById('filter-end-date');
 }
 
 // Format currency
@@ -487,6 +499,9 @@ async function cancelOrder(orderId) {
             throw new Error(data.error || data.message || 'Failed to cancel order');
         }
 
+        // Log the cancellation
+        logTransaction(data, 'cancelled');
+
         alert('Order cancelled successfully!');
         fetchOrders();
     } catch (err) {
@@ -733,6 +748,9 @@ function initOrderForm() {
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.message || data.error || 'Failed to place order');
 
+                // Log the placed order
+                logTransaction(data, 'placed');
+
                 orderSuccess.style.display = 'block';
                 orderSuccess.textContent = `Order placed successfully! Order ID: ${data.id || 'N/A'}`;
                 orderForm.reset();
@@ -920,6 +938,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initAssetToggle();
     initOrderForm();
     initOptionsChain();
+    initTabs();
+    initHistory();
 
     // Initialize dev console button
     const devConsoleBtn = document.getElementById('dev-console-btn');
@@ -948,8 +968,307 @@ setInterval(() => {
         fetchAccount();
         fetchPositions();
         fetchOrders();
+        syncHistoryWithAPI();
     }
 }, 30000);
+
+// ============================================================
+// TRANSACTION HISTORY LOGIC
+// ============================================================
+
+let currentSort = { column: 'timestamp', direction: 'desc' };
+
+// Get history key for current user
+function getHistoryKey() {
+    const username = localStorage.getItem('username') || 'default';
+    return `trade_history_${username}`;
+}
+
+// Get history from localStorage
+function getHistory() {
+    const data = localStorage.getItem(getHistoryKey());
+    return data ? JSON.parse(data) : [];
+}
+
+// Save history to localStorage (with cleanup)
+function saveHistory(history) {
+    // Keep only last 1000 items
+    if (history.length > 1000) {
+        history = history.slice(0, 1000);
+    }
+    localStorage.setItem(getHistoryKey(), JSON.stringify(history));
+    renderHistory();
+}
+
+// Log a transaction event
+function logTransaction(order, eventType) {
+    const history = getHistory();
+
+    // Calculate amount (Price * Qty)
+    let price = parseFloat(order.filled_avg_price || order.limit_price || 0);
+    let qty = parseFloat(order.filled_qty || order.qty || 0);
+    let amount = price * qty;
+
+    const entry = {
+        id: `${order.id}_${eventType}_${new Date().getTime()}`,
+        orderId: order.id,
+        symbol: order.symbol,
+        side: order.side,
+        qty: order.qty,
+        price: price,
+        amount: amount,
+        status: order.status,
+        event: eventType,
+        timestamp: new Date().toISOString()
+    };
+
+    // Check if this specific event for this order is already logged to avoid duplicates
+    const isDuplicate = history.some(h => h.orderId === order.id && h.event === eventType && h.status === order.status);
+    if (isDuplicate) return;
+
+    history.unshift(entry);
+    saveHistory(history);
+    devLog('HISTORY', `Logged ${eventType} for ${order.symbol}`, entry);
+}
+
+// Backfill history from API
+async function backfillHistory() {
+    devLog('HISTORY', 'Backfilling history from API...');
+    try {
+        const response = await fetch(`${API_BASE}/api/orders?status=all`, {
+            headers: getAuthHeaders()
+        });
+
+        if (!response.ok) throw new Error('Failed to fetch historical orders');
+        const orders = await response.json();
+
+        const history = getHistory();
+        let addedCount = 0;
+
+        // Process orders in reverse (oldest first) so they are logged in correct order if we were unshifting
+        // But here we'll just build a new set and merge
+        const newEntries = [];
+
+        orders.forEach(order => {
+            // Determine likely events based on status
+            // If it's filled, it was placed then filled
+            // For simplicity in backfill, we'll just log its current status as a 'backfill' event
+            // unless we want to simulate the whole lifecycle. Let's just log the current state.
+
+            const isLogged = history.some(h => h.orderId === order.id);
+            if (!isLogged) {
+                let price = parseFloat(order.filled_avg_price || order.limit_price || 0);
+                let qty = parseFloat(order.filled_qty || order.qty || 0);
+
+                newEntries.push({
+                    id: `${order.id}_backfill`,
+                    orderId: order.id,
+                    symbol: order.symbol,
+                    side: order.side,
+                    qty: order.qty,
+                    price: price,
+                    amount: price * qty,
+                    status: order.status,
+                    event: 'backfill',
+                    timestamp: order.filled_at || order.canceled_at || order.created_at
+                });
+                addedCount++;
+            }
+        });
+
+        if (addedCount > 0) {
+            const updatedHistory = [...newEntries, ...history];
+            // Sort by timestamp desc
+            updatedHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            saveHistory(updatedHistory);
+            devLog('HISTORY', `Backfilled ${addedCount} orders`);
+        }
+    } catch (err) {
+        devError('HISTORY', 'Backfill failed', err.message);
+    }
+}
+
+// Sync current orders to detect status changes
+async function syncHistoryWithAPI() {
+    try {
+        const response = await fetch(`${API_BASE}/api/orders`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) return;
+        const currentOrders = await response.json();
+
+        const history = getHistory();
+
+        currentOrders.forEach(order => {
+            // Check if we have a log for this order's current status
+            const hasStatusLog = history.some(h => h.orderId === order.id && h.status === order.status);
+            if (!hasStatusLog) {
+                let eventType = 'status_change';
+                if (order.status === 'filled') eventType = 'filled';
+                if (order.status === 'canceled') eventType = 'cancelled';
+                if (order.status === 'expired') eventType = 'expired';
+
+                logTransaction(order, eventType);
+            }
+        });
+    } catch (err) {
+        devError('HISTORY', 'Sync failed', err.message);
+    }
+}
+
+// Render history table
+function renderHistory() {
+    if (!historyBody) return;
+
+    let history = getHistory();
+
+    // Apply filters
+    const symbol = filterSymbol.value.toUpperCase();
+    const side = filterSide.value;
+    const start = filterStartDate.value;
+    const end = filterEndDate.value;
+
+    if (symbol) {
+        history = history.filter(h => h.symbol.includes(symbol));
+    }
+    if (side !== 'all') {
+        history = history.filter(h => h.side === side);
+    }
+    if (start) {
+        const startDate = new Date(start);
+        history = history.filter(h => new Date(h.timestamp) >= startDate);
+    }
+    if (end) {
+        const endDate = new Date(end);
+        endDate.setHours(23, 59, 59, 999);
+        history = history.filter(h => new Date(h.timestamp) <= endDate);
+    }
+
+    // Apply sorting
+    history.sort((a, b) => {
+        let valA = a[currentSort.column];
+        let valB = b[currentSort.column];
+
+        if (currentSort.column === 'timestamp') {
+            valA = new Date(valA).getTime();
+            valB = new Date(valB).getTime();
+        }
+
+        if (valA < valB) return currentSort.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return currentSort.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    if (history.length === 0) {
+        historyTable.style.display = 'none';
+        noHistory.style.display = 'block';
+        return;
+    }
+
+    historyTable.style.display = 'table';
+    noHistory.style.display = 'none';
+
+    historyBody.innerHTML = history.map(h => `
+        <tr>
+            <td>${formatDate(h.timestamp)}</td>
+            <td><strong>${h.symbol}</strong></td>
+            <td class="${h.side.includes('buy') ? 'positive' : 'negative'}">${h.side.toUpperCase()}</td>
+            <td>${h.qty}</td>
+            <td>${formatCurrency(h.price)}</td>
+            <td>${formatCurrency(h.amount)}</td>
+            <td><span class="status-${h.status}">${h.status}</span></td>
+            <td><span class="event-tag event-${h.event}">${h.event}</span></td>
+        </tr>
+    `).join('');
+}
+
+// Export history to CSV
+function exportToCSV() {
+    const history = getHistory();
+    if (history.length === 0) {
+        alert('No history to export');
+        return;
+    }
+
+    const headers = ['Timestamp', 'Symbol', 'Side', 'Qty', 'Price', 'Amount', 'Status', 'Event'];
+    const rows = history.map(h => [
+        h.timestamp,
+        h.symbol,
+        h.side,
+        h.qty,
+        h.price,
+        h.amount,
+        h.status,
+        h.event
+    ]);
+
+    const csvContent = [
+        headers.join(','),
+        ...rows.map(r => r.join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `trade_history_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Initialize history features
+function initHistory() {
+    if (filterSymbol) filterSymbol.addEventListener('input', renderHistory);
+    if (filterSide) filterSide.addEventListener('change', renderHistory);
+    if (filterStartDate) filterStartDate.addEventListener('change', renderHistory);
+    if (filterEndDate) filterEndDate.addEventListener('change', renderHistory);
+
+    const exportBtn = document.getElementById('export-csv-btn');
+    if (exportBtn) exportBtn.addEventListener('click', exportToCSV);
+
+    document.querySelectorAll('.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const column = th.dataset.sort;
+            if (currentSort.column === column) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.column = column;
+                currentSort.direction = 'desc';
+            }
+            renderHistory();
+        });
+    });
+
+    backfillHistory();
+}
+
+// ============================================================
+// TAB SYSTEM
+// ============================================================
+
+function initTabs() {
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const target = btn.dataset.tab;
+
+            tabBtns.forEach(b => b.classList.remove('active'));
+            tabContents.forEach(c => c.classList.remove('active'));
+
+            btn.classList.add('active');
+            const targetEl = document.getElementById(target);
+            if (targetEl) targetEl.classList.add('active');
+
+            if (target === 'history-tab') {
+                renderHistory();
+            }
+        });
+    });
+}
 
 // Options Chain Chart
 let optionsData = null;

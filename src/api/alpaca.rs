@@ -80,8 +80,11 @@ impl AlpacaClient {
     }
 
     /// Get orders
-    pub async fn get_orders(&self) -> Result<Vec<Value>, reqwest::Error> {
-        let url = format!("{}/orders", self.base_url);
+    pub async fn get_orders(&self, status: Option<&str>) -> Result<Vec<Value>, reqwest::Error> {
+        let mut url = format!("{}/orders", self.base_url);
+        if let Some(s) = status {
+            url = format!("{}?status={}", url, s);
+        }
         let response = self.client
             .get(&url)
             .headers(self.build_headers())

@@ -17,6 +17,12 @@ pub struct OptionsQuery {
     pub expiration: Option<String>,
 }
 
+/// Query parameters for orders
+#[derive(Debug, Deserialize)]
+pub struct OrdersQuery {
+    pub status: Option<String>,
+}
+
 /// Get account information
 pub async fn get_account(
     State(client): State<Option<AlpacaClient>>,
@@ -99,6 +105,7 @@ pub async fn get_positions(
 pub async fn get_orders(
     State(client): State<Option<AlpacaClient>>,
     headers: axum::http::HeaderMap,
+    Query(query): Query<OrdersQuery>,
 ) -> Result<Json<Vec<Value>>, (StatusCode, Json<Value>)> {
     let api_client = match get_authenticated_client(headers).await {
         Ok(c) => c,
@@ -109,7 +116,7 @@ pub async fn get_orders(
         }
     };
 
-    match api_client.get_orders().await {
+    match api_client.get_orders(query.status.as_deref()).await {
         Ok(orders) => Ok(Json(orders)),
         Err(e) => {
             tracing::error!("Failed to get orders: {}", e);
