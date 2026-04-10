@@ -120,6 +120,13 @@ pub async fn create_order(
 
     match api_client.create_order(order).await {
         Ok(order) => {
+            if let Some(error) = order.get("message").and_then(|m| m.as_str()) {
+                if order.get("id").is_none() {
+                    return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({
+                        "error": error
+                    }))));
+                }
+            }
             tracing::info!(user = %username, order_id = ?order.get("id"), "Order placed successfully");
             Ok(Json(order))
         },

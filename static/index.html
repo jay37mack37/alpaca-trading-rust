@@ -14,7 +14,11 @@
     <div class="container">
         <header>
             <h1>📈 Alpaca Trading Dashboard</h1>
-            <div class="header-controls">
+            <div class="header-controls" style="display: flex; align-items: center;">
+                <div class="status-indicator" style="margin-right: 15px;">
+                    <div class="status-dot"></div>
+                    <span id="status-text" style="font-size: 0.85rem; color: #888;">Connecting...</span>
+                </div>
                 <span id="user-display" style="margin-right: 15px; color: #888;"></span>
                 <a href="/settings.html" class="btn-refresh">⚙️ Settings</a>
                 <button id="dev-console-btn" class="btn-refresh" style="margin-left: 10px; background-color: #333;">🛠️
