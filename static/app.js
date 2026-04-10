@@ -108,6 +108,14 @@ async function fetchWithLogging(url, options = {}) {
             body: data
         });
 
+        // Global auth handling
+        if (response.status === 401 && !url.includes('/api/login') && !url.includes('/api/verify')) {
+            devWarn('AUTH', 'Session expired, redirecting to login');
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            window.location.href = '/login.html';
+        }
+
         // Re-attach the body for the caller
         response._body = data;
         return response;
@@ -155,7 +163,7 @@ function checkAuth() {
     }
 
     // Verify token with server
-    fetch(`${API_BASE}/api/verify`, {
+    fetchWithLogging(`${API_BASE}/api/verify`, {
         headers: { 'Authorization': `Bearer ${token}` }
     })
         .then(res => {
@@ -200,6 +208,7 @@ let accountLoading, accountInfo, accountError;
 let positionsLoading, positionsTable, positionsBody, noPositions, positionsError;
 let ordersLoading, ordersTable, ordersBody, noOrders, ordersError;
 let orderForm, orderSuccess, orderError, submitBtn;
+let cancelAllBtn, cancelSelectedBtn, selectAllCheckbox;
 
 // History Elements
 let historyBody, noHistory, historyTable;
@@ -229,6 +238,10 @@ function resolveElements() {
     orderSuccess = document.getElementById('order-success');
     orderError = document.getElementById('order-error');
     submitBtn = document.getElementById('submit-order');
+
+    cancelAllBtn = document.getElementById('cancel-all-orders-btn');
+    cancelSelectedBtn = document.getElementById('cancel-selected-btn');
+    selectAllCheckbox = document.getElementById('select-all-orders');
 
     historyBody = document.getElementById('history-body');
     noHistory = document.getElementById('no-history');
@@ -285,17 +298,11 @@ async function fetchAccount() {
     accountError.style.display = 'none';
 
     try {
-        const response = await fetch(`${API_BASE}/api/account`, {
+        const response = await fetchWithLogging(`${API_BASE}/api/account`, {
             headers: getAuthHeaders()
         });
 
-        if (response.status === 401) {
-            localStorage.removeItem('token');
-            window.location.href = '/login.html';
-            return;
-        }
-
-        const data = await response.json();
+        const data = response._body;
 
         if (!response.ok) {
             throw new Error(data.error || data.message || 'Failed to fetch account');
@@ -316,7 +323,7 @@ async function fetchAccount() {
     } catch (err) {
         accountLoading.style.display = 'none';
         accountError.style.display = 'block';
-        accountError.textContent = `Error: ${err.message}. Configure API keys in Settings.`;
+        accountError.textContent = `Error: ${err.message}`;
         setStatus('Connection Error', true);
     }
 }
@@ -331,15 +338,11 @@ async function fetchPositions() {
     positionsError.style.display = 'none';
 
     try {
-        const response = await fetch(`${API_BASE}/api/positions`, {
+        const response = await fetchWithLogging(`${API_BASE}/api/positions`, {
             headers: getAuthHeaders()
         });
 
-        if (response.status === 401) {
-            return; // Auth check handles redirect
-        }
-
-        const data = await response.json();
+        const data = response._body;
 
         if (!response.ok) {
             throw new Error(data.error || data.message || 'Failed to fetch positions');
@@ -381,20 +384,12 @@ async function fetchOrders() {
     noOrders.style.display = 'none';
     ordersError.style.display = 'none';
 
-    const cancelAllBtn = document.getElementById('cancel-all-orders-btn');
-    const cancelSelectedBtn = document.getElementById('cancel-selected-btn');
-    const selectAllCheckbox = document.getElementById('select-all-orders');
-
     try {
-        const response = await fetch(`${API_BASE}/api/orders`, {
+        const response = await fetchWithLogging(`${API_BASE}/api/orders`, {
             headers: getAuthHeaders()
         });
 
-        if (response.status === 401) {
-            return;
-        }
-
-        const data = await response.json();
+        const data = response._body;
 
         if (!response.ok) {
             throw new Error(data.message || data.error || 'Failed to fetch orders');
@@ -453,8 +448,6 @@ async function fetchOrders() {
 
 // Update cancel selected button visibility
 function updateCancelSelectedButton() {
-    const cancelSelectedBtn = document.getElementById('cancel-selected-btn');
-    const selectAllCheckbox = document.getElementById('select-all-orders');
     const checkboxes = document.querySelectorAll('.order-checkbox:checked');
 
     if (cancelSelectedBtn) {
@@ -473,7 +466,6 @@ function updateCancelSelectedButton() {
 
 // Toggle select all orders
 function toggleSelectAllOrders() {
-    const selectAllCheckbox = document.getElementById('select-all-orders');
     const checkboxes = document.querySelectorAll('.order-checkbox');
 
     checkboxes.forEach(cb => {
@@ -488,12 +480,12 @@ async function cancelOrder(orderId) {
     if (!confirm('Are you sure you want to cancel this order?')) return;
 
     try {
-        const response = await fetch(`${API_BASE}/api/orders/${orderId}`, {
+        const response = await fetchWithLogging(`${API_BASE}/api/orders/${orderId}`, {
             method: 'DELETE',
             headers: getAuthHeaders()
         });
 
-        const data = await response.json();
+        const data = response._body;
 
         if (!response.ok) {
             throw new Error(data.error || data.message || 'Failed to cancel order');
@@ -528,7 +520,7 @@ async function cancelSelectedOrders() {
     for (const checkbox of checkboxes) {
         const orderId = checkbox.dataset.orderId;
         try {
-            const response = await fetch(`${API_BASE}/api/orders/${orderId}`, {
+            const response = await fetchWithLogging(`${API_BASE}/api/orders/${orderId}`, {
                 method: 'DELETE',
                 headers: getAuthHeaders()
             });
@@ -568,12 +560,12 @@ async function cancelAllOrders() {
     }
 
     try {
-        const response = await fetch(`${API_BASE}/api/orders/cancel-all`, {
+        const response = await fetchWithLogging(`${API_BASE}/api/orders/cancel-all`, {
             method: 'POST',
             headers: getAuthHeaders()
         });
 
-        const data = await response.json();
+        const data = response._body;
 
         if (!response.ok) {
             throw new Error(data.error || data.message || 'Failed to cancel all orders');
@@ -599,13 +591,8 @@ window.toggleSelectAllOrders = toggleSelectAllOrders;
 window.updateCancelSelectedButton = updateCancelSelectedButton;
 
 function initOrderButtons() {
-    const cancelAllBtn = document.getElementById('cancel-all-orders-btn');
     if (cancelAllBtn) cancelAllBtn.addEventListener('click', cancelAllOrders);
-
-    const cancelSelectedBtn = document.getElementById('cancel-selected-btn');
     if (cancelSelectedBtn) cancelSelectedBtn.addEventListener('click', cancelSelectedOrders);
-
-    const selectAllCheckbox = document.getElementById('select-all-orders');
     if (selectAllCheckbox) selectAllCheckbox.addEventListener('change', toggleSelectAllOrders);
 }
 
@@ -692,26 +679,44 @@ function initOrderForm() {
                     // Stock order
                     const symbol = document.getElementById('symbol').value.toUpperCase();
                     const side = document.getElementById('side').value;
-                    const qty = parseFloat(document.getElementById('qty').value);
+                    const qtyInput = document.getElementById('qty').value;
                     const orderType = document.getElementById('order-type').value;
-                    const limitPrice = document.getElementById('limit-price').value;
+                    const limitPriceInput = document.getElementById('limit-price').value;
                     const timeInForce = document.getElementById('time-in-force').value;
 
+                    if (!symbol) throw new Error('Symbol is required');
+                    const qty = parseFloat(qtyInput);
+                    if (isNaN(qty) || qty <= 0) throw new Error('Quantity must be a positive number');
+
                     orderData = { symbol, qty, side, order_type: orderType, time_in_force: timeInForce };
-                    if (orderType === 'limit' && limitPrice) orderData.limit_price = parseFloat(limitPrice);
+
+                    if (orderType === 'limit') {
+                        if (!limitPriceInput) throw new Error('Limit price is required for limit orders');
+                        const limitPrice = parseFloat(limitPriceInput);
+                        if (isNaN(limitPrice) || limitPrice <= 0) throw new Error('Limit price must be a positive number');
+                        orderData.limit_price = limitPrice;
+                    }
                 } else {
                     // Option order
                     const underlying = document.getElementById('option-symbol').value.toUpperCase();
                     const optionType = document.getElementById('option-type-hidden').value;
-                    const strike = parseFloat(document.getElementById('strike-price').value);
+                    const strikeInput = document.getElementById('strike-price').value;
                     const expiration = document.getElementById('expiration-date').value;
                     const side = document.getElementById('option-side').value;
-                    const qty = parseInt(document.getElementById('option-qty').value);
+                    const qtyInput = document.getElementById('option-qty').value;
                     const orderType = document.getElementById('option-order-type').value;
-                    const limitPrice = document.getElementById('option-limit-price').value;
+                    const limitPriceInput = document.getElementById('option-limit-price').value;
                     const timeInForce = document.getElementById('option-tif').value;
 
+                    if (!underlying) throw new Error('Underlying symbol is required');
                     if (!optionType) throw new Error('Please select Call or Put');
+                    if (!expiration) throw new Error('Expiration date is required');
+
+                    const strike = parseFloat(strikeInput);
+                    if (isNaN(strike) || strike <= 0) throw new Error('Strike price must be a positive number');
+
+                    const qty = parseInt(qtyInput);
+                    if (isNaN(qty) || qty <= 0) throw new Error('Quantity must be a positive integer');
 
                     // Build OCC symbol: SPY240408C00500000
                     // Parse date as local time — new Date('YYYY-MM-DD') is UTC which shifts the day
@@ -730,22 +735,22 @@ function initOrderForm() {
                         time_in_force: timeInForce,
                         asset_class: 'us_option'
                     };
-                    if (orderType === 'limit' && limitPrice) orderData.limit_price = parseFloat(limitPrice);
+
+                    if (orderType === 'limit') {
+                        if (!limitPriceInput) throw new Error('Limit price is required for limit orders');
+                        const limitPrice = parseFloat(limitPriceInput);
+                        if (isNaN(limitPrice) || limitPrice <= 0) throw new Error('Limit price must be a positive number');
+                        orderData.limit_price = limitPrice;
+                    }
                 }
 
-                const response = await fetch(`${API_BASE}/api/orders`, {
+                const response = await fetchWithLogging(`${API_BASE}/api/orders`, {
                     method: 'POST',
                     headers: getAuthHeaders(),
                     body: JSON.stringify(orderData)
                 });
 
-                if (response.status === 401) {
-                    localStorage.removeItem('token');
-                    window.location.href = '/login.html';
-                    return;
-                }
-
-                const data = await response.json();
+                const data = response._body;
                 if (!response.ok) throw new Error(data.message || data.error || 'Failed to place order');
 
                 // Log the placed order
@@ -801,9 +806,8 @@ function initOrderForm() {
             fillPriceBtn.textContent = 'Loading...';
 
             try {
-                const response = await fetch(`${API_BASE}/api/price/${symbol}`, { headers: getAuthHeaders() });
-                if (response.status === 401) { localStorage.removeItem('token'); window.location.href = '/login.html'; return; }
-                const data = await response.json();
+                const response = await fetchWithLogging(`${API_BASE}/api/price/${symbol}`, { headers: getAuthHeaders() });
+                const data = response._body;
                 if (!response.ok) throw new Error(data.error || 'Failed to get price');
 
                 // For buy orders use ask, for sell orders use bid
@@ -898,9 +902,8 @@ function initOrderForm() {
                 const strikeStr = (parseFloat(strike) * 1000).toFixed(0).padStart(8, '0');
                 const optionSymbol = underlying.padEnd(6, ' ') + yy + mm + dd + cp + strikeStr;
 
-                const response = await fetch(`${API_BASE}/api/option-quote/${optionSymbol.replace(/\s/g, '')}`, { headers: getAuthHeaders() });
-                if (response.status === 401) { localStorage.removeItem('token'); window.location.href = '/login.html'; return; }
-                const data = await response.json();
+                const response = await fetchWithLogging(`${API_BASE}/api/option-quote/${optionSymbol.replace(/\s/g, '')}`, { headers: getAuthHeaders() });
+                const data = response._body;
                 if (!response.ok) throw new Error(data.error || 'Failed to get option price');
 
                 let price;
@@ -924,9 +927,8 @@ function initOrderForm() {
 }
 
 async function getOptionStrikes(underlying) {
-    const response = await fetch(`${API_BASE}/api/option-strikes/${underlying}`, { headers: getAuthHeaders() });
-    if (response.status === 401) { localStorage.removeItem('token'); window.location.href = '/login.html'; return null; }
-    const data = await response.json();
+    const response = await fetchWithLogging(`${API_BASE}/api/option-strikes/${underlying}`, { headers: getAuthHeaders() });
+    const data = response._body;
     if (!response.ok) throw new Error(data.error || 'Failed to get option strikes');
     return data;
 }
@@ -1035,12 +1037,12 @@ function logTransaction(order, eventType) {
 async function backfillHistory() {
     devLog('HISTORY', 'Backfilling history from API...');
     try {
-        const response = await fetch(`${API_BASE}/api/orders?status=all`, {
+            const response = await fetchWithLogging(`${API_BASE}/api/orders?status=all`, {
             headers: getAuthHeaders()
         });
 
         if (!response.ok) throw new Error('Failed to fetch historical orders');
-        const orders = await response.json();
+            const orders = response._body;
 
         const history = getHistory();
         let addedCount = 0;
@@ -1091,11 +1093,11 @@ async function backfillHistory() {
 // Sync current orders to detect status changes
 async function syncHistoryWithAPI() {
     try {
-        const response = await fetch(`${API_BASE}/api/orders`, {
+        const response = await fetchWithLogging(`${API_BASE}/api/orders`, {
             headers: getAuthHeaders()
         });
         if (!response.ok) return;
-        const currentOrders = await response.json();
+        const currentOrders = response._body;
 
         const history = getHistory();
 
@@ -1308,20 +1310,19 @@ function initOptionsChain() {
 
         try {
             // Get current stock price first
-            const priceResponse = await fetch(`${API_BASE}/api/price/${symbol}`, { headers: getAuthHeaders() });
-            if (priceResponse.status === 401) { localStorage.removeItem('token'); window.location.href = '/login.html'; return; }
+            const priceResponse = await fetchWithLogging(`${API_BASE}/api/price/${symbol}`, { headers: getAuthHeaders() });
 
-            const priceData = await priceResponse.json();
+            const priceData = priceResponse._body;
             let stockPrice = 0;
             if (priceData.quote) stockPrice = priceData.quote.ap || priceData.quote.bp || 0;
 
             // Get real options chain data
-            const response = await fetch(`${API_BASE}/api/option-chain/${symbol}`, { headers: getAuthHeaders() });
+            const response = await fetchWithLogging(`${API_BASE}/api/option-chain/${symbol}`, { headers: getAuthHeaders() });
             if (!response.ok) {
-                const errorData = await response.json();
+                const errorData = response._body;
                 throw new Error(errorData.error || 'Failed to load options data');
             }
-            const chainData = await response.json();
+            const chainData = response._body;
 
             // Format expiration date for display (parse locally to avoid UTC shift)
             const [eY, eM, eD] = expiration.split('-').map(Number);
@@ -1519,7 +1520,7 @@ function drawOptionsChart() {
         : `${optionsData.symbol} Options Chain`;
     ctx.fillText(title, width / 2, 20);
 
-    // Add click handler for strike selection
+    // Add click handler for strike selection (removes any previous handler)
     optionsCanvas.onclick = (e) => {
         const rect = optionsCanvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
