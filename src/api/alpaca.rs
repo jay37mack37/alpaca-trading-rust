@@ -68,7 +68,13 @@ impl AlpacaClient {
             .send()
             .await?;
 
-        response.error_for_status()?.json().await
+        if !response.status().is_success() {
+            let status = response.status();
+            tracing::error!("Alpaca API error ({})", status);
+            return Err(response.error_for_status().unwrap_err());
+        }
+
+        response.json().await
     }
 
     /// Get all open positions
@@ -124,6 +130,15 @@ impl AlpacaClient {
             .json(&body)
             .send()
             .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_json: Value = response.json().await.unwrap_or_else(|_| serde_json::json!({"message": "Unknown error"}));
+            tracing::error!("Alpaca API error ({}): {:?}", status, error_json);
+
+            // Return the error JSON as the result so the frontend can display the message from Alpaca
+            return Ok(error_json);
+        }
 
         response.json().await
     }
