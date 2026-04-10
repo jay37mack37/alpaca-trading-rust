@@ -119,11 +119,12 @@ pub fn get_username_from_headers(headers: &axum::http::HeaderMap) -> Result<Stri
         }))))
 }
 
-/// Middleware helper for authenticated routes with Alpaca client
+/// Middleware helper for authenticated routes with Alpaca client.
+/// Strictly requires user-specific API keys.
 pub async fn get_authenticated_client(
-    headers: axum::http::HeaderMap,
+    headers: &axum::http::HeaderMap,
 ) -> Result<AlpacaClient, (StatusCode, Json<Value>)> {
-    let username = get_username_from_headers(&headers)?;
+    let username = get_username_from_headers(headers)?;
 
     match auth::get_api_keys(&username) {
         Some((api_key, api_secret, _environment)) => {
@@ -134,11 +135,10 @@ pub async fn get_authenticated_client(
                 }))))
         }
         None => {
-            // Fall back to environment variables
-            AlpacaClient::new()
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                    "error": e
-                }))))
+            // No user-specific keys found
+            Err((StatusCode::FORBIDDEN, Json(json!({
+                "error": "No API keys configured. Please configure your Alpaca API keys in Settings."
+            }))))
         }
     }
 }

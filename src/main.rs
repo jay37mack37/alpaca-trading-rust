@@ -75,8 +75,8 @@ async fn main() {
         .route("/api/orders", get(routes::trading::get_orders))
         .route("/api/orders", post(routes::trading::create_order))
         .route("/api/price/{symbol}", get(routes::trading::get_price))
-        .route("/api/option-quote/{symbol}", get(routes::trading::get_option_strikes))
-        .route("/api/option-strikes/{symbol}", get(routes::trading::get_option_price))
+        .route("/api/option-strikes/{symbol}", get(routes::trading::get_option_strikes))
+        .route("/api/option-quote/{symbol}", get(routes::trading::get_option_price))
         .route("/api/option-chain/{symbol}", get(routes::trading::get_option_chain))
 
         // Order management routes (authenticated)
