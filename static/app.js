@@ -184,9 +184,8 @@ function checkAuth() {
     // Logout handler
     if (logoutBtn) {
         logoutBtn.addEventListener('click', () => {
-            localStorage.removeItem('token');
-            localStorage.removeItem('username');
-            window.location.href = '/login.html';
+            const token = localStorage.getItem('token');
+            performLogout(API_BASE, token);
         });
     }
 
@@ -426,7 +425,10 @@ async function fetchOrders() {
                 <td><span class="status-${order.status}">${order.status}</span></td>
                 <td>${formatDate(order.created_at)}</td>
                 <td>
-                    ${isOpen ? `<button class="btn-cancel" onclick="cancelOrder('${order.id}')">Cancel</button>` : ''}
+                    <div class="order-actions-cell">
+                        <button class="btn-refresh btn-small" onclick="viewOrderDetails('${order.id}')">Details</button>
+                        ${isOpen ? `<button class="btn-cancel btn-small" onclick="cancelOrder('${order.id}')">Cancel</button>` : ''}
+                    </div>
                 </td>
             </tr>
         `}).join('');
@@ -496,6 +498,7 @@ async function cancelOrder(orderId) {
 
         alert('Order cancelled successfully!');
         fetchOrders();
+        syncHistoryWithAPI(); // Immediate sync
     } catch (err) {
         alert(`Error: ${err.message}`);
     }
@@ -586,6 +589,7 @@ async function cancelAllOrders() {
 
 // Make functions available globally
 window.cancelOrder = cancelOrder;
+window.viewOrderDetails = viewOrderDetails;
 window.cancelSelectedOrders = cancelSelectedOrders;
 window.toggleSelectAllOrders = toggleSelectAllOrders;
 window.updateCancelSelectedButton = updateCancelSelectedButton;
@@ -594,6 +598,97 @@ function initOrderButtons() {
     if (cancelAllBtn) cancelAllBtn.addEventListener('click', cancelAllOrders);
     if (cancelSelectedBtn) cancelSelectedBtn.addEventListener('click', cancelSelectedOrders);
     if (selectAllCheckbox) selectAllCheckbox.addEventListener('change', toggleSelectAllOrders);
+
+    // Modal close handlers
+    const modal = document.getElementById('order-details-modal');
+    const closeBtn = document.querySelector('.close-modal');
+
+    if (closeBtn) {
+        closeBtn.onclick = () => {
+            modal.style.display = 'none';
+        };
+    }
+
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+}
+
+async function viewOrderDetails(orderId) {
+    const modal = document.getElementById('order-details-modal');
+    const content = document.getElementById('order-details-content');
+
+    if (modal) modal.style.display = 'block';
+    if (content) content.innerHTML = '<div class="loading">Loading details...</div>';
+
+    try {
+        const response = await fetchWithLogging(`${API_BASE}/api/orders/${orderId}`, {
+            headers: getAuthHeaders()
+        });
+
+        const order = response._body;
+
+        if (!response.ok) {
+            throw new Error(order.error || 'Failed to fetch order details');
+        }
+
+        content.innerHTML = `
+            <div class="details-grid">
+                <div class="detail-item">
+                    <span class="label">Order ID</span>
+                    <span class="value" style="font-size: 0.8rem;">${order.id}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="label">Symbol</span>
+                    <span class="value">${order.symbol}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="label">Side</span>
+                    <span class="value ${order.side === 'buy' ? 'positive' : 'negative'}">${order.side.toUpperCase()}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="label">Status</span>
+                    <span class="value"><span class="status-${order.status}">${order.status}</span></span>
+                </div>
+                <div class="detail-item">
+                    <span class="label">Quantity</span>
+                    <span class="value">${order.qty}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="label">Filled Quantity</span>
+                    <span class="value">${order.filled_qty || 0}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="label">Order Type</span>
+                    <span class="value">${order.type}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="label">Time in Force</span>
+                    <span class="value">${order.time_in_force.toUpperCase()}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="label">Limit Price</span>
+                    <span class="value">${order.limit_price ? formatCurrency(order.limit_price) : '-'}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="label">Avg Fill Price</span>
+                    <span class="value">${order.filled_avg_price ? formatCurrency(order.filled_avg_price) : '-'}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="label">Created At</span>
+                    <span class="value">${formatDate(order.created_at)}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="label">Updated At</span>
+                    <span class="value">${formatDate(order.updated_at)}</span>
+                </div>
+            </div>
+        `;
+    } catch (err) {
+        if (content) content.innerHTML = `<div class="error-message">Error: ${err.message}</div>`;
+    }
 }
 
 // Asset class toggle
@@ -757,6 +852,7 @@ function initOrderForm() {
                 logTransaction(data, 'placed');
 
                 orderSuccess.style.display = 'block';
+        syncHistoryWithAPI(); // Immediate sync
                 orderSuccess.textContent = `Order placed successfully! Order ID: ${data.id || 'N/A'}`;
                 orderForm.reset();
                 const symEl = document.getElementById('symbol');
@@ -1006,6 +1102,9 @@ function saveHistory(history) {
 function logTransaction(order, eventType) {
     const history = getHistory();
 
+    // Normalize status for consistency
+    const status = (order.status || '').toLowerCase();
+
     // Calculate amount (Price * Qty)
     let price = parseFloat(order.filled_avg_price || order.limit_price || 0);
     let qty = parseFloat(order.filled_qty || order.qty || 0);
@@ -1019,13 +1118,17 @@ function logTransaction(order, eventType) {
         qty: order.qty,
         price: price,
         amount: amount,
-        status: order.status,
+        status: status,
         event: eventType,
-        timestamp: new Date().toISOString()
+        timestamp: order.filled_at || order.canceled_at || order.created_at || new Date().toISOString()
     };
 
     // Check if this specific event for this order is already logged to avoid duplicates
-    const isDuplicate = history.some(h => h.orderId === order.id && h.event === eventType && h.status === order.status);
+    // We check both the event type AND the status
+    const isDuplicate = history.some(h =>
+        h.orderId === order.id &&
+        (h.event === eventType || h.status === status)
+    );
     if (isDuplicate) return;
 
     history.unshift(entry);
@@ -1093,26 +1196,41 @@ async function backfillHistory() {
 // Sync current orders to detect status changes
 async function syncHistoryWithAPI() {
     try {
-        const response = await fetchWithLogging(`${API_BASE}/api/orders`, {
+        // Fetch all orders (including closed ones) to ensure history is accurate
+        const response = await fetchWithLogging(`${API_BASE}/api/orders?status=all`, {
             headers: getAuthHeaders()
         });
         if (!response.ok) return;
         const currentOrders = response._body;
 
         const history = getHistory();
+        let changed = false;
 
         currentOrders.forEach(order => {
-            // Check if we have a log for this order's current status
-            const hasStatusLog = history.some(h => h.orderId === order.id && h.status === order.status);
-            if (!hasStatusLog) {
-                let eventType = 'status_change';
-                if (order.status === 'filled') eventType = 'filled';
-                if (order.status === 'canceled') eventType = 'cancelled';
-                if (order.status === 'expired') eventType = 'expired';
+            const status = (order.status || '').toLowerCase();
 
+            // Map Alpaca status to our event types
+            let eventType = 'status_change';
+            if (status === 'filled') eventType = 'filled';
+            else if (status === 'canceled' || status === 'cancelled') eventType = 'cancelled';
+            else if (status === 'expired') eventType = 'expired';
+            else if (status === 'new' || status === 'pending_new' || status === 'accepted') eventType = 'placed';
+            else if (status === 'rejected') eventType = 'rejected';
+
+            // Check if we already have this status or event logged for this order
+            const isLogged = history.some(h =>
+                h.orderId === order.id && (h.status === status || h.event === eventType)
+            );
+
+            if (!isLogged) {
                 logTransaction(order, eventType);
+                changed = true;
             }
         });
+
+        if (changed) {
+            devLog('HISTORY', 'History updated from sync');
+        }
     } catch (err) {
         devError('HISTORY', 'Sync failed', err.message);
     }
