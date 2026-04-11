@@ -11,14 +11,12 @@ Usage:
     # Run analysis on all watchlist symbols
     python analyze.py
 
-    # Run specific patterns
-    python analyze.py --patterns vwap_deviation gap_analysis
+    # JSON output (for API use)
+    python analyze.py --format json --summary
+    python analyze.py --format json --symbols SPY --min-confidence 0.5
 
     # Update data then analyze
     python analyze.py --update
-
-    # Show only high-confidence signals
-    python analyze.py --min-confidence 0.7
 
     # Export signals to JSON
     python analyze.py --export signals.json
@@ -39,29 +37,40 @@ from fetch_bars import fetch_and_store, load_bars, get_watchlist_symbols, add_to
 from patterns import run_all_patterns, ALL_PATTERNS
 
 
+def log(msg, json_mode=False):
+    """Print to stderr in JSON mode (so stdout stays clean), stdout otherwise."""
+    if json_mode:
+        print(msg, file=sys.stderr)
+    else:
+        print(msg)
+
+
 def fetch_all_data(symbols: list[str], timeframes: list[str] = None, full: bool = False,
-                   source: str = "auto"):
-    """Fetch data for all symbols and timeframes."""
+                   source: str = "auto", json_mode: bool = False):
+    """Fetch data for all symbols and timeframes. Returns list of result dicts."""
     if timeframes is None:
         timeframes = ["1m", "5m", "1h", "1d"]
 
-    print(f"\n{'='*50}")
-    print(f"FETCHING DATA")
-    print(f"{'='*50}")
+    log(f"\n{'='*50}\nFETCHING DATA\n{'='*50}", json_mode)
 
+    results = []
     for symbol in symbols:
-        print(f"\n  {symbol}:")
+        log(f"\n  {symbol}:", json_mode)
         for tf in timeframes:
             try:
                 count = fetch_and_store(symbol, tf, full=full, source=source)
-                print(f"    {tf}: {count} new bars")
+                log(f"    {tf}: {count} new bars", json_mode)
+                results.append({"symbol": symbol, "timeframe": tf, "bars_fetched": count, "status": "ok"})
             except Exception as e:
-                print(f"    {tf}: ERROR - {e}")
+                log(f"    {tf}: ERROR - {e}", json_mode)
+                results.append({"symbol": symbol, "timeframe": tf, "bars_fetched": 0, "status": "error", "error": str(e)})
+    return results
 
 
-def analyze_symbol(symbol: str, patterns: list[str] = None, min_confidence: float = 0.0):
+def analyze_symbol(symbol: str, patterns: list[str] = None, min_confidence: float = 0.0,
+                   json_mode: bool = False):
     """Run analysis on a single symbol. Returns list of Signal objects."""
-    print(f"\n  Analyzing {symbol}...")
+    log(f"\n  Analyzing {symbol}...", json_mode)
 
     # Load data from local DB
     bars = {}
@@ -70,10 +79,10 @@ def analyze_symbol(symbol: str, patterns: list[str] = None, min_confidence: floa
         count = model.select().where(model.symbol == symbol).count()
         if count > 0:
             bars[f"bars_{tf}"] = load_bars(symbol, tf)
-            print(f"    {tf}: {count} bars loaded")
+            log(f"    {tf}: {count} bars loaded", json_mode)
         else:
             bars[f"bars_{tf}"] = None
-            print(f"    {tf}: no data — run --update first")
+            log(f"    {tf}: no data — run --update first", json_mode)
 
     # Run pattern detection
     signals = run_all_patterns(symbol, patterns=patterns, **bars)
@@ -151,8 +160,31 @@ def export_signals(signals: list, filepath: str):
     print(f"\n  Exported {len(signals)} signals to {filepath}")
 
 
+def build_summary_json(symbols: list[str]) -> dict:
+    """Build a data summary dict for JSON output."""
+    result = {"symbols": []}
+    for symbol in symbols:
+        sym_data = {"symbol": symbol, "timeframes": []}
+        for tf in ["1m", "5m", "1h", "1d"]:
+            model = get_bar_model(tf)
+            count = model.select().where(model.symbol == symbol).count()
+            tf_info = {"timeframe": tf, "bar_count": count}
+            if count > 0:
+                first = model.select(model.timestamp).where(
+                    model.symbol == symbol
+                ).order_by(model.timestamp.asc()).first()
+                last = model.select(model.timestamp).where(
+                    model.symbol == symbol
+                ).order_by(model.timestamp.desc()).first()
+                tf_info["first_date"] = first.timestamp.strftime("%Y-%m-%d")
+                tf_info["last_date"] = last.timestamp.strftime("%Y-%m-%d")
+            sym_data["timeframes"].append(tf_info)
+        result["symbols"].append(sym_data)
+    return result
+
+
 def show_summary(symbols: list[str]):
-    """Show a summary of stored data per symbol."""
+    """Show a summary of stored data per symbol (text mode)."""
     print(f"\n{'='*50}")
     print(f"  DATA SUMMARY")
     print(f"{'='*50}")
@@ -191,68 +223,99 @@ def main():
     parser.add_argument("--store", action="store_true", help="Store signals in the database")
     parser.add_argument("--source", choices=["alpaca", "yfinance", "auto"], default="yfinance",
                         help="Data source for fetching (default: yfinance)")
+    parser.add_argument("--format", choices=["text", "json"], default="text", dest="output_format",
+                        help="Output format: text (human-readable) or json (structured)")
+    parser.add_argument("--watchlist-only", action="store_true",
+                        help="Output watchlist as JSON and exit")
     args = parser.parse_args()
 
+    json_mode = args.output_format == "json"
     init_db()
+
+    # Handle watchlist-only mode
+    if args.watchlist_only:
+        symbols = get_watchlist_symbols()
+        print(json.dumps({"symbols": symbols}))
+        return
 
     # Manage watchlist
     if args.add:
         add_to_watchlist(args.add)
-        print(f"Added {args.add} to watchlist")
+        log(f"Added {args.add} to watchlist", json_mode)
 
     if args.remove:
         for sym in args.remove:
             sym = sym.upper().strip()
             deleted = Watchlist.delete().where(Watchlist.symbol == sym).execute()
-            print(f"Removed {sym} ({deleted} entries)")
+            log(f"Removed {sym} ({deleted} entries)", json_mode)
 
     # Get symbols to analyze
     symbols = args.symbols or get_watchlist_symbols()
     if not symbols:
-        print("No symbols to analyze. Use --add SYMBOL to add to watchlist.")
-        print("Example: python analyze.py --add SPY AAPL TSLA")
+        if json_mode:
+            print(json.dumps({"error": "No symbols in watchlist. Add symbols first."}))
+        else:
+            print("No symbols to analyze. Use --add SYMBOL to add to watchlist.")
+            print("Example: python analyze.py --add SPY AAPL TSLA")
         sys.exit(1)
 
     # Fetch data if requested
+    fetch_results = None
     if args.update or args.full:
-        fetch_all_data(symbols, full=args.full, source=args.source)
+        fetch_results = fetch_all_data(symbols, full=args.full, source=args.source, json_mode=json_mode)
+        if json_mode:
+            # In JSON mode with fetch, output fetch results and stop unless also analyzing
+            pass
 
     # Show summary if requested
     if args.summary:
-        show_summary(symbols)
+        if json_mode:
+            print(json.dumps(build_summary_json(symbols), indent=2, default=str))
+        else:
+            show_summary(symbols)
         return
 
     # Run analysis
-    print(f"\n{'='*50}")
-    print(f"  PATTERN ANALYSIS")
-    print(f"{'='*50}")
-    print(f"  Symbols: {', '.join(symbols)}")
-    print(f"  Patterns: {', '.join(args.patterns) if args.patterns else 'all'}")
-    print(f"  Min confidence: {args.min_confidence}")
+    if not json_mode:
+        log(f"\n{'='*50}\n  PATTERN ANALYSIS\n{'='*50}", json_mode=False)
+        log(f"  Symbols: {', '.join(symbols)}", json_mode=False)
+        log(f"  Patterns: {', '.join(args.patterns) if args.patterns else 'all'}", json_mode=False)
+        log(f"  Min confidence: {args.min_confidence}", json_mode=False)
 
     all_signals = []
     for symbol in symbols:
         try:
             signals = analyze_symbol(symbol, patterns=args.patterns,
-                                     min_confidence=args.min_confidence)
+                                     min_confidence=args.min_confidence,
+                                     json_mode=json_mode)
             all_signals.extend(signals)
-            print(f"    → {len(signals)} signals")
+            log(f"    → {len(signals)} signals", json_mode)
         except Exception as e:
-            print(f"    → ERROR: {e}")
+            log(f"    → ERROR: {e}", json_mode)
 
-    # Print results
-    print_signals(all_signals, verbose=args.verbose)
+    if json_mode:
+        # Output signals as JSON to stdout
+        output = {
+            "signals": [s.to_dict() for s in all_signals],
+            "count": len(all_signals),
+        }
+        if fetch_results:
+            output["fetch_results"] = fetch_results
+        print(json.dumps(output, indent=2, default=str))
+    else:
+        # Print results in human-readable format
+        print_signals(all_signals, verbose=args.verbose)
 
-    # Store if requested
-    if args.store and all_signals:
-        store_signals(all_signals)
-        print(f"\n  Stored {len(all_signals)} signals in database")
+        # Store if requested
+        if args.store and all_signals:
+            store_signals(all_signals)
+            print(f"\n  Stored {len(all_signals)} signals in database")
 
-    # Export if requested
-    if args.export and all_signals:
-        export_signals(all_signals, args.export)
+        # Export if requested
+        if args.export and all_signals:
+            export_signals(all_signals, args.export)
 
-    print(f"\n  Total signals: {len(all_signals)}")
+        print(f"\n  Total signals: {len(all_signals)}")
 
     return all_signals
 

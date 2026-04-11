@@ -84,6 +84,14 @@ async fn main() {
         .route("/api/orders/{id}", delete(routes::orders::cancel_order))
         .route("/api/orders/cancel-all", post(routes::orders::cancel_all_orders))
 
+        // Analytics routes (authenticated)
+        .route("/api/analytics/watchlist", get(routes::analytics::get_watchlist))
+        .route("/api/analytics/watchlist", post(routes::analytics::update_watchlist))
+        .route("/api/analytics/fetch", post(routes::analytics::fetch_data))
+        .route("/api/analytics/summary", get(routes::analytics::get_summary))
+        .route("/api/analytics/analyze", post(routes::analytics::run_analysis))
+        .route("/api/analytics/patterns", get(routes::analytics::get_patterns))
+
         // WebSocket route
         .route("/api/ws/prices", get(routes::websocket::ws_handler))
         .with_state(state)
