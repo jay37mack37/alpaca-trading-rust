@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
-use crate::api::alpaca::AlpacaClient;
+use crate::api::alpaca::AlpacaApi;
 use crate::api::ws_manager::WsManager;
 use crate::auth;
 use crate::models::websocket::{WsAction, WsUpdate};
@@ -34,11 +34,7 @@ pub async fn ws_handler(
     }
 }
 
-#[derive(Clone)]
-pub struct AppState {
-    pub alpaca: Option<AlpacaClient>,
-    pub ws_manager: Arc<WsManager>,
-}
+pub use crate::AppState;
 
 async fn handle_socket(socket: WebSocket, state: AppState, _username: String) {
     let (mut sender, mut receiver) = socket.split::<Message>();

@@ -185,11 +185,32 @@ pub fn get_api_key_status(username: &str) -> (bool, Option<String>) {
     (configured, environment)
 }
 
+static MOCK_API_KEYS: once_cell::sync::Lazy<RwLock<HashMap<String, ApiKeyConfig>>> =
+    once_cell::sync::Lazy::new(|| RwLock::new(HashMap::new()));
+
 pub fn get_api_keys(username: &str) -> Option<(String, String, String)> {
+    // Check mock keys first (for tests)
+    {
+        let mocks = MOCK_API_KEYS.read().unwrap();
+        if let Some(k) = mocks.get(username) {
+            return Some((k.api_key.clone(), k.api_secret.clone(), k.environment.clone()));
+        }
+    }
+
     let config = Config::load();
     config.api_keys.get(username).map(|k| {
         (k.api_key.clone(), k.api_secret.clone(), k.environment.clone())
     })
+}
+
+/// For testing purposes - sets mock API keys in memory only
+pub fn set_mock_api_keys(username: &str, api_key: &str, api_secret: &str, environment: &str) {
+    let mut mocks = MOCK_API_KEYS.write().unwrap();
+    mocks.insert(username.to_string(), ApiKeyConfig {
+        api_key: api_key.to_string(),
+        api_secret: api_secret.to_string(),
+        environment: environment.to_string(),
+    });
 }
 
 pub fn logout(token: &str) {

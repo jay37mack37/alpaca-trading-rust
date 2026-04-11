@@ -10,12 +10,12 @@ use axum::extract::State;
 
 /// Cancel an order by ID
 pub async fn cancel_order(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     path: axum::extract::Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let order_id = path.0;
-    let api_client = get_authenticated_client(&headers).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
     let username = crate::routes::auth::get_username_from_headers(&headers).unwrap_or_else(|_| "unknown".to_string());
 
     tracing::info!(user = %username, order_id = %order_id, "Cancelling order");
@@ -39,10 +39,10 @@ pub async fn cancel_order(
 
 /// Cancel all open orders
 pub async fn cancel_all_orders(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let api_client = get_authenticated_client(&headers).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
     let username = crate::routes::auth::get_username_from_headers(&headers).unwrap_or_else(|_| "unknown".to_string());
 
     tracing::info!(user = %username, "Cancelling all orders");
@@ -67,12 +67,12 @@ pub async fn cancel_all_orders(
 
 /// Get a specific order by ID
 pub async fn get_order_by_id(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     path: axum::extract::Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let order_id = path.0;
-    let api_client = get_authenticated_client(&headers).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
 
     match api_client.get_order_by_id(&order_id).await {
         Ok(order) => Ok(Json(order)),

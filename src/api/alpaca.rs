@@ -1,8 +1,24 @@
+use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::Value;
 
 use crate::models::option_chain::{OptionChainResponse, OptionEntry, StrikeData};
 use crate::models::order::OrderRequest;
+
+#[async_trait]
+pub trait AlpacaApi: Send + Sync {
+    async fn get_account(&self) -> Result<Value, reqwest::Error>;
+    async fn get_positions(&self) -> Result<Vec<Value>, reqwest::Error>;
+    async fn get_orders(&self, status: Option<String>) -> Result<Vec<Value>, reqwest::Error>;
+    async fn create_order(&self, order: OrderRequest) -> Result<Value, reqwest::Error>;
+    async fn get_order_by_id(&self, order_id: &str) -> Result<Value, reqwest::Error>;
+    async fn cancel_order(&self, order_id: &str) -> Result<Value, reqwest::Error>;
+    async fn cancel_all_orders(&self) -> Result<Vec<Value>, reqwest::Error>;
+    async fn get_current_price(&self, symbol: &str) -> Result<Value, reqwest::Error>;
+    async fn get_option_strikes(&self, symbol: &str, expiration: Option<String>) -> Result<Value, reqwest::Error>;
+    async fn get_option_chain(&self, symbol: &str) -> Result<OptionChainResponse, reqwest::Error>;
+    async fn get_option_price(&self, option_symbol: &str) -> Result<Value, reqwest::Error>;
+}
 
 const ALPACA_PAPER_URL: &str = "https://paper-api.alpaca.markets/v2";
 const ALPACA_LIVE_URL: &str = "https://api.alpaca.markets/v2";
@@ -17,50 +33,10 @@ pub struct AlpacaClient {
     base_url: String,
 }
 
-impl AlpacaClient {
-    pub fn new() -> Result<Self, &'static str> {
-        let api_key = std::env::var("ALPACA_API_KEY")
-            .map_err(|_| "ALPACA_API_KEY not set")?;
-        let api_secret = std::env::var("ALPACA_API_SECRET")
-            .map_err(|_| "ALPACA_API_SECRET not set")?;
-        let environment = std::env::var("ALPACA_ENV").unwrap_or_else(|_| "paper".to_string());
-
-        let base_url = if environment == "live" {
-            ALPACA_LIVE_URL.to_string()
-        } else {
-            ALPACA_PAPER_URL.to_string()
-        };
-
-        Ok(Self {
-            client: Client::new(),
-            api_key,
-            api_secret,
-            base_url,
-        })
-    }
-
-    pub fn with_keys(api_key: &str, api_secret: &str) -> Result<Self, &'static str> {
-        Ok(Self {
-            client: Client::new(),
-            api_key: api_key.to_string(),
-            api_secret: api_secret.to_string(),
-            base_url: ALPACA_PAPER_URL.to_string(), // Default to paper
-        })
-    }
-
-    fn build_headers(&self) -> reqwest::header::HeaderMap {
-        let mut headers = reqwest::header::HeaderMap::new();
-        if let Ok(key) = self.api_key.parse() {
-            headers.insert("APCA-API-KEY-ID", key);
-        }
-        if let Ok(secret) = self.api_secret.parse() {
-            headers.insert("APCA-API-SECRET-KEY", secret);
-        }
-        headers
-    }
-
+#[async_trait]
+impl AlpacaApi for AlpacaClient {
     /// Get account information
-    pub async fn get_account(&self) -> Result<Value, reqwest::Error> {
+    async fn get_account(&self) -> Result<Value, reqwest::Error> {
         let url = format!("{}/account", self.base_url);
         let response = self.client
             .get(&url)
@@ -78,7 +54,7 @@ impl AlpacaClient {
     }
 
     /// Get all open positions
-    pub async fn get_positions(&self) -> Result<Vec<Value>, reqwest::Error> {
+    async fn get_positions(&self) -> Result<Vec<Value>, reqwest::Error> {
         let url = format!("{}/positions", self.base_url);
         let response = self.client
             .get(&url)
@@ -90,7 +66,7 @@ impl AlpacaClient {
     }
 
     /// Get orders
-    pub async fn get_orders(&self, status: Option<&str>) -> Result<Vec<Value>, reqwest::Error> {
+    async fn get_orders(&self, status: Option<String>) -> Result<Vec<Value>, reqwest::Error> {
         let mut url = format!("{}/orders", self.base_url);
         if let Some(s) = status {
             url = format!("{}?status={}", url, s);
@@ -105,7 +81,7 @@ impl AlpacaClient {
     }
 
     /// Create a new order
-    pub async fn create_order(&self, order: OrderRequest) -> Result<Value, reqwest::Error> {
+    async fn create_order(&self, order: OrderRequest) -> Result<Value, reqwest::Error> {
         let url = format!("{}/orders", self.base_url);
 
         let mut body = serde_json::json!({
@@ -144,7 +120,7 @@ impl AlpacaClient {
     }
 
     /// Get order by ID
-    pub async fn get_order_by_id(&self, order_id: &str) -> Result<Value, reqwest::Error> {
+    async fn get_order_by_id(&self, order_id: &str) -> Result<Value, reqwest::Error> {
         let url = format!("{}/orders/{}", self.base_url, order_id);
         let response = self.client
             .get(&url)
@@ -156,7 +132,7 @@ impl AlpacaClient {
     }
 
     /// Cancel an order by ID
-    pub async fn cancel_order(&self, order_id: &str) -> Result<Value, reqwest::Error> {
+    async fn cancel_order(&self, order_id: &str) -> Result<Value, reqwest::Error> {
         let url = format!("{}/orders/{}", self.base_url, order_id);
         let response = self.client
             .delete(&url)
@@ -168,7 +144,7 @@ impl AlpacaClient {
     }
 
     /// Cancel all open orders
-    pub async fn cancel_all_orders(&self) -> Result<Vec<Value>, reqwest::Error> {
+    async fn cancel_all_orders(&self) -> Result<Vec<Value>, reqwest::Error> {
         let url = format!("{}/orders", self.base_url);
         let response = self.client
             .delete(&url)
@@ -180,7 +156,7 @@ impl AlpacaClient {
     }
 
     /// Get current price for a symbol
-    pub async fn get_current_price(&self, symbol: &str) -> Result<Value, reqwest::Error> {
+    async fn get_current_price(&self, symbol: &str) -> Result<Value, reqwest::Error> {
         // Use the market data API endpoint
         let url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
         let response = self.client
@@ -193,7 +169,7 @@ impl AlpacaClient {
     }
 
     /// Get option chain for a symbol (returns available strikes)
-    pub async fn get_option_strikes(&self, symbol: &str, expiration: Option<&str>) -> Result<Value, reqwest::Error> {
+    async fn get_option_strikes(&self, symbol: &str, expiration: Option<String>) -> Result<Value, reqwest::Error> {
         // Get snapshot data for the underlying to determine ATM strike
         let url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
         let response = self.client
@@ -263,7 +239,7 @@ impl AlpacaClient {
     }
 
     /// Get real option chain for a symbol
-    pub async fn get_option_chain(&self, symbol: &str) -> Result<OptionChainResponse, reqwest::Error> {
+    async fn get_option_chain(&self, symbol: &str) -> Result<OptionChainResponse, reqwest::Error> {
         // 1. Get current stock price
         let price_url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
         let price_response = self.client
@@ -362,7 +338,7 @@ impl AlpacaClient {
     }
 
     /// Get current price for an option
-    pub async fn get_option_price(&self, option_symbol: &str) -> Result<Value, reqwest::Error> {
+    async fn get_option_price(&self, option_symbol: &str) -> Result<Value, reqwest::Error> {
         // Extract underlying symbol from OCC format
         // OCC format: SYMBOL + YYMMDD + C/P + STRIKE (8 chars)
         // For short symbols (like SPY), no padding: SPY260408C00670000
@@ -444,6 +420,50 @@ impl AlpacaClient {
             "type": option_type
         }))
     }
+}
+
+impl AlpacaClient {
+    pub fn new() -> Result<Self, &'static str> {
+        let api_key = std::env::var("ALPACA_API_KEY")
+            .map_err(|_| "ALPACA_API_KEY not set")?;
+        let api_secret = std::env::var("ALPACA_API_SECRET")
+            .map_err(|_| "ALPACA_API_SECRET not set")?;
+        let environment = std::env::var("ALPACA_ENV").unwrap_or_else(|_| "paper".to_string());
+
+        let base_url = if environment == "live" {
+            ALPACA_LIVE_URL.to_string()
+        } else {
+            ALPACA_PAPER_URL.to_string()
+        };
+
+        Ok(Self {
+            client: Client::new(),
+            api_key,
+            api_secret,
+            base_url,
+        })
+    }
+
+    pub fn with_keys(api_key: &str, api_secret: &str) -> Result<Self, &'static str> {
+        Ok(Self {
+            client: Client::new(),
+            api_key: api_key.to_string(),
+            api_secret: api_secret.to_string(),
+            base_url: ALPACA_PAPER_URL.to_string(), // Default to paper
+        })
+    }
+
+    fn build_headers(&self) -> reqwest::header::HeaderMap {
+        let mut headers = reqwest::header::HeaderMap::new();
+        if let Ok(key) = self.api_key.parse() {
+            headers.insert("APCA-API-KEY-ID", key);
+        }
+        if let Ok(secret) = self.api_secret.parse() {
+            headers.insert("APCA-API-SECRET-KEY", secret);
+        }
+        headers
+    }
+
 }
 
 impl Default for AlpacaClient {

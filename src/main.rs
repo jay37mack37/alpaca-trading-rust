@@ -5,15 +5,10 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-mod api;
-mod auth;
-mod models;
-mod routes;
-
-use api::alpaca::AlpacaClient;
-use api::price_streamer::PriceStreamer;
-use api::ws_manager::WsManager;
-use routes::websocket::AppState;
+use alpaca_trading3web::api::alpaca::{AlpacaApi, AlpacaClient};
+use alpaca_trading3web::api::price_streamer::PriceStreamer;
+use alpaca_trading3web::api::ws_manager::WsManager;
+use alpaca_trading3web::{auth, routes, AppState};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -31,12 +26,12 @@ async fn main() {
     auth::init();
 
     // Initialize Alpaca client (for demo/fallback)
-    let (alpaca_client, api_key, api_secret) = match AlpacaClient::new() {
+    let (alpaca_client, api_key, api_secret): (Option<Arc<dyn AlpacaApi>>, _, _) = match AlpacaClient::new() {
         Ok(client) => {
             tracing::info!("Alpaca client initialized from environment variables");
             let key = std::env::var("ALPACA_API_KEY").ok();
             let secret = std::env::var("ALPACA_API_SECRET").ok();
-            (Some(client), key, secret)
+            (Some(Arc::new(client)), key, secret)
         }
         Err(_) => {
             tracing::info!("No Alpaca API keys in environment. Configure in Settings.");

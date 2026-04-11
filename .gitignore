@@ -22,6 +22,11 @@ Thumbs.db
 # Logs
 *.log
 
+# Node.js
+node_modules/
+playwright-report/
+test-results/
+
 # Analytics runtime data
 analytics/market_data.db
 analytics/__pycache__/

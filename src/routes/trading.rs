@@ -25,10 +25,10 @@ pub struct OrdersQuery {
 
 /// Get account information
 pub async fn get_account(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let api_client = get_authenticated_client(&headers).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
 
     match api_client.get_account().await {
         Ok(account) => Ok(Json(account)),
@@ -43,11 +43,11 @@ pub async fn get_account(
 
 /// Get option chain for a symbol
 pub async fn get_option_chain(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(symbol): Path<String>,
 ) -> Result<Json<OptionChainResponse>, (StatusCode, Json<Value>)> {
-    let api_client = get_authenticated_client(&headers).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
 
     match api_client.get_option_chain(&symbol).await {
         Ok(chain) => Ok(Json(chain)),
@@ -62,10 +62,10 @@ pub async fn get_option_chain(
 
 /// Get all open positions
 pub async fn get_positions(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Vec<Value>>, (StatusCode, Json<Value>)> {
-    let api_client = get_authenticated_client(&headers).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
 
     match api_client.get_positions().await {
         Ok(positions) => Ok(Json(positions)),
@@ -80,13 +80,13 @@ pub async fn get_positions(
 
 /// Get orders
 pub async fn get_orders(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Query(query): Query<OrdersQuery>,
 ) -> Result<Json<Vec<Value>>, (StatusCode, Json<Value>)> {
-    let api_client = get_authenticated_client(&headers).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
 
-    match api_client.get_orders(query.status.as_deref()).await {
+    match api_client.get_orders(query.status.clone()).await {
         Ok(orders) => Ok(Json(orders)),
         Err(e) => {
             tracing::error!("Failed to get orders: {}", e);
@@ -99,11 +99,11 @@ pub async fn get_orders(
 
 /// Create a new order
 pub async fn create_order(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Json(order): Json<OrderRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let api_client = get_authenticated_client(&headers).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
 
     // Get username for auditing
     let username = crate::routes::auth::get_username_from_headers(&headers).unwrap_or_else(|_| "unknown".to_string());
@@ -141,11 +141,11 @@ pub async fn create_order(
 
 /// Get current price for a symbol
 pub async fn get_price(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(symbol): Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let api_client = get_authenticated_client(&headers).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
 
     match api_client.get_current_price(&symbol).await {
         Ok(quote) => Ok(Json(quote)),
@@ -160,14 +160,14 @@ pub async fn get_price(
 
 /// Get option strikes for a symbol
 pub async fn get_option_strikes(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(symbol): Path<String>,
     Query(params): Query<OptionsQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let api_client = get_authenticated_client(&headers).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
 
-    let expiration = params.expiration.as_deref();
+    let expiration = params.expiration.clone();
     match api_client.get_option_strikes(&symbol, expiration).await {
         Ok(strikes) => Ok(Json(strikes)),
         Err(e) => {
@@ -181,11 +181,11 @@ pub async fn get_option_strikes(
 
 /// Get current price for an option
 pub async fn get_option_price(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(symbol): Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let api_client = get_authenticated_client(&headers).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
 
     match api_client.get_option_price(&symbol).await {
         Ok(quote) => Ok(Json(quote)),

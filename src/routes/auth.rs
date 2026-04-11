@@ -4,7 +4,8 @@ use axum::{
 };
 use serde_json::{json, Value};
 
-use crate::api::alpaca::AlpacaClient;
+use std::sync::Arc;
+use crate::api::alpaca::{AlpacaApi, AlpacaClient};
 use crate::auth;
 use crate::auth::{LoginRequest, PasswordRequest, ApiKeyRequest};
 
@@ -123,13 +124,19 @@ pub fn get_username_from_headers(headers: &axum::http::HeaderMap) -> Result<Stri
 /// Strictly requires user-specific API keys.
 pub async fn get_authenticated_client(
     headers: &axum::http::HeaderMap,
-) -> Result<AlpacaClient, (StatusCode, Json<Value>)> {
+    state: &crate::AppState,
+) -> Result<Arc<dyn AlpacaApi>, (StatusCode, Json<Value>)> {
     let username = get_username_from_headers(headers)?;
+
+    if let Some(alpaca) = &state.alpaca {
+        return Ok(alpaca.clone());
+    }
 
     match auth::get_api_keys(&username) {
         Some((api_key, api_secret, _environment)) => {
             // Create client with user's keys
             AlpacaClient::with_keys(&api_key, &api_secret)
+                .map(|c| Arc::new(c) as Arc<dyn AlpacaApi>)
                 .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
                     "error": e
                 }))))

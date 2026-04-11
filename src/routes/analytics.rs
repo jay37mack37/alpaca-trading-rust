@@ -119,7 +119,14 @@ async fn run_analytics_script(
     let project_dir = project_dir()?;
     let script_path = project_dir.join("analytics").join(script);
 
-    let mut cmd = Command::new("python3");
+    // Check if python3 or python is available
+    let python_cmd = if Command::new("python3").arg("--version").output().await.is_ok() {
+        "python3"
+    } else {
+        "python"
+    };
+
+    let mut cmd = Command::new(python_cmd);
     cmd.arg(&script_path)
         .args(args)
         .arg("--format")
