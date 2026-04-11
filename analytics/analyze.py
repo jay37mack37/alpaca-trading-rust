@@ -232,13 +232,7 @@ def main():
     json_mode = args.output_format == "json"
     init_db()
 
-    # Handle watchlist-only mode
-    if args.watchlist_only:
-        symbols = get_watchlist_symbols()
-        print(json.dumps({"symbols": symbols}))
-        return
-
-    # Manage watchlist
+    # Manage watchlist (MUST happen before --watchlist-only check)
     if args.add:
         add_to_watchlist(args.add)
         log(f"Added {args.add} to watchlist", json_mode)
@@ -248,6 +242,12 @@ def main():
             sym = sym.upper().strip()
             deleted = Watchlist.delete().where(Watchlist.symbol == sym).execute()
             log(f"Removed {sym} ({deleted} entries)", json_mode)
+
+    # Handle watchlist-only mode (AFTER add/remove so they take effect)
+    if args.watchlist_only:
+        symbols = get_watchlist_symbols()
+        print(json.dumps({"symbols": symbols}))
+        return
 
     # Get symbols to analyze
     symbols = args.symbols or get_watchlist_symbols()

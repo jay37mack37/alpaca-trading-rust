@@ -1978,6 +1978,7 @@ function renderPatternCheckboxes() {
 function renderPatternFilter() {
     if (!signalFilterPattern) return;
     let html = '<option value="all">All Patterns</option>';
+    // Use detector pattern IDs as filter options since analysis groups results by detector
     for (const p of allPatterns) {
         html += `<option value="${p.id}">${p.name}</option>`;
     }
@@ -1991,6 +1992,18 @@ async function runAnalysis() {
     if (patternCheckboxes) {
         patternCheckboxes.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => patterns.push(cb.value));
     }
+
+    // Validate: must have at least one pattern selected
+    if (patterns.length === 0) {
+        if (analysisError) {
+            analysisError.textContent = 'Select at least one pattern to analyze.';
+            analysisError.style.display = 'block';
+        }
+        currentSignals = [];
+        renderSignals();
+        return;
+    }
+
     const storeSignals = storeSignalsCheckbox ? storeSignalsCheckbox.checked : false;
     const updateData = updateDataCheckbox ? updateDataCheckbox.checked : false;
     const source = fetchSourceSelect ? fetchSourceSelect.value : 'yfinance';
@@ -2036,7 +2049,21 @@ function renderSignals() {
     let filtered = currentSignals;
     if (filterSym) filtered = filtered.filter(s => s.symbol.toUpperCase().includes(filterSym));
     if (filterDir !== 'all') filtered = filtered.filter(s => s.direction === filterDir);
-    if (filterPat !== 'all') filtered = filtered.filter(s => s.pattern === filterPat);
+    if (filterPat !== 'all') {
+        // Filter by detector ID - match signals whose pattern starts with the detector prefix
+        // e.g. "gap_analysis" matches "gap_up", "gap_down"
+        // e.g. "momentum_1d" matches "momentum_5d", "momentum_10d", etc.
+        filtered = filtered.filter(s => {
+            const sigPat = s.pattern;
+            // Direct match
+            if (sigPat === filterPat) return true;
+            // Prefix match: detector "gap_analysis" matches signals "gap_up"/"gap_down"
+            // detector "unusual_volume_1m" matches "unusual_volume_1m"
+            const detectorPrefix = filterPat.replace(/_analysis$/, '').replace(/_\d+d$/, '');
+            if (sigPat.startsWith(detectorPrefix)) return true;
+            return false;
+        });
+    }
 
     if (filtered.length === 0) {
         signalsTable.style.display = 'none';
