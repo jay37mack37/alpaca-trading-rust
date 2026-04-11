@@ -34,7 +34,6 @@ class Signal:
     def to_dict(self):
         d = asdict(self)
         d["timestamp"] = self.timestamp.isoformat()
-        d["details"] = json.dumps(self.details)
         return d
 
 
