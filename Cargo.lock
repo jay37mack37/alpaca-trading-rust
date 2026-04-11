@@ -149,6 +149,7 @@ dependencies = [
  "egui",
  "futures-util",
  "lazy_static",
+ "once_cell",
  "reqwest",
  "serde",
  "serde_json",

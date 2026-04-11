@@ -551,7 +551,218 @@ footer a:hover {
     display: block;
 }
 
-/* Modal Styles */
+/* Analytics Styles */
+.analytics-controls {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+}
+
+.analytics-controls .form-group {
+    min-width: 120px;
+}
+
+.watchlist-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 40px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    margin-top: 10px;
+}
+
+.watchlist-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(74, 158, 255, 0.2);
+    border: 1px solid #4a9eff;
+    border-radius: 6px;
+    color: #4a9eff;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.watchlist-tag .remove-tag {
+    cursor: pointer;
+    color: #ff4444;
+    font-size: 1.1rem;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.watchlist-tag .remove-tag:hover {
+    color: #ff8888;
+}
+
+.data-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    margin-top: 15px;
+}
+
+.data-summary-item {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.data-summary-item .symbol {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #4a9eff;
+    margin-bottom: 8px;
+}
+
+.data-summary-item .tf-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    color: #aaa;
+    padding: 2px 0;
+}
+
+.data-summary-item .tf-row .count {
+    color: #00ff88;
+    font-weight: 600;
+}
+
+.checkbox-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.checkbox-group .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.input-with-buttons {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.input-with-buttons input {
+    flex: 1;
+}
+
+.confidence-bar-container {
+    position: relative;
+    width: 100px;
+    height: 18px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 9px;
+    overflow: hidden;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.confidence-bar {
+    height: 100%;
+    border-radius: 9px;
+    transition: width 0.3s;
+}
+
+.confidence-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+.direction-bullish {
+    color: #00ff88;
+    font-weight: 600;
+}
+
+.direction-bearish {
+    color: #ff4444;
+    font-weight: 600;
+}
+
+.direction-neutral {
+    color: #888;
+    font-weight: 600;
+}
+
+.signal-details-row td {
+    background: rgba(0, 0, 0, 0.3) !important;
+    padding: 15px !important;
+}
+
+.signal-details-row pre {
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 6px;
+    padding: 12px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    color: #aaa;
+    margin: 0;
+    white-space: pre-wrap;
+}
+
+.fetch-result {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 0.9rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.fetch-result .status-ok {
+    color: #00ff88;
+}
+
+.fetch-result .status-error {
+    color: #ff4444;
+}
+
+#signals-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+#signals-table th {
+    text-align: left;
+    padding: 8px 6px;
+    border-bottom: 2px solid rgba(74, 158, 255, 0.3);
+    color: #4a9eff;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+#signals-table td {
+    padding: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 0.85rem;
+    color: #ccc;
+}
+
+#signals-table tr:hover {
+    background: rgba(255, 255, 255, 0.03);
+    cursor: pointer;
+}
 .modal {
     display: none;
     position: fixed;

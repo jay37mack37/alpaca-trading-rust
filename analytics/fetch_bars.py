@@ -330,34 +330,48 @@ def main():
     parser.add_argument("--source", choices=["alpaca", "yfinance", "auto"], default="auto",
                         help="Data source (default: auto = try alpaca, fallback yfinance)")
     parser.add_argument("--add", nargs="+", help="Add symbols to watchlist before fetching")
+    parser.add_argument("--format", choices=["text", "json"], default="text", dest="output_format",
+                        help="Output format: text (human-readable) or json (structured)")
     args = parser.parse_args()
 
+    json_mode = args.output_format == "json"
     init_db()
 
     if args.add:
         add_to_watchlist(args.add)
-        print(f"Added {args.add} to watchlist")
 
     symbols = args.symbols or get_watchlist_symbols()
     if not symbols:
-        print("No symbols in watchlist. Use --add SYMBOL to add some, or --symbols AAPL TSLA")
+        if json_mode:
+            print(json.dumps({"error": "No symbols in watchlist", "results": []}))
+        else:
+            print("No symbols in watchlist. Use --add SYMBOL to add some, or --symbols AAPL TSLA")
         sys.exit(1)
 
-    print(f"Fetching data for {len(symbols)} symbol(s): {symbols}")
-    print(f"Timeframes: {args.timeframes}")
-    print(f"Source: {args.source}")
-    print(f"Mode: {'full' if args.full else 'incremental'}")
-    print()
+    if not json_mode:
+        print(f"Fetching data for {len(symbols)} symbol(s): {symbols}")
+        print(f"Timeframes: {args.timeframes}")
+        print(f"Source: {args.source}")
+        print(f"Mode: {'full' if args.full else 'incremental'}")
+        print()
 
+    results = []
     for symbol in symbols:
         for tf in args.timeframes:
             try:
                 count = fetch_and_store(symbol, tf, full=args.full, source=args.source)
-                print(f"  {symbol} {tf}: {count} bars stored")
+                results.append({"symbol": symbol, "timeframe": tf, "bars_fetched": count, "status": "ok"})
+                if not json_mode:
+                    print(f"  {symbol} {tf}: {count} bars stored")
             except Exception as e:
-                print(f"  {symbol} {tf}: ERROR - {e}")
+                results.append({"symbol": symbol, "timeframe": tf, "bars_fetched": 0, "status": "error", "error": str(e)})
+                if not json_mode:
+                    print(f"  {symbol} {tf}: ERROR - {e}")
 
-    print("\nDone.")
+    if json_mode:
+        print(json.dumps({"results": results}, indent=2))
+    else:
+        print("\nDone.")
 
 
 if __name__ == "__main__":
