@@ -22,15 +22,16 @@ pub struct WsParams {
     token: String,
 }
 
+use crate::error::AppError;
+
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     Query(params): Query<WsParams>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    if let Some(username) = auth::verify_token(&params.token) {
-        ws.on_upgrade(move |socket| handle_socket(socket, state, username))
-    } else {
-        axum::http::StatusCode::UNAUTHORIZED.into_response()
+    match auth::verify_token(&params.token) {
+        Some(username) => ws.on_upgrade(move |socket| handle_socket(socket, state, username)),
+        None => AppError::Unauthorized("Invalid or expired token".to_string()).into_response(),
     }
 }
 
