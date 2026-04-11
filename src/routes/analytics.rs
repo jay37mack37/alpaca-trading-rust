@@ -1,14 +1,12 @@
-use axum::{
-    http::{HeaderMap, StatusCode},
-    Json,
-};
+use axum::{http::HeaderMap, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
-use super::auth::get_username_from_headers;
+use crate::error::{AppError, AppResult};
+use crate::routes::auth::get_username_from_headers;
 
 /// Mutex to serialize Python subprocess calls (prevent concurrent SQLite writes)
 static ANALYTICS_LOCK: once_cell::sync::Lazy<Mutex<()>> =
@@ -99,21 +97,12 @@ const PATTERNS: &[PatternInfo] = &[
 ];
 
 /// Get the project root directory
-fn project_dir() -> Result<PathBuf, (StatusCode, Json<Value>)> {
-    std::env::current_dir().map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": format!("Cannot determine working directory: {e}")})),
-        )
-    })
+fn project_dir() -> AppResult<PathBuf> {
+    std::env::current_dir().map_err(|e| AppError::Internal(format!("Cannot determine working directory: {e}")))
 }
 
 /// Run a Python analytics script and return its JSON output
-async fn run_analytics_script(
-    script: &str,
-    args: &[String],
-    timeout_secs: u64,
-) -> Result<Value, (StatusCode, Json<Value>)> {
+async fn run_analytics_script(script: &str, args: &[String], timeout_secs: u64) -> AppResult<Value> {
     let _lock = ANALYTICS_LOCK.lock().await;
 
     let project_dir = project_dir()?;
@@ -128,30 +117,14 @@ async fn run_analytics_script(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(timeout_secs),
-        cmd.output(),
-    )
-    .await
-    .map_err(|_| {
-        (
-            StatusCode::GATEWAY_TIMEOUT,
-            Json(json!({"error": "Analytics script timed out"})),
-        )
-    })?
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": format!("Failed to execute Python: {e}")})),
-        )
-    })?;
+    let output = tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), cmd.output())
+        .await
+        .map_err(|_| AppError::Internal("Analytics script timed out".to_string()))?
+        .map_err(|e| AppError::Internal(format!("Failed to execute Python: {e}")))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": stderr.trim().to_string()})),
-        ));
+        return Err(AppError::Internal(stderr.trim().to_string()));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -159,19 +132,12 @@ async fn run_analytics_script(
         return Ok(json!({}));
     }
 
-    serde_json::from_str(&stdout).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": format!("JSON parse error: {e}")})),
-        )
-    })
+    serde_json::from_str(&stdout).map_err(|e| AppError::Internal(format!("JSON parse error: {e}")))
 }
 
 // --- Handler functions ---
 
-pub async fn get_watchlist(
-    headers: HeaderMap,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+pub async fn get_watchlist(headers: HeaderMap) -> AppResult<Json<Value>> {
     let _username = get_username_from_headers(&headers)?;
 
     let args: Vec<String> = vec!["--watchlist-only".to_string()];
@@ -179,10 +145,7 @@ pub async fn get_watchlist(
     Ok(Json(result))
 }
 
-pub async fn update_watchlist(
-    headers: HeaderMap,
-    Json(body): Json<WatchlistUpdate>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+pub async fn update_watchlist(headers: HeaderMap, Json(body): Json<WatchlistUpdate>) -> AppResult<Json<Value>> {
     let _username = get_username_from_headers(&headers)?;
 
     let mut args: Vec<String> = Vec::new();
@@ -202,10 +165,7 @@ pub async fn update_watchlist(
     Ok(Json(result))
 }
 
-pub async fn fetch_data(
-    headers: HeaderMap,
-    Json(body): Json<FetchRequest>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+pub async fn fetch_data(headers: HeaderMap, Json(body): Json<FetchRequest>) -> AppResult<Json<Value>> {
     let _username = get_username_from_headers(&headers)?;
 
     let mut args: Vec<String> = Vec::new();
@@ -233,9 +193,7 @@ pub async fn fetch_data(
     Ok(Json(result))
 }
 
-pub async fn get_summary(
-    headers: HeaderMap,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+pub async fn get_summary(headers: HeaderMap) -> AppResult<Json<Value>> {
     let _username = get_username_from_headers(&headers)?;
 
     let args: Vec<String> = vec!["--summary".to_string()];
@@ -243,10 +201,7 @@ pub async fn get_summary(
     Ok(Json(result))
 }
 
-pub async fn run_analysis(
-    headers: HeaderMap,
-    Json(body): Json<AnalyzeRequest>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+pub async fn run_analysis(headers: HeaderMap, Json(body): Json<AnalyzeRequest>) -> AppResult<Json<Value>> {
     let _username = get_username_from_headers(&headers)?;
 
     let mut args: Vec<String> = Vec::new();
