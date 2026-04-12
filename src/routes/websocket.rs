@@ -16,10 +16,17 @@ use crate::api::alpaca::AlpacaApi;
 use crate::api::ws_manager::WsManager;
 use crate::auth;
 use crate::models::websocket::{WsAction, WsUpdate};
+use crate::error::AppError;
 
 #[derive(Deserialize)]
 pub struct WsParams {
     token: String,
+}
+
+#[derive(Clone)]
+pub struct AppState {
+    pub alpaca: Option<Arc<dyn AlpacaApi>>,
+    pub ws_manager: Arc<WsManager>,
 }
 
 pub async fn ws_handler(
@@ -27,14 +34,11 @@ pub async fn ws_handler(
     Query(params): Query<WsParams>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    if let Some(username) = auth::verify_token(&params.token) {
-        ws.on_upgrade(move |socket| handle_socket(socket, state, username))
-    } else {
-        axum::http::StatusCode::UNAUTHORIZED.into_response()
+    match auth::verify_token(&params.token) {
+        Some(username) => ws.on_upgrade(move |socket| handle_socket(socket, state, username)),
+        None => AppError::Unauthorized("Invalid or expired token".to_string()).into_response(),
     }
 }
-
-pub use crate::AppState;
 
 async fn handle_socket(socket: WebSocket, state: AppState, _username: String) {
     let (mut sender, mut receiver) = socket.split::<Message>();

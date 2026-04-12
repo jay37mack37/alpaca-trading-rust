@@ -1,35 +1,4 @@
-import { API_BASE, fetchWithLogging, devLog, devWarn } from './utils.js';
-
-export function checkAuth() {
-    const token = localStorage.getItem('token');
-    const userDisplay = document.getElementById('user-display');
-    const authCheck = document.getElementById('auth-check');
-
-    if (!token) {
-        window.location.href = '/login.html';
-        return false;
-    }
-
-    fetchWithLogging(`${API_BASE}/api/verify`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    })
-        .then(res => {
-            if (!res.ok) {
-                localStorage.removeItem('token');
-                localStorage.removeItem('username');
-                window.location.href = '/login.html';
-                return;
-            }
-            if (authCheck) authCheck.style.display = 'none';
-            const username = localStorage.getItem('username');
-            if (userDisplay) userDisplay.textContent = `👤 ${username}`;
-        })
-        .catch(() => {
-            window.location.href = '/login.html';
-        });
-
-    return true;
-}
+import { API_BASE, fetchWithLogging } from './utils.js';
 
 export function getAuthHeaders() {
     const token = localStorage.getItem('token');
@@ -37,6 +6,37 @@ export function getAuthHeaders() {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
     };
+}
+
+export function checkAuth() {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        window.location.href = '/login.html';
+        return false;
+    }
+
+    // Verify token
+    fetchWithLogging(`${API_BASE}/api/verify`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    }).then(res => {
+        if (!res.ok) {
+            localStorage.removeItem('token');
+            window.location.href = '/login.html';
+        }
+    }).catch(() => {
+        // Silent fail, rely on next API call
+    });
+
+    const username = localStorage.getItem('username');
+    const userDisplay = document.getElementById('user-display');
+    if (userDisplay && username) {
+        userDisplay.textContent = `👤 ${username}`;
+    }
+
+    const authCheck = document.getElementById('auth-check');
+    if (authCheck) authCheck.style.display = 'none';
+
+    return true;
 }
 
 export async function performLogout() {

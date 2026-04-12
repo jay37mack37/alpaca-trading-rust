@@ -1,10 +1,13 @@
-import { fetchWithLogging, API_BASE, devLog, devError } from './utils.js';
+import { API_BASE, fetchWithLogging } from './utils.js';
 import { getAuthHeaders } from './auth.js';
 
 export function formatCurrency(value) {
     const num = parseFloat(value);
     if (isNaN(num)) return '-';
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD'
+    }).format(num);
 }
 
 export function formatPercent(value) {
@@ -26,8 +29,11 @@ export function setStatus(status, isError = false) {
     if (!statusText || !statusDot) return;
     statusText.textContent = status;
     statusDot.classList.remove('connected', 'error');
-    if (isError) statusDot.classList.add('error');
-    else statusDot.classList.add('connected');
+    if (isError) {
+        statusDot.classList.add('error');
+    } else {
+        statusDot.classList.add('connected');
+    }
 }
 
 export async function fetchAccount() {
@@ -41,7 +47,9 @@ export async function fetchAccount() {
     accountError.style.display = 'none';
 
     try {
-        const response = await fetchWithLogging(`${API_BASE}/api/account`, { headers: getAuthHeaders() });
+        const response = await fetchWithLogging(`${API_BASE}/api/account`, {
+            headers: getAuthHeaders()
+        });
         const data = response._body;
         if (!response.ok) throw new Error(data.error || data.message || 'Failed to fetch account');
 
@@ -80,7 +88,9 @@ export async function fetchPositions() {
     positionsError.style.display = 'none';
 
     try {
-        const response = await fetchWithLogging(`${API_BASE}/api/positions`, { headers: getAuthHeaders() });
+        const response = await fetchWithLogging(`${API_BASE}/api/positions`, {
+            headers: getAuthHeaders()
+        });
         const data = response._body;
         if (!response.ok) throw new Error(data.error || data.message || 'Failed to fetch positions');
 

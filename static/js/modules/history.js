@@ -1,6 +1,6 @@
-import { fetchWithLogging, API_BASE, devLog, devError } from './utils.js';
+import { API_BASE, fetchWithLogging, devLog } from './utils.js';
 import { getAuthHeaders } from './auth.js';
-import { formatCurrency, formatDate } from './ui.js';
+import { formatDate, formatCurrency } from './ui.js';
 
 let currentSort = { column: 'timestamp', direction: 'desc' };
 
@@ -28,15 +28,10 @@ export function renderHistory() {
 
     let history = getHistory();
 
-    const filterSymbol = document.getElementById('filter-symbol');
-    const filterSide = document.getElementById('filter-side');
-    const filterStartDate = document.getElementById('filter-start-date');
-    const filterEndDate = document.getElementById('filter-end-date');
-
-    const symbol = filterSymbol?.value.toUpperCase() || '';
-    const side = filterSide?.value || 'all';
-    const start = filterStartDate?.value || '';
-    const end = filterEndDate?.value || '';
+    const symbol = document.getElementById('filter-symbol')?.value.toUpperCase() || '';
+    const side = document.getElementById('filter-side')?.value || 'all';
+    const start = document.getElementById('filter-start-date')?.value || '';
+    const end = document.getElementById('filter-end-date')?.value || '';
 
     if (symbol) history = history.filter(h => h.symbol.includes(symbol));
     if (side !== 'all') history = history.filter(h => h.side === side);
@@ -85,27 +80,65 @@ export function renderHistory() {
     `).join('');
 }
 
+export function exportToCSV() {
+    const history = getHistory();
+    if (history.length === 0) { alert('No history to export'); return; }
+    const headers = ['Timestamp', 'Symbol', 'Side', 'Qty', 'Price', 'Amount', 'Status', 'Event'];
+    const rows = history.map(h => [h.timestamp, h.symbol, h.side, h.qty, h.price, h.amount, h.status, h.event]);
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `trading_history_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+export function logTradeEvent(order, eventType) {
+    const history = getHistory();
+    const status = (order.status || '').toLowerCase();
+    let price = parseFloat(order.filled_avg_price || order.limit_price || 0);
+    let qty = parseFloat(order.filled_qty || order.qty || 0);
+    const entry = {
+        id: `${order.id}_${eventType}_${new Date().getTime()}`, orderId: order.id, symbol: order.symbol,
+        side: order.side, qty: order.qty, price: price, amount: price * qty, status: status, event: eventType,
+        timestamp: order.filled_at || order.canceled_at || order.created_at || new Date().toISOString()
+    };
+    if (history.some(h => h.orderId === order.id && (h.event === eventType || h.status === status))) return;
+    history.unshift(entry);
+    saveHistory(history);
+}
+
+export async function backfillHistory() {
+    try {
+        const response = await fetchWithLogging(`${API_BASE}/api/orders?status=all`, { headers: getAuthHeaders() });
+        const orders = response._body;
+        if (!Array.isArray(orders)) return;
+        orders.reverse().forEach(order => {
+            if (order.status === 'filled') logTradeEvent(order, 'fill');
+            else if (order.status === 'canceled') logTradeEvent(order, 'cancel');
+            else if (order.status === 'expired') logTradeEvent(order, 'expire');
+            else logTradeEvent(order, 'submit');
+        });
+    } catch (e) { console.error('Backfill failed', e); }
+}
+
 export function initHistory() {
-    const filterSymbol = document.getElementById('filter-symbol');
-    const filterSide = document.getElementById('filter-side');
-    const filterStartDate = document.getElementById('filter-start-date');
-    const filterEndDate = document.getElementById('filter-end-date');
-
-    if (filterSymbol) filterSymbol.addEventListener('input', renderHistory);
-    if (filterSide) filterSide.addEventListener('change', renderHistory);
-    if (filterStartDate) filterStartDate.addEventListener('change', renderHistory);
-    if (filterEndDate) filterEndDate.addEventListener('change', renderHistory);
-
+    document.getElementById('filter-symbol')?.addEventListener('input', renderHistory);
+    document.getElementById('filter-side')?.addEventListener('change', renderHistory);
+    document.getElementById('filter-start-date')?.addEventListener('change', renderHistory);
+    document.getElementById('filter-end-date')?.addEventListener('change', renderHistory);
+    document.getElementById('export-csv-btn')?.addEventListener('click', exportToCSV);
     document.querySelectorAll('.sortable').forEach(th => {
         th.addEventListener('click', () => {
             const column = th.dataset.sort;
-            if (currentSort.column === column) {
-                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
-            } else {
-                currentSort.column = column;
-                currentSort.direction = 'desc';
-            }
+            if (currentSort.column === column) currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            else { currentSort.column = column; currentSort.direction = 'desc'; }
             renderHistory();
         });
     });
+    backfillHistory();
 }
