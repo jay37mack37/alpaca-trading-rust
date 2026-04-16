@@ -35,6 +35,7 @@
             <button class="tab-btn active" data-tab="dashboard-tab">📊 Dashboard</button>
             <button class="tab-btn" data-tab="history-tab">📜 Transaction History</button>
             <button class="tab-btn" data-tab="analytics-tab">🔍 Analytics</button>
+            <button class="tab-btn" data-tab="strategies-tab">📋 Strategies</button>
         </nav>
 
         <div id="dashboard-tab" class="tab-content active">
@@ -516,13 +517,21 @@
             </section>
         </div>
 
+        <!-- Strategies Tab -->
+        <div id="strategies-tab" class="tab-content">
+            <section class="card" id="strategies-section">
+                <h2>Multi-Strategy Workstation</h2>
+                <div class="strategies-grid" id="strategies-container"></div>
+            </section>
+        </div>
+
         <footer>
             <p>Educational Trading Platform | <a href="https://alpaca.markets" target="_blank">Alpaca Markets</a></p>
         </footer>
     </div>
 
     <script src="/static/auth-helper.js"></script>
-    <script src="/static/app.js?v=6"></script>
+    <script src="/static/app.js?v=7"></script>
 </body>
 
 </html>
