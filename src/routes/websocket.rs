@@ -16,6 +16,7 @@ use crate::api::alpaca::AlpacaClient;
 use crate::api::ws_manager::WsManager;
 use crate::auth;
 use crate::models::websocket::{WsAction, WsUpdate};
+use crate::strategies::StrategyManager;
 
 #[derive(Deserialize)]
 pub struct WsParams {
@@ -39,6 +40,7 @@ pub async fn ws_handler(
 pub struct AppState {
     pub alpaca: Option<AlpacaClient>,
     pub ws_manager: Arc<WsManager>,
+    pub strategy_manager: Arc<StrategyManager>,
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState, _username: String) {

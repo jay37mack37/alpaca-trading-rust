@@ -5,17 +5,20 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod math;
 mod api;
 mod auth;
 mod error;
 mod models;
 mod routes;
+mod strategies;
 
 use api::alpaca::AlpacaClient;
 use api::price_streamer::PriceStreamer;
 use api::ws_manager::WsManager;
 use routes::websocket::AppState;
 use std::sync::Arc;
+use strategies::StrategyManager;
 
 #[tokio::main]
 async fn main() {
@@ -50,9 +53,13 @@ async fn main() {
     let streamer = PriceStreamer::new(ws_manager.clone(), api_key, api_secret);
     streamer.start().await;
 
+    // Initialize Strategy Manager
+    let strategy_manager = Arc::new(StrategyManager::new());
+
     let state = AppState {
         alpaca: alpaca_client,
         ws_manager,
+        strategy_manager,
     };
 
     // Build CORS layer for development
@@ -92,6 +99,12 @@ async fn main() {
         .route("/api/analytics/summary", get(routes::analytics::get_summary))
         .route("/api/analytics/analyze", post(routes::analytics::run_analysis))
         .route("/api/analytics/patterns", get(routes::analytics::get_patterns))
+
+        // Strategy routes (authenticated)
+        .route("/api/strategies/status", get(routes::strategies::get_strategy_status))
+        .route("/api/strategies/start", post(routes::strategies::start_strategy))
+        .route("/api/strategies/stop", post(routes::strategies::stop_strategy))
+        .route("/api/strategies/panic", post(routes::strategies::panic_button))
 
         // WebSocket route
         .route("/api/ws/prices", get(routes::websocket::ws_handler))
