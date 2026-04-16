@@ -1076,6 +1076,10 @@ document.addEventListener('DOMContentLoaded', () => {
     initHistory();
     initAnalytics();
     initStrategies();
+    syncStrategiesStatus(); // Initial sync
+    setInterval(syncStrategiesStatus, 5000); // Sync every 5 seconds
+    syncStrategiesStatus(); // Initial sync
+    setInterval(syncStrategiesStatus, 5000); // Sync every 5 seconds
 
     // Initialize dev console button
     const devConsoleBtn = document.getElementById('dev-console-btn');

@@ -16,6 +16,7 @@ use api::alpaca::AlpacaClient;
 use api::price_streamer::PriceStreamer;
 use api::ws_manager::WsManager;
 use routes::websocket::AppState;
+use strategies::StrategyManager;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -51,9 +52,13 @@ async fn main() {
     let streamer = PriceStreamer::new(ws_manager.clone(), api_key, api_secret);
     streamer.start().await;
 
+    // Initialize Strategy Manager
+    let strategy_manager = Arc::new(StrategyManager::new());
+
     let state = AppState {
         alpaca: alpaca_client,
         ws_manager,
+        strategy_manager,
     };
 
     // Build CORS layer for development
@@ -96,6 +101,7 @@ async fn main() {
 
         // Strategies routes (authenticated)
         .route("/api/strategies", get(routes::strategies::list_strategies))
+        .route("/api/strategies/status", get(routes::strategies::get_strategies_status))
         .route("/api/strategies/{id}/start", post(routes::strategies::start_strategy))
         .route("/api/strategies/{id}/stop", post(routes::strategies::stop_strategy))
 
