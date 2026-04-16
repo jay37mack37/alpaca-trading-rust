@@ -15,6 +15,7 @@
         <header>
             <h1>📈 Alpaca Trading Dashboard</h1>
             <div class="header-controls" style="display: flex; align-items: center;">
+                <button id="panic-btn" class="btn-refresh" style="background-color: #ff4444; color: white; border-color: #cc0000; margin-right: 15px; font-weight: bold;">🚨 PANIC</button>
                 <div class="status-indicator" style="margin-right: 15px;">
                     <div class="status-dot"></div>
                     <span id="status-text" style="font-size: 0.85rem; color: #888;">Connecting...</span>
@@ -33,6 +34,7 @@
         <!-- Tab Navigation -->
         <nav class="tabs-nav">
             <button class="tab-btn active" data-tab="dashboard-tab">📊 Dashboard</button>
+            <button class="tab-btn" data-tab="strategies-tab">🧠 Strategies</button>
             <button class="tab-btn" data-tab="history-tab">📜 Transaction History</button>
             <button class="tab-btn" data-tab="analytics-tab">🔍 Analytics</button>
         </nav>
@@ -325,6 +327,66 @@
             <div id="order-error" class="error-message" style="display: none;"></div>
         </section>
         </div> <!-- End Dashboard Tab -->
+
+        <!-- Strategies Tab -->
+        <div id="strategies-tab" class="tab-content">
+            <section class="card">
+                <h2>Multi-Strategy Workstation</h2>
+                <p style="color: #888; margin-bottom: 20px;">Deploy and manage algorithmic trading strategies in separate threads.</p>
+
+                <div class="strategy-grid" id="strategy-grid">
+                    <!-- Listing Arbitrage -->
+                    <div class="strategy-card" data-strategy="Listing Arbitrage">
+                        <h3>Listing Arbitrage</h3>
+                        <p class="strategy-desc">Snipes new SPY strikes via Black-Scholes valuation gap detection.</p>
+                        <div class="strategy-status">Status: <span class="status-val">Idle</span></div>
+                        <div class="strategy-actions">
+                            <button class="btn-strategy-toggle" data-action="start">Start Strategy</button>
+                        </div>
+                    </div>
+
+                    <!-- VWAP Mean Reversion -->
+                    <div class="strategy-card" data-strategy="VWAP Mean Reversion">
+                        <h3>VWAP Mean Reversion</h3>
+                        <p class="strategy-desc">Trades price deviations from Volume Weighted Average Price.</p>
+                        <div class="strategy-status">Status: <span class="status-val">Idle</span></div>
+                        <div class="strategy-actions">
+                            <button class="btn-strategy-toggle" data-action="start">Start Strategy</button>
+                        </div>
+                    </div>
+
+                    <!-- 0DTE Delta-Neutral -->
+                    <div class="strategy-card" data-strategy="0DTE Delta-Neutral">
+                        <h3>0DTE Delta-Neutral</h3>
+                        <p class="strategy-desc">Manages market-neutral options positions for same-day expiry.</p>
+                        <div class="strategy-status">Status: <span class="status-val">Idle</span></div>
+                        <div class="strategy-actions">
+                            <button class="btn-strategy-toggle" data-action="start">Start Strategy</button>
+                        </div>
+                    </div>
+
+                    <!-- Gamma Scalping -->
+                    <div class="strategy-card" data-strategy="Gamma Scalping">
+                        <h3>Gamma Scalping</h3>
+                        <p class="strategy-desc">Dynamically hedges long option gamma to profit from volatility.</p>
+                        <div class="strategy-status">Status: <span class="status-val">Idle</span></div>
+                        <div class="strategy-actions">
+                            <button class="btn-strategy-toggle" data-action="start">Start Strategy</button>
+                        </div>
+                    </div>
+
+                    <!-- Put-Call Parity -->
+                    <div class="strategy-card" data-strategy="Put-Call Parity">
+                        <h3>Put-Call Parity</h3>
+                        <p class="strategy-desc">Arbs price dislocations between calls and puts of the same strike.</p>
+                        <div class="strategy-status">Status: <span class="status-val">Idle</span></div>
+                        <div class="strategy-actions">
+                            <button class="btn-strategy-toggle" data-action="start">Start Strategy</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
 
         <!-- History Tab -->
         <div id="history-tab" class="tab-content">
