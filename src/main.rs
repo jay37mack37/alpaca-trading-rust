@@ -10,6 +10,7 @@ mod auth;
 mod error;
 mod models;
 mod routes;
+mod strategies;
 
 use api::alpaca::AlpacaClient;
 use api::price_streamer::PriceStreamer;
@@ -92,6 +93,11 @@ async fn main() {
         .route("/api/analytics/summary", get(routes::analytics::get_summary))
         .route("/api/analytics/analyze", post(routes::analytics::run_analysis))
         .route("/api/analytics/patterns", get(routes::analytics::get_patterns))
+
+        // Strategies routes (authenticated)
+        .route("/api/strategies", get(routes::strategies::list_strategies))
+        .route("/api/strategies/{id}/start", post(routes::strategies::start_strategy))
+        .route("/api/strategies/{id}/stop", post(routes::strategies::stop_strategy))
 
         // WebSocket route
         .route("/api/ws/prices", get(routes::websocket::ws_handler))
