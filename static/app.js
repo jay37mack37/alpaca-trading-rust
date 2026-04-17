@@ -920,7 +920,7 @@ function initOrderForm() {
                 logTransaction(data, 'placed');
 
                 orderSuccess.style.display = 'block';
-        syncHistoryWithAPI(); // Immediate sync
+                syncHistoryWithAPI(); // Immediate sync
                 orderSuccess.textContent = `Order placed successfully! Order ID: ${data.id || 'N/A'}`;
                 orderForm.reset();
                 const symEl = document.getElementById('symbol');
@@ -1108,10 +1108,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initHistory();
     initAnalytics();
     initStrategies();
-    syncStrategiesStatus(); // Initial sync
-    setInterval(syncStrategiesStatus, 5000); // Sync every 5 seconds
-    syncStrategiesStatus(); // Initial sync
-    setInterval(syncStrategiesStatus, 5000); // Sync every 5 seconds
+    updateStrategyStatuses(); // Initial sync
+    setInterval(updateStrategyStatuses, 5000); // Sync every 5 seconds
 
     // Initialize dev console button
     const devConsoleBtn = document.getElementById('dev-console-btn');
@@ -1215,12 +1213,12 @@ function logTransaction(order, eventType) {
 async function backfillHistory() {
     devLog('HISTORY', 'Backfilling history from API...');
     try {
-            const response = await fetchWithLogging(`${API_BASE}/api/orders?status=all`, {
+        const response = await fetchWithLogging(`${API_BASE}/api/orders?status=all`, {
             headers: getAuthHeaders()
         });
 
         if (!response.ok) throw new Error('Failed to fetch historical orders');
-            const orders = response._body;
+        const orders = response._body;
 
         const history = getHistory();
         let addedCount = 0;
@@ -1544,7 +1542,7 @@ async function addStrategyLog(logDataOrMessage, level = 'info') {
         strategyLogEntries.unshift(logEntry);
         if (strategyLogEntries.length > 50) strategyLogEntries.pop();
         renderStrategyLog();
-    } catch(e) {
+    } catch (e) {
         console.error("Failed to post log:", e);
     }
 }
@@ -1560,7 +1558,7 @@ function renderStrategyLog() {
 
     logBody.innerHTML = strategyLogEntries.map(entry => {
         const decisionClass = `decision-${(entry.decision || 'INFO').toLowerCase().replace(' ', '-')}`;
-        
+
         // Custom formatting for Math/Edge to look premium
         let mathHtml = entry.math_edge || 'N/A';
         if (mathHtml.includes('Fair:')) {
@@ -1570,7 +1568,7 @@ function renderStrategyLog() {
             const edge = parts[2]?.trim() || '';
             const edgeVal = parseFloat(edge.replace('Edge:', '').replace('%', ''));
             const edgeColorClass = edgeVal > 0 ? 'edge-positive' : (edgeVal < 0 ? 'edge-negative' : '');
-            
+
             mathHtml = `
                 <div class="math-cell">
                     <span class="math-label">Model Estimate</span>
@@ -1654,7 +1652,7 @@ async function executeStrategy(e) {
     const strategy = STRATEGIES.find(s => s.id === parseInt(strategyId));
 
     if (!strategy) return;
-    
+
     // OPTIMISTIC UPDATE UI
     strategyStatuses[strategyId] = 'Running';
     renderStrategies();
@@ -1722,7 +1720,7 @@ async function fetchStrategyLogs() {
         const response = await fetch(`${API_BASE}/api/strategies/logs`, { headers: getAuthHeaders() });
         if (!response.ok) throw new Error("HTTP error");
         const data = await response.json();
-        
+
         if (data.success && data.logs) {
             strategyLogEntries.length = 0;
             // The file contains oldest entries first, we want newest first at the top
@@ -1730,15 +1728,15 @@ async function fetchStrategyLogs() {
             reversedLogs.forEach(log => strategyLogEntries.push(log));
             renderStrategyLog();
         }
-    } catch(e) {
+    } catch (e) {
         // Direct System alert
-        addStrategyLog({ 
-            time: new Date().toLocaleTimeString(), 
-            symbol: 'SYSTEM', 
-            math_edge: 'N/A', 
-            kronos_score: 'N/A', 
-            decision: 'SYSTEM ALERT', 
-            reasoning: 'Connection lost or API unavailable' 
+        addStrategyLog({
+            time: new Date().toLocaleTimeString(),
+            symbol: 'SYSTEM',
+            math_edge: 'N/A',
+            kronos_score: 'N/A',
+            decision: 'SYSTEM ALERT',
+            reasoning: 'Connection lost or API unavailable'
         });
     }
 }
@@ -2353,7 +2351,7 @@ async function runAnalysis() {
         if (!response.ok) throw new Error('Analysis failed');
         const data = await response.json();
         currentSignals = (data.signals || []).map(s => {
-            if (typeof s.details === 'string') { try { s.details = JSON.parse(s.details); } catch(e) {} }
+            if (typeof s.details === 'string') { try { s.details = JSON.parse(s.details); } catch (e) { } }
             return s;
         });
         renderSignals();
@@ -2417,7 +2415,7 @@ function renderSignals() {
         for (const k of ['vwap', 'price', 'gap_pct', 'volume', 'avg_volume', 'z_score', 'roc_pct', 'range_high', 'range_low', 'breakout_price', 'hist_fill_rate_up', 'hist_fill_rate_down', 'band_type']) {
             if (details[k] !== undefined && details[k] !== null) keyDetails[k] = details[k];
         }
-        const keyStr = Object.keys(keyDetails).length > 0 ? Object.entries(keyDetails).map(([k,v]) => `${k}: ${typeof v === 'number' ? v.toFixed(2) : v}`).join(', ') : '';
+        const keyStr = Object.keys(keyDetails).length > 0 ? Object.entries(keyDetails).map(([k, v]) => `${k}: ${typeof v === 'number' ? v.toFixed(2) : v}`).join(', ') : '';
         const detailId = `detail-${s.timestamp}-${s.symbol}-${s.pattern}`.replace(/[^a-zA-Z0-9-]/g, '_');
 
         return `<tr onclick="toggleSignalDetail('${detailId}')" style="cursor:pointer;">
@@ -2465,7 +2463,7 @@ function exportSignals() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `signals_${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `signals_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
 }
