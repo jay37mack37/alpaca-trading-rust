@@ -106,8 +106,7 @@ export async function cancelOrder(orderId) {
     }
 }
 
-export async function cancelAllOrders() {
-    if (!confirm('Are you sure you want to cancel ALL open orders?')) return;
+export async function cancelAllOrdersInternal() {
     try {
         const response = await fetchWithLogging(`${API_BASE}/api/orders`, {
             method: 'DELETE',
@@ -118,8 +117,13 @@ export async function cancelAllOrders() {
         devLog('ORDER', 'All orders cancelled successfully');
         fetchOrders();
     } catch (err) {
-        alert(`Error: ${err.message}`);
+        devLog('ORDER', 'Error cancelling all orders:', err);
     }
+}
+
+export async function cancelAllOrders() {
+    if (!confirm('Are you sure you want to cancel ALL open orders?')) return;
+    await cancelAllOrdersInternal();
 }
 
 export async function cancelSelectedOrders() {

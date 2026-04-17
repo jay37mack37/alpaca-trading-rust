@@ -1,6 +1,6 @@
 import { checkAuth, performLogout, getAuthHeaders } from './modules/auth.js';
 import { fetchAccount, fetchPositions, setStatus } from './modules/ui.js';
-import { fetchOrders, cancelOrder, cancelAllOrders, cancelSelectedOrders, viewOrderDetails, updateCancelSelectedButton } from './modules/trading.js';
+import { fetchOrders, cancelOrder, cancelAllOrders, cancelAllOrdersInternal, cancelSelectedOrders, viewOrderDetails, updateCancelSelectedButton } from './modules/trading.js';
 import { initHistory, renderHistory } from './modules/history.js';
 import { initOptionsChain } from './modules/options.js';
 import { loadWatchlist, addToWatchlist, fetchData, runAnalysis, loadDataSummary, loadPatterns } from './modules/analytics.js';
@@ -140,7 +140,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Delegate actions for dynamic buttons
     document.addEventListener('click', async (e) => {
-        if (e.target.classList.contains('btn-cancel-order')) {
+        if (e.target.id === 'panic-btn') {
+            e.target.disabled = true;
+            e.target.textContent = '🚨 STOPPING...';
+            try {
+                // Stop all strategies
+                await fetchWithLogging(`${API_BASE}/api/strategies/stop-all`, {
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+                // Cancel all orders (no confirm popup during panic)
+                await cancelAllOrdersInternal();
+                loadStrategiesStatus();
+                devLog('PANIC', 'All strategies stopped and orders cancelled');
+            } catch (err) {
+                devLog('PANIC', 'Error during panic stop:', err);
+            } finally {
+                e.target.disabled = false;
+                e.target.textContent = '🚨 PANIC';
+            }
+        } else if (e.target.classList.contains('btn-cancel-order')) {
             cancelOrder(e.target.dataset.id);
         } else if (e.target.classList.contains('btn-details')) {
             viewOrderDetails(e.target.dataset.id);

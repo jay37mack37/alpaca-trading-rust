@@ -52,6 +52,7 @@ pub fn create_router(state: AppState) -> Router {
         // Strategies routes (authenticated)
         .route("/api/strategies", get(routes::strategies::list_strategies))
         .route("/api/strategies/status", get(routes::strategies::get_strategies_status))
+        .route("/api/strategies/stop-all", post(routes::strategies::stop_all_strategies))
         .route("/api/strategies/{id}/start", post(routes::strategies::start_strategy))
         .route("/api/strategies/{id}/stop", post(routes::strategies::stop_strategy))
 
