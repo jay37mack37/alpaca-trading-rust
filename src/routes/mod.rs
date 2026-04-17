@@ -5,4 +5,3 @@ pub mod orders;
 pub mod strategies;
 pub mod trading;
 pub mod websocket;
-pub mod strategies;

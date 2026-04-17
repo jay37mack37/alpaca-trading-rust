@@ -1500,11 +1500,42 @@ const STRATEGIES = [
 
 // Store strategy statuses (Idle or Running)
 const strategyStatuses = {};
+const strategyLogEntries = [];
 
 // Initialize all strategies to Idle
 STRATEGIES.forEach(s => {
     strategyStatuses[s.id] = 'Idle';
 });
+
+function addStrategyLog(message, level = 'info') {
+    const timestamp = new Date().toLocaleTimeString();
+    strategyLogEntries.unshift({
+        time: timestamp,
+        message,
+        level
+    });
+    if (strategyLogEntries.length > 50) {
+        strategyLogEntries.pop();
+    }
+    renderStrategyLog();
+}
+
+function renderStrategyLog() {
+    const logBox = document.getElementById('strategy-log-box');
+    if (!logBox) return;
+
+    if (strategyLogEntries.length === 0) {
+        logBox.innerHTML = 'No log entries yet.';
+        return;
+    }
+
+    logBox.innerHTML = strategyLogEntries.map(entry => `
+        <div class="log-entry ${entry.level}">
+            <span class="log-time">${entry.time}</span>
+            <span class="log-message">${entry.message}</span>
+        </div>
+    `).join('');
+}
 
 function renderStrategies() {
     const container = document.getElementById('strategies-container');
@@ -1547,10 +1578,12 @@ function renderStrategies() {
     document.querySelectorAll('.btn-stop').forEach(btn => {
         btn.addEventListener('click', stopStrategy);
     });
+
+    renderStrategyLog();
 }
 
 async function executeStrategy(e) {
-    const strategyId = e.target.dataset.strategyId;
+    const strategyId = (e.currentTarget || e.target).dataset.strategyId;
     const strategy = STRATEGIES.find(s => s.id === parseInt(strategyId));
 
     if (!strategy) return;
@@ -1565,22 +1598,22 @@ async function executeStrategy(e) {
         if (response.ok) {
             strategyStatuses[strategyId] = 'Running';
             devLog('STRATEGIES', `Strategy ${strategy.name} started successfully`);
-            showSuccessMessage(`${strategy.name} started!`);
+            addStrategyLog(`${strategy.name} started`, 'info');
         } else {
             const error = await response.text();
             devError('STRATEGIES', `Failed to start strategy ${strategy.name}:`, error);
-            showErrorMessage(`Failed to start ${strategy.name}`);
+            addStrategyLog(`Failed to start ${strategy.name}`, 'error');
         }
     } catch (error) {
         devError('STRATEGIES', `Error executing strategy ${strategy.name}:`, error);
-        showErrorMessage(`Error: ${error.message}`);
+        addStrategyLog(`Error: ${error.message}`, 'error');
     }
 
     renderStrategies();
 }
 
 async function stopStrategy(e) {
-    const strategyId = e.target.dataset.strategyId;
+    const strategyId = (e.currentTarget || e.target).dataset.strategyId;
     const strategy = STRATEGIES.find(s => s.id === parseInt(strategyId));
 
     if (!strategy) return;
@@ -1595,15 +1628,15 @@ async function stopStrategy(e) {
         if (response.ok) {
             strategyStatuses[strategyId] = 'Idle';
             devLog('STRATEGIES', `Strategy ${strategy.name} stopped successfully`);
-            showSuccessMessage(`${strategy.name} stopped!`);
+            addStrategyLog(`${strategy.name} stopped`, 'info');
         } else {
             const error = await response.text();
             devError('STRATEGIES', `Failed to stop strategy ${strategy.name}:`, error);
-            showErrorMessage(`Failed to stop ${strategy.name}`);
+            addStrategyLog(`Failed to stop ${strategy.name}`, 'error');
         }
     } catch (error) {
         devError('STRATEGIES', `Error stopping strategy ${strategy.name}:`, error);
-        showErrorMessage(`Error: ${error.message}`);
+        addStrategyLog(`Error: ${error.message}`, 'error');
     }
 
     renderStrategies();

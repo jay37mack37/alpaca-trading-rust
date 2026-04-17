@@ -17,7 +17,6 @@ use api::alpaca::AlpacaClient;
 use api::price_streamer::PriceStreamer;
 use api::ws_manager::WsManager;
 use routes::websocket::AppState;
-use strategies::StrategyManager;
 use std::sync::Arc;
 use strategies::StrategyManager;
 
@@ -52,7 +51,9 @@ async fn main() {
     // Initialize WebSocket Manager and Streamer
     let ws_manager = Arc::new(WsManager::new());
     let streamer = PriceStreamer::new(ws_manager.clone(), api_key, api_secret);
-    streamer.start().await;
+    tokio::spawn(async move {
+        streamer.start().await;
+    });
 
     // Initialize Strategy Manager
     let strategy_manager = Arc::new(StrategyManager::new());
