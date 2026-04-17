@@ -24,48 +24,48 @@ pub struct OrdersQuery {
 }
 
 /// Get account information
-pub async fn get_account(State(_state): State<AppState>, headers: axum::http::HeaderMap) -> AppResult<Json<Value>> {
-    let api_client = get_authenticated_client(&headers).await?;
+pub async fn get_account(State(state): State<AppState>, headers: axum::http::HeaderMap) -> AppResult<Json<Value>> {
+    let api_client = get_authenticated_client(&headers, &state).await?;
     let account = api_client.get_account().await?;
     Ok(Json(account))
 }
 
 /// Get option chain for a symbol
 pub async fn get_option_chain(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(symbol): Path<String>,
 ) -> AppResult<Json<OptionChainResponse>> {
-    let api_client = get_authenticated_client(&headers).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
     let chain = api_client.get_option_chain(&symbol).await?;
     Ok(Json(chain))
 }
 
 /// Get all open positions
-pub async fn get_positions(State(_state): State<AppState>, headers: axum::http::HeaderMap) -> AppResult<Json<Vec<Value>>> {
-    let api_client = get_authenticated_client(&headers).await?;
+pub async fn get_positions(State(state): State<AppState>, headers: axum::http::HeaderMap) -> AppResult<Json<Vec<Value>>> {
+    let api_client = get_authenticated_client(&headers, &state).await?;
     let positions = api_client.get_positions().await?;
     Ok(Json(positions))
 }
 
 /// Get orders
 pub async fn get_orders(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Query(query): Query<OrdersQuery>,
 ) -> AppResult<Json<Vec<Value>>> {
-    let api_client = get_authenticated_client(&headers).await?;
-    let orders = api_client.get_orders(query.status.as_deref()).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
+    let orders = api_client.get_orders(query.status).await?;
     Ok(Json(orders))
 }
 
 /// Create a new order
 pub async fn create_order(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Json(order): Json<OrderRequest>,
 ) -> AppResult<Json<Value>> {
-    let api_client = get_authenticated_client(&headers).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
 
     // Get username for auditing
     let username = get_username_from_headers(&headers).unwrap_or_else(|_| "unknown".to_string());
@@ -92,34 +92,34 @@ pub async fn create_order(
 
 /// Get current price for a symbol
 pub async fn get_price(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(symbol): Path<String>,
 ) -> AppResult<Json<Value>> {
-    let api_client = get_authenticated_client(&headers).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
     let quote = api_client.get_current_price(&symbol).await?;
     Ok(Json(quote))
 }
 
 /// Get option strikes for a symbol
 pub async fn get_option_strikes(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(symbol): Path<String>,
     Query(params): Query<OptionsQuery>,
 ) -> AppResult<Json<Value>> {
-    let api_client = get_authenticated_client(&headers).await?;
-    let strikes = api_client.get_option_strikes(&symbol, params.expiration.as_deref()).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
+    let strikes = api_client.get_option_strikes(&symbol, params.expiration).await?;
     Ok(Json(strikes))
 }
 
 /// Get current price for an option
 pub async fn get_option_price(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(symbol): Path<String>,
 ) -> AppResult<Json<Value>> {
-    let api_client = get_authenticated_client(&headers).await?;
+    let api_client = get_authenticated_client(&headers, &state).await?;
     let quote = api_client.get_option_price(&symbol).await?;
     Ok(Json(quote))
 }

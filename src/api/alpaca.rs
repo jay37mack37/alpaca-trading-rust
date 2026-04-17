@@ -1,9 +1,25 @@
+use async_trait::async_trait;
 use reqwest::{header::HeaderMap, Client};
 use serde_json::Value;
 
 use crate::error::AppResult;
 use crate::models::option_chain::{OptionChainResponse, OptionEntry, StrikeData};
 use crate::models::order::OrderRequest;
+
+#[async_trait]
+pub trait AlpacaApi: Send + Sync {
+    async fn get_account(&self) -> AppResult<Value>;
+    async fn get_positions(&self) -> AppResult<Vec<Value>>;
+    async fn get_orders(&self, status: Option<String>) -> AppResult<Vec<Value>>;
+    async fn create_order(&self, order: OrderRequest) -> AppResult<Value>;
+    async fn get_order_by_id(&self, order_id: &str) -> AppResult<Value>;
+    async fn cancel_order(&self, order_id: &str) -> AppResult<Value>;
+    async fn cancel_all_orders(&self) -> AppResult<Vec<Value>>;
+    async fn get_current_price(&self, symbol: &str) -> AppResult<Value>;
+    async fn get_option_strikes(&self, symbol: &str, expiration: Option<String>) -> AppResult<Value>;
+    async fn get_option_chain(&self, symbol: &str) -> AppResult<OptionChainResponse>;
+    async fn get_option_price(&self, option_symbol: &str) -> AppResult<Value>;
+}
 
 const ALPACA_PAPER_URL: &str = "https://paper-api.alpaca.markets/v2";
 const ALPACA_LIVE_URL: &str = "https://api.alpaca.markets/v2";
@@ -59,9 +75,12 @@ impl AlpacaClient {
         }
         headers
     }
+}
 
+#[async_trait]
+impl AlpacaApi for AlpacaClient {
     /// Get account information
-    pub async fn get_account(&self) -> AppResult<Value> {
+    async fn get_account(&self) -> AppResult<Value> {
         let url = format!("{}/account", self.base_url);
         let response = self
             .client
@@ -75,7 +94,7 @@ impl AlpacaClient {
     }
 
     /// Get all open positions
-    pub async fn get_positions(&self) -> AppResult<Vec<Value>> {
+    async fn get_positions(&self) -> AppResult<Vec<Value>> {
         let url = format!("{}/positions", self.base_url);
         let response = self
             .client
@@ -89,7 +108,7 @@ impl AlpacaClient {
     }
 
     /// Get orders
-    pub async fn get_orders(&self, status: Option<&str>) -> AppResult<Vec<Value>> {
+    async fn get_orders(&self, status: Option<String>) -> AppResult<Vec<Value>> {
         let mut url = format!("{}/orders", self.base_url);
         if let Some(s) = status {
             url = format!("{}?status={}", url, s);
@@ -106,7 +125,7 @@ impl AlpacaClient {
     }
 
     /// Create a new order
-    pub async fn create_order(&self, order: OrderRequest) -> AppResult<Value> {
+    async fn create_order(&self, order: OrderRequest) -> AppResult<Value> {
         let url = format!("{}/orders", self.base_url);
 
         let mut body = serde_json::json!({
@@ -147,7 +166,7 @@ impl AlpacaClient {
     }
 
     /// Get order by ID
-    pub async fn get_order_by_id(&self, order_id: &str) -> AppResult<Value> {
+    async fn get_order_by_id(&self, order_id: &str) -> AppResult<Value> {
         let url = format!("{}/orders/{}", self.base_url, order_id);
         let response = self.client.get(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
@@ -155,7 +174,7 @@ impl AlpacaClient {
     }
 
     /// Cancel an order by ID
-    pub async fn cancel_order(&self, order_id: &str) -> AppResult<Value> {
+    async fn cancel_order(&self, order_id: &str) -> AppResult<Value> {
         let url = format!("{}/orders/{}", self.base_url, order_id);
         let response = self.client.delete(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
@@ -163,7 +182,7 @@ impl AlpacaClient {
     }
 
     /// Cancel all open orders
-    pub async fn cancel_all_orders(&self) -> AppResult<Vec<Value>> {
+    async fn cancel_all_orders(&self) -> AppResult<Vec<Value>> {
         let url = format!("{}/orders", self.base_url);
         let response = self.client.delete(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
@@ -171,7 +190,7 @@ impl AlpacaClient {
     }
 
     /// Get current price for a symbol
-    pub async fn get_current_price(&self, symbol: &str) -> AppResult<Value> {
+    async fn get_current_price(&self, symbol: &str) -> AppResult<Value> {
         // Use the market data API endpoint
         let url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
         let response = self.client.get(&url).headers(self.build_headers()).send().await?.error_for_status()?;
@@ -180,7 +199,7 @@ impl AlpacaClient {
     }
 
     /// Get option chain for a symbol (returns available strikes)
-    pub async fn get_option_strikes(&self, symbol: &str, expiration: Option<&str>) -> AppResult<Value> {
+    async fn get_option_strikes(&self, symbol: &str, expiration: Option<String>) -> AppResult<Value> {
         // Get snapshot data for the underlying to determine ATM strike
         let url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
         let response = self.client.get(&url).headers(self.build_headers()).send().await?.error_for_status()?;
@@ -252,7 +271,7 @@ impl AlpacaClient {
     }
 
     /// Get real option chain for a symbol
-    pub async fn get_option_chain(&self, symbol: &str) -> AppResult<OptionChainResponse> {
+    async fn get_option_chain(&self, symbol: &str) -> AppResult<OptionChainResponse> {
         // 1. Get current stock price
         let price_url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
         let price_response =
@@ -344,7 +363,7 @@ impl AlpacaClient {
     }
 
     /// Get current price for an option
-    pub async fn get_option_price(&self, option_symbol: &str) -> AppResult<Value> {
+    async fn get_option_price(&self, option_symbol: &str) -> AppResult<Value> {
         // Extract underlying symbol from OCC format
         // OCC format: SYMBOL + YYMMDD + C/P + STRIKE (8 chars)
         // For short symbols (like SPY), no padding: SPY260408C00670000

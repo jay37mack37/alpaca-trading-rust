@@ -109,6 +109,26 @@ impl StrategyManager {
         Ok(())
     }
 
+    /// Stop all running strategies
+    pub async fn stop_all_strategies(&self) -> Vec<(u32, String)> {
+        let mut results = Vec::new();
+        let states = self.states.read().await;
+        let running_ids: Vec<u32> = states
+            .iter()
+            .filter(|(_, state)| **state == StrategyState::Running)
+            .map(|(id, _)| *id)
+            .collect();
+        drop(states);
+
+        for strategy_id in running_ids {
+            match self.stop_strategy(strategy_id).await {
+                Ok(_) => results.push((strategy_id, "stopped".to_string())),
+                Err(e) => results.push((strategy_id, e)),
+            }
+        }
+        results
+    }
+
     /// Get all strategies with their current state
     pub async fn get_all_strategies(&self) -> Vec<Strategy> {
         let strategies_data = vec![
@@ -143,35 +163,34 @@ impl StrategyManager {
 async fn run_listing_arbitrage(states: &Arc<RwLock<HashMap<u32, StrategyState>>>) {
     tracing::info!("Starting Listing Arbitrage strategy...");
     
-    // Connect to Kronos AI bridge
+    // Try to connect to Kronos AI bridge (optional dependency)
     match connect_to_kronos_bridge().await {
         Ok(_) => {
             tracing::info!("Connected to Kronos AI bridge for Listing Arbitrage");
-            
-            // Main strategy loop
-            loop {
-                tokio::select! {
-                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
-                        // Check if we should stop (state changed)
-                        if let Some(state) = states.read().await.get(&1) {
-                            if *state != StrategyState::Running {
-                                break;
-                            }
-                        }
-                        
-                        // Perform listing arbitrage logic
-                        // - Monitor SPY options
-                        // - Calculate Black-Scholes valuations
-                        // - Check Kronos trend filters
-                        // - Execute trades on valuation gaps
-                        tracing::debug!("Listing Arbitrage: Scanning for opportunities...");
-                    }
-                }
-            }
         }
         Err(e) => {
-            tracing::error!("Failed to connect to Kronos bridge: {}", e);
-            states.write().await.insert(1, StrategyState::Error);
+            tracing::warn!("Kronos AI bridge unavailable ({}). Running in standalone mode.", e);
+        }
+    }
+            
+    // Main strategy loop
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
+                // Check if we should stop (state changed)
+                if let Some(state) = states.read().await.get(&1) {
+                    if *state != StrategyState::Running {
+                        break;
+                    }
+                }
+                
+                // Perform listing arbitrage logic
+                // - Monitor SPY options
+                // - Calculate Black-Scholes valuations
+                // - Check Kronos trend filters
+                // - Execute trades on valuation gaps
+                tracing::debug!("Listing Arbitrage: Scanning for opportunities...");
+            }
         }
     }
 

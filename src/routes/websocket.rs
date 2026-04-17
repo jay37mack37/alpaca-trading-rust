@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
-use crate::api::alpaca::AlpacaClient;
+use crate::api::alpaca::AlpacaApi;
 use crate::api::ws_manager::WsManager;
 use crate::auth;
 use crate::models::websocket::{WsAction, WsUpdate};
@@ -38,7 +38,7 @@ pub async fn ws_handler(
 
 #[derive(Clone)]
 pub struct AppState {
-    pub alpaca: Option<AlpacaClient>,
+    pub alpaca: Option<Arc<dyn AlpacaApi>>,
     pub ws_manager: Arc<WsManager>,
     pub strategy_manager: Arc<StrategyManager>,
 }
