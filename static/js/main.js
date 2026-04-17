@@ -1,10 +1,47 @@
-import { checkAuth, performLogout } from './modules/auth.js';
+import { checkAuth, performLogout, getAuthHeaders } from './modules/auth.js';
 import { fetchAccount, fetchPositions, setStatus } from './modules/ui.js';
 import { fetchOrders, cancelOrder, cancelAllOrders, cancelSelectedOrders, viewOrderDetails, updateCancelSelectedButton } from './modules/trading.js';
 import { initHistory, renderHistory } from './modules/history.js';
 import { initOptionsChain } from './modules/options.js';
 import { loadWatchlist, addToWatchlist, fetchData, runAnalysis, loadDataSummary, loadPatterns } from './modules/analytics.js';
 import { devLog, API_BASE, fetchWithLogging } from './modules/utils.js';
+
+async function loadStrategiesStatus() {
+    try {
+        const response = await fetchWithLogging(`${API_BASE}/api/strategies/status`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!data.success || !data.strategies) return;
+
+        document.querySelectorAll('.strategy-card').forEach(card => {
+            const strategyId = card.dataset.strategyId;
+            const strategy = data.strategies.find(s => String(s.id) === strategyId);
+            if (strategy) {
+                const statusVal = card.querySelector('.status-val');
+                const btn = card.querySelector('.btn-strategy-toggle');
+                if (statusVal) {
+                    statusVal.textContent = strategy.state;
+                    statusVal.style.color = strategy.state === 'Running' ? '#4caf50' : strategy.state === 'Error' ? '#f44336' : '#888';
+                }
+                if (btn) {
+                    if (strategy.state === 'Running') {
+                        btn.dataset.action = 'stop';
+                        btn.textContent = 'Stop Strategy';
+                        btn.style.backgroundColor = '#c62828';
+                    } else {
+                        btn.dataset.action = 'start';
+                        btn.textContent = 'Start Strategy';
+                        btn.style.backgroundColor = '#333';
+                    }
+                }
+            }
+        });
+    } catch (e) {
+        devLog('STRATEGY', 'Failed to load strategy status:', e);
+    }
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     devLog('INIT', 'Application started');
@@ -15,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchOrders();
         initHistory();
         initOptionsChain();
+        loadStrategiesStatus();
     }
 
     // Global Event Listeners
@@ -34,6 +72,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadWatchlist();
                 loadDataSummary();
                 loadPatterns();
+            }
+            if (target === 'strategies-tab') {
+                loadStrategiesStatus();
             }
         });
     });
@@ -93,7 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Delegate actions for dynamic buttons
-    document.addEventListener('click', (e) => {
+    document.addEventListener('click', async (e) => {
         if (e.target.classList.contains('btn-cancel-order')) {
             cancelOrder(e.target.dataset.id);
         } else if (e.target.classList.contains('btn-details')) {
@@ -110,6 +151,32 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchData(true);
         } else if (e.target.id === 'analyze-btn') {
             runAnalysis();
+        } else if (e.target.classList.contains('btn-strategy-toggle')) {
+            const card = e.target.closest('.strategy-card');
+            const strategyId = card?.dataset.strategyId;
+            const action = e.target.dataset.action; // "start" or "stop"
+            if (!strategyId) return;
+            const endpoint = action === 'start'
+                ? `${API_BASE}/api/strategies/${strategyId}/start`
+                : `${API_BASE}/api/strategies/${strategyId}/stop`;
+            e.target.disabled = true;
+            try {
+                const response = await fetchWithLogging(endpoint, {
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+                const result = await response.json();
+                if (result.success) {
+                    devLog('STRATEGY', result.message);
+                } else {
+                    alert(`Error: ${result.message}`);
+                }
+                loadStrategiesStatus();
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            } finally {
+                e.target.disabled = false;
+            }
         }
     });
 
