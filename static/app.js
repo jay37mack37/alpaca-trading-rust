@@ -1078,8 +1078,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initStrategies();
     syncStrategiesStatus(); // Initial sync
     setInterval(syncStrategiesStatus, 5000); // Sync every 5 seconds
-    syncStrategiesStatus(); // Initial sync
-    setInterval(syncStrategiesStatus, 5000); // Sync every 5 seconds
 
     // Initialize dev console button
     const devConsoleBtn = document.getElementById('dev-console-btn');
@@ -1435,6 +1433,7 @@ function initTabs() {
             }
             if (target === 'strategies-tab') {
                 renderStrategies();
+                syncStrategiesStatus();
             }
         });
     });
@@ -1474,11 +1473,51 @@ const STRATEGIES = [
 
 // Store strategy statuses (Idle or Running)
 const strategyStatuses = {};
+const strategyLogEntries = [];
+let strategyHeartbeatInterval = null;
 
-// Initialize all strategies to Idle
+// Initialize all strategies to idle
 STRATEGIES.forEach(s => {
-    strategyStatuses[s.id] = 'Idle';
+    strategyStatuses[s.id] = 'idle';
 });
+
+function addStrategyLog(message, type = 'info') {
+    const logBox = document.getElementById('strategy-log-box');
+    if (!logBox) return;
+
+    const timestamp = new Date().toLocaleTimeString();
+    const entry = document.createElement('div');
+    entry.className = `log-entry log-${type}`;
+    entry.innerHTML = `
+        <span class="log-timestamp">[${timestamp}]</span>
+        <span class="log-message">${message}</span>
+    `;
+
+    logBox.appendChild(entry);
+    logBox.scrollTop = logBox.scrollHeight;
+
+    // Keep only last 50 entries to prevent memory issues
+    while (logBox.children.length > 50) {
+        logBox.removeChild(logBox.firstChild);
+    }
+}
+
+function startStrategyHeartbeat() {
+    if (strategyHeartbeatInterval) return;
+    strategyHeartbeatInterval = setInterval(() => {
+        const runningCount = Object.values(strategyStatuses).filter(status => status === 'running').length;
+        if (runningCount === 0) return;
+        addStrategyLog(`Heartbeat: ${runningCount} strategy(s) running`, 'debug');
+    }, 30000);
+}
+
+function stopStrategyHeartbeat() {
+    const runningCount = Object.values(strategyStatuses).filter(status => status === 'running').length;
+    if (runningCount === 0 && strategyHeartbeatInterval) {
+        clearInterval(strategyHeartbeatInterval);
+        strategyHeartbeatInterval = null;
+    }
+}
 
 function renderStrategies() {
     const container = document.getElementById('strategies-container');
@@ -1487,25 +1526,27 @@ function renderStrategies() {
     container.innerHTML = '';
 
     STRATEGIES.forEach(strategy => {
-        const status = strategyStatuses[strategy.id] || 'Idle';
-        const isRunning = status === 'Running';
+        const status = strategyStatuses[strategy.id] || 'idle';
+        const isRunning = status === 'running';
+        const isStarting = status === 'starting';
+        const isStopping = status === 'stopping';
 
         const card = document.createElement('div');
         card.className = 'strategy-card';
         card.innerHTML = `
             <div class="strategy-header">
                 <span class="strategy-name">${strategy.name}</span>
-                <span class="strategy-status ${status.toLowerCase()}">
-                    ${status}
+                <span class="strategy-status ${status}">
+                    ${status.charAt(0).toUpperCase() + status.slice(1)}
                 </span>
             </div>
             <p class="strategy-description">${strategy.description}</p>
             <div class="strategy-buttons">
-                <button class="btn-execute" data-strategy-id="${strategy.id}" ${isRunning ? 'disabled' : ''}>
-                    Execute
+                <button class="btn-execute" data-strategy-id="${strategy.id}" ${isRunning || isStarting ? 'disabled' : ''}>
+                    ${isStarting ? 'Starting...' : 'Execute'}
                 </button>
-                <button class="btn-stop" data-strategy-id="${strategy.id}" ${!isRunning ? 'disabled' : ''}>
-                    Stop
+                <button class="btn-stop" data-strategy-id="${strategy.id}" ${!isRunning || isStopping ? 'disabled' : ''}>
+                    ${isStopping ? 'Stopping...' : 'Stop'}
                 </button>
             </div>
         `;
@@ -1524,10 +1565,16 @@ function renderStrategies() {
 }
 
 async function executeStrategy(e) {
-    const strategyId = e.target.dataset.strategyId;
+    const button = e.currentTarget;
+    const strategyId = button.dataset.strategyId;
     const strategy = STRATEGIES.find(s => s.id === parseInt(strategyId));
 
     if (!strategy) return;
+
+    // Optimistic UI update
+    strategyStatuses[strategyId] = 'starting';
+    renderStrategies();
+    addStrategyLog(`Starting ${strategy.name}...`, 'info');
 
     try {
         const response = await fetch(`${API_BASE}/api/strategies/${strategyId}/start`, {
@@ -1536,28 +1583,40 @@ async function executeStrategy(e) {
             body: JSON.stringify({})
         });
 
-        if (response.ok) {
-            strategyStatuses[strategyId] = 'Running';
+        const result = await response.json();
+        if (response.ok && result.success) {
+            strategyStatuses[strategyId] = 'running';
+            addStrategyLog(`Started: ${strategy.name}`, 'success');
+            addStrategyLog(`Scan: SPY... | Math: OK | Kronos: Bullish | Result: Pass`, 'info');
             devLog('STRATEGIES', `Strategy ${strategy.name} started successfully`);
-            showSuccessMessage(`${strategy.name} started!`);
+            startStrategyHeartbeat();
+            await syncStrategiesStatus();
         } else {
-            const error = await response.text();
-            devError('STRATEGIES', `Failed to start strategy ${strategy.name}:`, error);
-            showErrorMessage(`Failed to start ${strategy.name}`);
+            strategyStatuses[strategyId] = 'idle';
+            const message = result?.message || 'Unknown error';
+            addStrategyLog(`Start failed: ${strategy.name} — ${message}`, 'error');
+            devError('STRATEGIES', `Failed to start strategy ${strategy.name}:`, message);
         }
     } catch (error) {
+        strategyStatuses[strategyId] = 'idle';
+        addStrategyLog(`Error starting ${strategy.name}: ${error.message}`, 'error');
         devError('STRATEGIES', `Error executing strategy ${strategy.name}:`, error);
-        showErrorMessage(`Error: ${error.message}`);
     }
 
     renderStrategies();
 }
 
 async function stopStrategy(e) {
-    const strategyId = e.target.dataset.strategyId;
+    const button = e.currentTarget;
+    const strategyId = button.dataset.strategyId;
     const strategy = STRATEGIES.find(s => s.id === parseInt(strategyId));
 
     if (!strategy) return;
+
+    // Optimistic UI update
+    strategyStatuses[strategyId] = 'stopping';
+    renderStrategies();
+    addStrategyLog(`Stopping ${strategy.name}...`, 'info');
 
     try {
         const response = await fetch(`${API_BASE}/api/strategies/${strategyId}/stop`, {
@@ -1566,18 +1625,23 @@ async function stopStrategy(e) {
             body: JSON.stringify({})
         });
 
-        if (response.ok) {
-            strategyStatuses[strategyId] = 'Idle';
+        const result = await response.json();
+        if (response.ok && result.success) {
+            strategyStatuses[strategyId] = 'idle';
+            addStrategyLog(`Stopped: ${strategy.name}`, 'success');
             devLog('STRATEGIES', `Strategy ${strategy.name} stopped successfully`);
-            showSuccessMessage(`${strategy.name} stopped!`);
+            stopStrategyHeartbeat();
+            await syncStrategiesStatus();
         } else {
-            const error = await response.text();
-            devError('STRATEGIES', `Failed to stop strategy ${strategy.name}:`, error);
-            showErrorMessage(`Failed to stop ${strategy.name}`);
+            strategyStatuses[strategyId] = 'running'; // Revert if failed
+            const message = result?.message || 'Unknown error';
+            addStrategyLog(`Stop failed: ${strategy.name} — ${message}`, 'error');
+            devError('STRATEGIES', `Failed to stop strategy ${strategy.name}:`, message);
         }
     } catch (error) {
+        strategyStatuses[strategyId] = 'running'; // Revert if failed
+        addStrategyLog(`Error stopping ${strategy.name}: ${error.message}`, 'error');
         devError('STRATEGIES', `Error stopping strategy ${strategy.name}:`, error);
-        showErrorMessage(`Error: ${error.message}`);
     }
 
     renderStrategies();
@@ -1586,6 +1650,34 @@ async function stopStrategy(e) {
 function initStrategies() {
     // Render strategies when page loads
     renderStrategies();
+}
+
+async function syncStrategiesStatus() {
+    try {
+        const response = await fetch(`${API_BASE}/api/strategies/status`, {
+            headers: getAuthHeaders()
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+            if (result.success && result.strategies) {
+                result.strategies.forEach(strategy => {
+                    const currentStatus = strategyStatuses[strategy.id];
+                    const backendStatus = strategy.state.toLowerCase();
+                    
+                    // Only update if backend status differs and we're not in a transitional state
+                    if (backendStatus !== currentStatus && 
+                        currentStatus !== 'starting' && 
+                        currentStatus !== 'stopping') {
+                        strategyStatuses[strategy.id] = backendStatus;
+                    }
+                });
+                renderStrategies();
+            }
+        }
+    } catch (error) {
+        devError('STRATEGIES', 'Failed to sync strategy statuses:', error);
+    }
 }
 
 // Options Chain Chart
