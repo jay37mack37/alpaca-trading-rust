@@ -59,10 +59,8 @@ async function renderStrategies() {
                 </div>
                 <div class="strategy-description">${s.description}</div>
                 <div class="strategy-buttons">
-                    ${isRunning
-                        ? `<button class="btn-stop btn-strategy-toggle" data-action="stop">⏹ Stop Strategy</button>`
-                        : `<button class="btn-execute btn-strategy-toggle" data-action="start">▶ Start Strategy</button>`
-                    }
+                    <button class="btn-execute btn-strategy-toggle${isRunning ? '' : ''}" data-action="start" ${isRunning ? 'disabled' : ''}>▶ Start</button>
+                    <button class="btn-stop btn-strategy-toggle" data-action="stop" ${isRunning ? '' : 'disabled'}>⏹ Stop</button>
                 </div>
             </div>`;
         }).join('');
@@ -87,24 +85,18 @@ async function loadStrategiesStatus() {
             if (strategy) {
                 const isRunning = strategy.state === 'Running';
                 const statusEl = card.querySelector('.strategy-status');
-                const btn = card.querySelector('.btn-strategy-toggle');
+                const startBtn = card.querySelector('[data-action="start"]');
+                const stopBtn = card.querySelector('[data-action="stop"]');
                 if (statusEl) {
                     statusEl.textContent = strategy.state;
                     statusEl.className = `strategy-status ${isRunning ? 'running' : 'idle'}`;
                 }
-                if (btn) {
-                    const parent = btn.parentElement;
-                    if (isRunning) {
-                        btn.dataset.action = 'stop';
-                        btn.textContent = '⏹ Stop Strategy';
-                        btn.className = 'btn-stop btn-strategy-toggle';
-                        card.classList.add('running');
-                    } else {
-                        btn.dataset.action = 'start';
-                        btn.textContent = '▶ Start Strategy';
-                        btn.className = 'btn-execute btn-strategy-toggle';
-                        card.classList.remove('running');
-                    }
+                if (startBtn) startBtn.disabled = isRunning;
+                if (stopBtn) stopBtn.disabled = !isRunning;
+                if (isRunning) {
+                    card.classList.add('running');
+                } else {
+                    card.classList.remove('running');
                 }
             }
         });
