@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use alpaca_trading3web::api::ws_manager::WsManager;
-use alpaca_trading3web::{auth, build_app, AppState};
+use alpaca_trading3web::{auth, create_router, AppState};
 use axum::body::{to_bytes, Body};
 use axum::extract::State;
 use axum::http::{Request, StatusCode};
@@ -120,9 +120,10 @@ async fn save_api_keys(app: &Router, token: &str, environment: &str) {
 
 fn test_app() -> Router {
     auth::init();
-    build_app(AppState {
+    create_router(AppState {
         alpaca: None,
         ws_manager: Arc::new(WsManager::new()),
+        strategy_manager: Arc::new(alpaca_trading3web::strategies::StrategyManager::new()),
     })
 }
 
