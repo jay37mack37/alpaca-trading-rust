@@ -48,32 +48,25 @@ async function renderStrategies() {
         const container = document.getElementById('strategies-container');
         if (!container) return;
 
-        container.innerHTML = data.strategies.map(s => `
-            <div class="strategy-card" data-strategy-id="${s.id}">
-                <h3>${s.name}</h3>
-                <p class="strategy-desc">${s.description}</p>
-                <div class="strategy-status">Status: <span class="status-val">${s.state}</span></div>
-                <div class="strategy-actions">
-                    <button class="btn-strategy-toggle" data-action="${s.state === 'Running' ? 'stop' : 'start'}">
-                        ${s.state === 'Running' ? 'Stop Strategy' : 'Start Strategy'}
-                    </button>
+        container.innerHTML = data.strategies.map(s => {
+            const isRunning = s.state === 'Running';
+            const statusClass = isRunning ? 'running' : 'idle';
+            return `
+            <div class="strategy-card${isRunning ? ' running' : ''}" data-strategy-id="${s.id}">
+                <div class="strategy-header">
+                    <div class="strategy-name">${s.name}</div>
+                    <div class="strategy-status ${statusClass}">${s.state}</div>
                 </div>
-            </div>
-        `).join('');
+                <div class="strategy-description">${s.description}</div>
+                <div class="strategy-buttons">
+                    ${isRunning
+                        ? `<button class="btn-stop btn-strategy-toggle" data-action="stop">⏹ Stop Strategy</button>`
+                        : `<button class="btn-execute btn-strategy-toggle" data-action="start">▶ Start Strategy</button>`
+                    }
+                </div>
+            </div>`;
+        }).join('');
 
-        // Apply running styles
-        container.querySelectorAll('.strategy-card').forEach(card => {
-            const statusVal = card.querySelector('.status-val');
-            const btn = card.querySelector('.btn-strategy-toggle');
-            const state = statusVal?.textContent;
-            if (state === 'Running') {
-                card.classList.add('running');
-                if (btn) btn.style.backgroundColor = '#c62828';
-                if (statusVal) statusVal.style.color = '#4caf50';
-            } else if (state === 'Error') {
-                if (statusVal) statusVal.style.color = '#f44336';
-            }
-        });
     } catch (e) {
         devLog('STRATEGY', 'Failed to render strategies:', e);
     }
@@ -92,22 +85,24 @@ async function loadStrategiesStatus() {
             const strategyId = card.dataset.strategyId;
             const strategy = data.strategies.find(s => String(s.id) === strategyId);
             if (strategy) {
-                const statusVal = card.querySelector('.status-val');
+                const isRunning = strategy.state === 'Running';
+                const statusEl = card.querySelector('.strategy-status');
                 const btn = card.querySelector('.btn-strategy-toggle');
-                if (statusVal) {
-                    statusVal.textContent = strategy.state;
-                    statusVal.style.color = strategy.state === 'Running' ? '#4caf50' : strategy.state === 'Error' ? '#f44336' : '#888';
+                if (statusEl) {
+                    statusEl.textContent = strategy.state;
+                    statusEl.className = `strategy-status ${isRunning ? 'running' : 'idle'}`;
                 }
                 if (btn) {
-                    if (strategy.state === 'Running') {
+                    const parent = btn.parentElement;
+                    if (isRunning) {
                         btn.dataset.action = 'stop';
-                        btn.textContent = 'Stop Strategy';
-                        btn.style.backgroundColor = '#c62828';
+                        btn.textContent = '⏹ Stop Strategy';
+                        btn.className = 'btn-stop btn-strategy-toggle';
                         card.classList.add('running');
                     } else {
                         btn.dataset.action = 'start';
-                        btn.textContent = 'Start Strategy';
-                        btn.style.backgroundColor = '#333';
+                        btn.textContent = '▶ Start Strategy';
+                        btn.className = 'btn-execute btn-strategy-toggle';
                         card.classList.remove('running');
                     }
                 }
