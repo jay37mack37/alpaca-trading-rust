@@ -110,6 +110,26 @@ impl StrategyManager {
         Ok(())
     }
 
+    /// Stop all running strategies
+    pub async fn stop_all_strategies(&self) -> Vec<(u32, String)> {
+        let mut results = Vec::new();
+        let states = self.states.read().await;
+        let running_ids: Vec<u32> = states
+            .iter()
+            .filter(|(_, state)| **state == StrategyState::Running)
+            .map(|(id, _)| *id)
+            .collect();
+        drop(states);
+
+        for strategy_id in running_ids {
+            match self.stop_strategy(strategy_id).await {
+                Ok(_) => results.push((strategy_id, "stopped".to_string())),
+                Err(e) => results.push((strategy_id, e)),
+            }
+        }
+        results
+    }
+
     /// Get all strategies with their current state
     pub async fn get_all_strategies(&self) -> Vec<Strategy> {
         let strategies_data = vec![

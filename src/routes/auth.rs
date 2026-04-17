@@ -1,7 +1,8 @@
 use axum::Json;
 use serde_json::{json, Value};
+use std::sync::Arc;
 
-use crate::api::alpaca::AlpacaClient;
+use crate::api::alpaca::{AlpacaApi, AlpacaClient};
 use crate::auth;
 use crate::auth::{ApiKeyRequest, LoginRequest, PasswordRequest};
 use crate::error::{AppError, AppResult};
@@ -91,13 +92,17 @@ pub fn get_username_from_headers(headers: &axum::http::HeaderMap) -> AppResult<S
 
 /// Middleware helper for authenticated routes with Alpaca client.
 /// Strictly requires user-specific API keys.
-pub async fn get_authenticated_client(headers: &axum::http::HeaderMap) -> AppResult<AlpacaClient> {
+pub async fn get_authenticated_client(headers: &axum::http::HeaderMap, state: &crate::routes::websocket::AppState) -> AppResult<Arc<dyn AlpacaApi>> {
     let username = get_username_from_headers(headers)?;
+
+    if let Some(alpaca) = &state.alpaca {
+        return Ok(alpaca.clone());
+    }
 
     match auth::get_api_keys(&username) {
         Some((api_key, api_secret, _environment)) => {
             // Create client with user's keys
-            AlpacaClient::with_keys(&api_key, &api_secret).map_err(|e| AppError::Internal(e.to_string()))
+            AlpacaClient::with_keys(&api_key, &api_secret).map(|c| Arc::new(c) as Arc<dyn AlpacaApi>).map_err(|e| AppError::Internal(e.to_string()))
         }
         None => {
             // No user-specific keys found

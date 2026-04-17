@@ -92,31 +92,42 @@ impl eframe::App for SetupApp {
 
             // API Key field
             ui.label("API Key ID:");
-            ui.add(egui::TextEdit::singleline(&mut self.api_key)
-                .hint_text("Your Alpaca API key...")
-                .password(true)
-                .desired_width(400.0));
+            ui.add(
+                egui::TextEdit::singleline(&mut self.api_key)
+                    .hint_text("Your Alpaca API key...")
+                    .password(true)
+                    .desired_width(400.0),
+            );
             ui.add_space(10.0);
 
             // API Secret field
             ui.label("API Secret Key:");
-            ui.add(egui::TextEdit::singleline(&mut self.api_secret)
-                .hint_text("Your Alpaca API secret...")
-                .password(true)
-                .desired_width(400.0));
+            ui.add(
+                egui::TextEdit::singleline(&mut self.api_secret)
+                    .hint_text("Your Alpaca API secret...")
+                    .password(true)
+                    .desired_width(400.0),
+            );
             ui.add_space(10.0);
 
             // Environment selector
             ui.label("Trading Environment:");
             ui.horizontal(|ui| {
-                ui.radio_value(&mut self.environment, "paper".to_string(), "Paper Trading (Recommended)");
+                ui.radio_value(
+                    &mut self.environment,
+                    "paper".to_string(),
+                    "Paper Trading (Recommended)",
+                );
                 ui.radio_value(&mut self.environment, "live".to_string(), "Live Trading ⚠️");
             });
             ui.add_space(15.0);
 
             // Warning for live trading
             if self.environment == "live" {
-                ui.colored_label(egui::Color32::RED, "⚠️ Warning: Live trading uses real money!");
+                ui.colored_label(
+                    egui::Color32::RED,
+                    "⚠️ Warning: Live trading uses real money!",
+                );
                 ui.add_space(5.0);
             }
 
@@ -129,7 +140,10 @@ impl eframe::App for SetupApp {
             });
 
             if !can_save {
-                ui.colored_label(egui::Color32::GRAY, "Fill in both API Key and Secret to save");
+                ui.colored_label(
+                    egui::Color32::GRAY,
+                    "Fill in both API Key and Secret to save",
+                );
             }
 
             // Status message
