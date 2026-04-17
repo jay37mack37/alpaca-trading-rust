@@ -11,6 +11,74 @@ window.LOG_BUFFER = LOG_BUFFER;
 window.API_BASE = API_BASE;
 window.NETWORK_LOG = NETWORK_LOG;
 
+// Strategy log
+const strategyLogEntries = [];
+
+function addStrategyLog(message, level = 'info') {
+    const timestamp = new Date().toLocaleTimeString();
+    strategyLogEntries.unshift({ time: timestamp, message, level });
+    if (strategyLogEntries.length > 50) strategyLogEntries.pop();
+    renderStrategyLog();
+}
+
+function renderStrategyLog() {
+    const logBox = document.getElementById('strategy-log-box');
+    if (!logBox) return;
+    if (strategyLogEntries.length === 0) {
+        logBox.innerHTML = 'No log entries yet.';
+        return;
+    }
+    logBox.innerHTML = strategyLogEntries.map(entry => `
+        <div class="log-entry ${entry.level}">
+            <span class="log-time">${entry.time}</span>
+            <span class="log-message">${entry.message}</span>
+        </div>
+    `).join('');
+}
+
+async function renderStrategies() {
+    try {
+        const response = await fetchWithLogging(`${API_BASE}/api/strategies`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!data.success || !data.strategies) return;
+
+        const container = document.getElementById('strategies-container');
+        if (!container) return;
+
+        container.innerHTML = data.strategies.map(s => `
+            <div class="strategy-card" data-strategy-id="${s.id}">
+                <h3>${s.name}</h3>
+                <p class="strategy-desc">${s.description}</p>
+                <div class="strategy-status">Status: <span class="status-val">${s.state}</span></div>
+                <div class="strategy-actions">
+                    <button class="btn-strategy-toggle" data-action="${s.state === 'Running' ? 'stop' : 'start'}">
+                        ${s.state === 'Running' ? 'Stop Strategy' : 'Start Strategy'}
+                    </button>
+                </div>
+            </div>
+        `).join('');
+
+        // Apply running styles
+        container.querySelectorAll('.strategy-card').forEach(card => {
+            const statusVal = card.querySelector('.status-val');
+            const btn = card.querySelector('.btn-strategy-toggle');
+            const state = statusVal?.textContent;
+            if (state === 'Running') {
+                card.classList.add('running');
+                if (btn) btn.style.backgroundColor = '#c62828';
+                if (statusVal) statusVal.style.color = '#4caf50';
+            } else if (state === 'Error') {
+                if (statusVal) statusVal.style.color = '#f44336';
+            }
+        });
+    } catch (e) {
+        devLog('STRATEGY', 'Failed to render strategies:', e);
+    }
+}
+
 async function loadStrategiesStatus() {
     try {
         const response = await fetchWithLogging(`${API_BASE}/api/strategies/status`, {
@@ -35,10 +103,12 @@ async function loadStrategiesStatus() {
                         btn.dataset.action = 'stop';
                         btn.textContent = 'Stop Strategy';
                         btn.style.backgroundColor = '#c62828';
+                        card.classList.add('running');
                     } else {
                         btn.dataset.action = 'start';
                         btn.textContent = 'Start Strategy';
                         btn.style.backgroundColor = '#333';
+                        card.classList.remove('running');
                     }
                 }
             }
@@ -57,6 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchOrders();
         initHistory();
         initOptionsChain();
+        renderStrategies();
         loadStrategiesStatus();
     }
 
@@ -79,6 +150,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadPatterns();
             }
             if (target === 'strategies-tab') {
+                renderStrategies();
                 loadStrategiesStatus();
             }
         });
@@ -151,9 +223,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 // Cancel all orders (no confirm popup during panic)
                 await cancelAllOrdersInternal();
+                renderStrategies();
                 loadStrategiesStatus();
+                addStrategyLog('All strategies stopped and orders cancelled', 'info');
                 devLog('PANIC', 'All strategies stopped and orders cancelled');
             } catch (err) {
+                addStrategyLog('Error during panic stop: ' + err.message, 'error');
                 devLog('PANIC', 'Error during panic stop:', err);
             } finally {
                 e.target.disabled = false;
@@ -191,12 +266,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 const result = await response.json();
                 if (result.success) {
+                    const strategyName = card?.querySelector('h3')?.textContent || `Strategy #${strategyId}`;
+                    addStrategyLog(`${action === 'start' ? 'Started' : 'Stopped'} ${strategyName}`, 'info');
                     devLog('STRATEGY', result.message);
                 } else {
+                    addStrategyLog(`Failed: ${result.message}`, 'error');
                     alert(`Error: ${result.message}`);
                 }
+                renderStrategies();
                 loadStrategiesStatus();
             } catch (err) {
+                addStrategyLog(`Error: ${err.message}`, 'error');
                 alert(`Error: ${err.message}`);
             } finally {
                 e.target.disabled = false;
