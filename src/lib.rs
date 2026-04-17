@@ -85,7 +85,9 @@ pub async fn run_app() {
 
     let ws_manager = Arc::new(WsManager::new());
     let streamer = PriceStreamer::new(ws_manager.clone(), api_key, api_secret);
-    streamer.start().await;
+    tokio::spawn(async move {
+        streamer.start().await;
+    });
 
     let strategy_manager = Arc::new(StrategyManager::new());
 

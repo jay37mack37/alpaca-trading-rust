@@ -1094,6 +1094,48 @@ footer a:hover {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+.log-box {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(74, 158, 255, 0.2);
+    border-radius: 12px;
+    padding: 16px;
+    min-height: 180px;
+    max-height: 320px;
+    overflow-y: auto;
+    color: #eee;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.log-entry {
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.log-entry:last-child {
+    margin-bottom: 0;
+    border-bottom: none;
+}
+
+.log-entry.info {
+    color: #cce5ff;
+}
+
+.log-entry.error {
+    color: #ff9ea8;
+}
+
+.log-time {
+    display: inline-block;
+    color: #8ab4f8;
+    width: 90px;
+}
+
+.log-message {
+    display: inline-block;
+    color: #eee;
 }
 
 .event-tag {

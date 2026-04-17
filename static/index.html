@@ -39,7 +39,6 @@
             <button class="tab-btn" data-tab="strategies-tab">🧠 Strategies</button>
             <button class="tab-btn" data-tab="history-tab">📜 Transaction History</button>
             <button class="tab-btn" data-tab="analytics-tab">🔍 Analytics</button>
-            <button class="tab-btn" data-tab="strategies-tab">📋 Strategies</button>
         </nav>
 
         <div id="dashboard-tab" class="tab-content active">
@@ -335,67 +334,6 @@
             </section>
         </div> <!-- End Dashboard Tab -->
 
-        <!-- Strategies Tab -->
-        <div id="strategies-tab" class="tab-content">
-            <section class="card">
-                <h2>Multi-Strategy Workstation</h2>
-                <p style="color: #888; margin-bottom: 20px;">Deploy and manage algorithmic trading strategies in
-                    separate threads.</p>
-
-                <div class="strategy-grid" id="strategy-grid">
-                    <!-- Listing Arbitrage -->
-                    <div class="strategy-card" data-strategy="Listing Arbitrage" data-strategy-id="1">
-                        <h3>Listing Arbitrage</h3>
-                        <p class="strategy-desc">Snipes new SPY strikes via Black-Scholes valuation gap detection.</p>
-                        <div class="strategy-status">Status: <span class="status-val">Idle</span></div>
-                        <div class="strategy-actions">
-                            <button class="btn-strategy-toggle" data-action="start">Start Strategy</button>
-                        </div>
-                    </div>
-
-                    <!-- VWAP Mean Reversion -->
-                    <div class="strategy-card" data-strategy="VWAP Mean Reversion" data-strategy-id="2">
-                        <h3>VWAP Mean Reversion</h3>
-                        <p class="strategy-desc">Trades price deviations from Volume Weighted Average Price.</p>
-                        <div class="strategy-status">Status: <span class="status-val">Idle</span></div>
-                        <div class="strategy-actions">
-                            <button class="btn-strategy-toggle" data-action="start">Start Strategy</button>
-                        </div>
-                    </div>
-
-                    <!-- 0DTE Delta-Neutral -->
-                    <div class="strategy-card" data-strategy="0DTE Delta-Neutral" data-strategy-id="3">
-                        <h3>0DTE Delta-Neutral</h3>
-                        <p class="strategy-desc">Manages market-neutral options positions for same-day expiry.</p>
-                        <div class="strategy-status">Status: <span class="status-val">Idle</span></div>
-                        <div class="strategy-actions">
-                            <button class="btn-strategy-toggle" data-action="start">Start Strategy</button>
-                        </div>
-                    </div>
-
-                    <!-- Gamma Scalping -->
-                    <div class="strategy-card" data-strategy="Gamma Scalping" data-strategy-id="4">
-                        <h3>Gamma Scalping</h3>
-                        <p class="strategy-desc">Dynamically hedges long option gamma to profit from volatility.</p>
-                        <div class="strategy-status">Status: <span class="status-val">Idle</span></div>
-                        <div class="strategy-actions">
-                            <button class="btn-strategy-toggle" data-action="start">Start Strategy</button>
-                        </div>
-                    </div>
-
-                    <!-- Put-Call Parity -->
-                    <div class="strategy-card" data-strategy="Put-Call Parity" data-strategy-id="5">
-                        <h3>Put-Call Parity</h3>
-                        <p class="strategy-desc">Arbs price dislocations between calls and puts of the same strike.</p>
-                        <div class="strategy-status">Status: <span class="status-val">Idle</span></div>
-                        <div class="strategy-actions">
-                            <button class="btn-strategy-toggle" data-action="start">Start Strategy</button>
-                        </div>
-                    </div>
-                </div>
-            </section>
-        </div>
-
         <!-- History Tab -->
         <div id="history-tab" class="tab-content">
             <section class="card">
@@ -600,7 +538,12 @@
         <div id="strategies-tab" class="tab-content">
             <section class="card" id="strategies-section">
                 <h2>Multi-Strategy Workstation</h2>
+                <p style="color: #888; margin-bottom: 15px;">Idle strategies are ready to execute; live log updates appear below.</p>
                 <div class="strategies-grid" id="strategies-container"></div>
+                <div class="log-panel" style="margin-top: 20px;">
+                    <h3>Strategy Log</h3>
+                    <div id="strategy-log-box" class="log-box">No log entries yet.</div>
+                </div>
             </section>
         </div>
 

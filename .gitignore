@@ -7,6 +7,7 @@ config.json
 # Rust build artifacts
 /target/
 backend/target/
+frontend/node_modules/
 **/*.rs.bk
 
 # IDE
