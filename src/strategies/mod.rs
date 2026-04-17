@@ -143,35 +143,34 @@ impl StrategyManager {
 async fn run_listing_arbitrage(states: &Arc<RwLock<HashMap<u32, StrategyState>>>) {
     tracing::info!("Starting Listing Arbitrage strategy...");
     
-    // Connect to Kronos AI bridge
+    // Try to connect to Kronos AI bridge (optional dependency)
     match connect_to_kronos_bridge().await {
         Ok(_) => {
             tracing::info!("Connected to Kronos AI bridge for Listing Arbitrage");
-            
-            // Main strategy loop
-            loop {
-                tokio::select! {
-                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
-                        // Check if we should stop (state changed)
-                        if let Some(state) = states.read().await.get(&1) {
-                            if *state != StrategyState::Running {
-                                break;
-                            }
-                        }
-                        
-                        // Perform listing arbitrage logic
-                        // - Monitor SPY options
-                        // - Calculate Black-Scholes valuations
-                        // - Check Kronos trend filters
-                        // - Execute trades on valuation gaps
-                        tracing::debug!("Listing Arbitrage: Scanning for opportunities...");
-                    }
-                }
-            }
         }
         Err(e) => {
-            tracing::error!("Failed to connect to Kronos bridge: {}", e);
-            states.write().await.insert(1, StrategyState::Error);
+            tracing::warn!("Kronos AI bridge unavailable ({}). Running in standalone mode.", e);
+        }
+    }
+            
+    // Main strategy loop
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
+                // Check if we should stop (state changed)
+                if let Some(state) = states.read().await.get(&1) {
+                    if *state != StrategyState::Running {
+                        break;
+                    }
+                }
+                
+                // Perform listing arbitrage logic
+                // - Monitor SPY options
+                // - Calculate Black-Scholes valuations
+                // - Check Kronos trend filters
+                // - Execute trades on valuation gaps
+                tracing::debug!("Listing Arbitrage: Scanning for opportunities...");
+            }
         }
     }
 
