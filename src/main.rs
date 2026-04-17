@@ -69,6 +69,9 @@ async fn main() {
 
     // Build router with all routes
     let app = Router::new()
+        // Health check
+        .route("/api/health", get(routes::health::health))
+
         // Auth routes (public)
         .route("/api/login", post(routes::auth::login))
         .route("/api/verify", get(routes::auth::verify_token))
@@ -107,6 +110,7 @@ async fn main() {
         .route("/api/strategies/logs", get(routes::strategies::get_strategy_logs))
         .route("/api/strategies/logs", post(routes::strategies::append_strategy_log))
         .route("/api/strategies/status", get(routes::strategies::get_strategies_status))
+        .route("/api/strategies/stop-all", post(routes::strategies::stop_all_strategies))
         .route("/api/strategies/{id}/start", post(routes::strategies::start_strategy))
         .route("/api/strategies/{id}/stop", post(routes::strategies::stop_strategy))
 

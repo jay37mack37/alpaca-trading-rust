@@ -121,3 +121,16 @@ pub async fn append_strategy_log(Json(entry): Json<serde_json::Value>) -> impl I
     }
     Json(serde_json::json!({"success": true}))
 }
+
+/// POST /api/strategies/stop-all - Stop all running strategies (PANIC button)
+pub async fn stop_all_strategies(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let results = state.strategy_manager.stop_all_strategies().await;
+    let stopped_count = results.iter().filter(|(_, status)| status == "stopped").count();
+    Json(StrategyResponse {
+        success: true,
+        message: format!("Stopped {} strategies", stopped_count),
+        data: None,
+    })
+}

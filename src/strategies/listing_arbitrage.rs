@@ -1,7 +1,6 @@
-use std::sync::Arc;
 use tokio::time::{self, Duration};
 use dashmap::DashMap;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tokio::process::Command;
 
 use crate::strategies::StrategyTrait;
@@ -155,7 +154,7 @@ impl StrategyTrait for ListingArbitrage {
                             match self.alpaca.create_order(order).await {
                                 Ok(res) => {
                                     tracing::info!("Paper order placed successfully: {:?}", res);
-                                    self.log_decision(&live_strike_symbol, "FILLED", "VERIFIED", "BUY", &format!("Order Confirmed: {:?}", res.get("id").unwrap_or(&serde_json::json!("Unknown ID"))));
+                                    self.log_decision(&live_strike_symbol, "FILLED", "VERIFIED", "BUY", &format!("Order Confirmed: {:?}", res.get("id").unwrap_or(&serde_json::Value::String("Unknown ID".to_string()))));
                                 }
                                 Err(e) => {
                                     tracing::error!("Paper order failed: {:?}", e);
