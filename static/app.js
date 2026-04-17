@@ -206,17 +206,17 @@ function checkAuth() {
                     method: 'POST',
                     headers: getAuthHeaders()
                 });
-                const ordersData = ordersResponse._body;
 
-                if (stratData && stratData.success) {
-                    alert('PANIC EXECUTED: ' + (stratData.message || 'All strategies halted.') + ' | Orders: ' + (ordersData ? 'Cancel request sent.' : 'No response.'));
-                    await updateStrategyStatuses();
-                } else {
-                    alert('Panic response: ' + (stratData && stratData.message ? stratData.message : 'Unknown response'));
-                }
+                // Log result silently to strategy log instead of alert popup
+                const msg = stratData && stratData.success
+                    ? `PANIC: ${stratData.message || 'All strategies halted.'} | Orders cancelled.`
+                    : `PANIC: ${stratData && stratData.message ? stratData.message : 'Unknown response'}`;
+                console.log(msg);
+                addStrategyLog({ symbol: 'ALL', decision: 'PANIC', reasoning: msg });
+                await updateStrategyStatuses();
             } catch (error) {
                 console.error('Panic failed:', error);
-                alert('Panic failed: ' + error.message);
+                addStrategyLog({ symbol: 'ALL', decision: 'ERROR', reasoning: 'Panic failed: ' + error.message });
             }
         });
     }
