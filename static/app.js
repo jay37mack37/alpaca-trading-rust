@@ -1556,45 +1556,68 @@ function renderStrategyLog() {
         return;
     }
 
+    // Track how many rows are currently rendered to only prepend new ones
+    const existingCount = logBody.querySelectorAll('tr[data-log]').length;
+    const newEntries = strategyLogEntries.slice(0, strategyLogEntries.length - existingCount);
+
+    // If we have new entries, prepend them (avoids full re-render flash)
+    if (newEntries.length > 0 && existingCount > 0) {
+        const fragment = document.createDocumentFragment();
+        newEntries.forEach(entry => {
+            const tr = document.createElement('tr');
+            tr.setAttribute('data-log', '1');
+            tr.innerHTML = buildLogRowCells(entry);
+            fragment.appendChild(tr);
+        });
+        logBody.insertBefore(fragment, logBody.firstChild);
+        // Remove placeholder row if present
+        const placeholder = logBody.querySelector('tr:not([data-log])');
+        if (placeholder) placeholder.remove();
+        return;
+    }
+
+    // Full render only when needed (initial load or data reset)
     logBody.innerHTML = strategyLogEntries.map(entry => {
-        const decisionClass = `decision-${(entry.decision || 'INFO').toLowerCase().replace(' ', '-')}`;
-
-        // Custom formatting for Math/Edge to look premium
-        let mathHtml = entry.math_edge || 'N/A';
-        if (mathHtml.includes('Fair:')) {
-            const parts = mathHtml.split(',');
-            const fair = parts[0]?.trim() || '';
-            const ask = parts[1]?.trim() || '';
-            const edge = parts[2]?.trim() || '';
-            const edgeVal = parseFloat(edge.replace('Edge:', '').replace('%', ''));
-            const edgeColorClass = edgeVal > 0 ? 'edge-positive' : (edgeVal < 0 ? 'edge-negative' : '');
-
-            mathHtml = `
-                <div class="math-cell">
-                    <span class="math-label">Model Estimate</span>
-                    <span class="math-value">${fair}</span>
-                    <span class="math-label">Market Quote</span>
-                    <span class="math-value">${ask}</span>
-                    <span class="math-value ${edgeColorClass}" style="margin-top:2px; font-weight:bold;">${edge}</span>
-                </div>
-            `;
-        } else {
-            mathHtml = `<div class="math-cell"><span class="math-value">${mathHtml}</span></div>`;
-        }
-
-        return `
-            <tr>
-                <td style="padding: 12px; color: #666; font-size: 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.03);">${entry.time || ''}</td>
-                <td style="padding: 12px; font-weight: bold; color: #4a9eff; border-bottom: 1px solid rgba(255,255,255,0.03);">${entry.symbol || 'N/A'}</td>
-                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.03);">${mathHtml}</td>
-                <td style="padding: 12px; color: #aaa; font-size: 0.85rem; border-bottom: 1px solid rgba(255,255,255,0.03);">${entry.kronos_score || 'N/A'}</td>
-                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.03); vertical-align: middle;">
-                    <span class="${decisionClass}" style="display: inline-block; min-width: 60px; text-align: center;">${entry.decision || 'INFO'}</span>
-                </td>
-                <td style="padding: 12px; font-size: 0.85rem; color: #fff; border-bottom: 1px solid rgba(255,255,255,0.03);">${entry.reasoning || ''}</td>
-            </tr>
-        `;
+        return `<tr data-log="1">${buildLogRowCells(entry)}</tr>`;
     }).join('');
+}
+
+function buildLogRowCells(entry) {
+    const decisionClass = `decision-${(entry.decision || 'INFO').toLowerCase().replace(' ', '-')}`;
+
+    // Custom formatting for Math/Edge to look premium
+    let mathHtml = entry.math_edge || 'N/A';
+    if (mathHtml.includes('Fair:')) {
+        const parts = mathHtml.split(',');
+        const fair = parts[0]?.trim() || '';
+        const ask = parts[1]?.trim() || '';
+        const edge = parts[2]?.trim() || '';
+        const edgeVal = parseFloat(edge.replace('Edge:', '').replace('%', ''));
+        const edgeColorClass = edgeVal > 0 ? 'edge-positive' : (edgeVal < 0 ? 'edge-negative' : '');
+
+        mathHtml = `
+            <div class="math-cell">
+                <span class="math-label">Model Estimate</span>
+                <span class="math-value">${fair}</span>
+                <span class="math-label">Market Quote</span>
+                <span class="math-value">${ask}</span>
+                <span class="math-value ${edgeColorClass}" style="margin-top:2px; font-weight:bold;">${edge}</span>
+            </div>
+        `;
+    } else {
+        mathHtml = `<div class="math-cell"><span class="math-value">${mathHtml}</span></div>`;
+    }
+
+    return `
+        <td style="padding: 12px; color: #666; font-size: 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.03);">${entry.time || ''}</td>
+        <td style="padding: 12px; font-weight: bold; color: #4a9eff; border-bottom: 1px solid rgba(255,255,255,0.03);">${entry.symbol || 'N/A'}</td>
+        <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.03);">${mathHtml}</td>
+        <td style="padding: 12px; color: #aaa; font-size: 0.85rem; border-bottom: 1px solid rgba(255,255,255,0.03);">${entry.kronos_score || 'N/A'}</td>
+        <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.03); vertical-align: middle;">
+            <span class="${decisionClass}" style="display: inline-block; min-width: 60px; text-align: center;">${entry.decision || 'INFO'}</span>
+        </td>
+        <td style="padding: 12px; font-size: 0.85rem; color: #fff; border-bottom: 1px solid rgba(255,255,255,0.03);">${entry.reasoning || ''}</td>
+    `;
 }
 
 function renderStrategies() {
@@ -1722,11 +1745,17 @@ async function fetchStrategyLogs() {
         const data = await response.json();
 
         if (data.success && data.logs) {
-            strategyLogEntries.length = 0;
             // The file contains oldest entries first, we want newest first at the top
             const reversedLogs = data.logs.slice().reverse();
-            reversedLogs.forEach(log => strategyLogEntries.push(log));
-            renderStrategyLog();
+
+            // Only re-render if data actually changed (compare by stringifying)
+            const newFingerprint = JSON.stringify(reversedLogs);
+            const oldFingerprint = JSON.stringify(strategyLogEntries);
+            if (newFingerprint !== oldFingerprint) {
+                strategyLogEntries.length = 0;
+                reversedLogs.forEach(log => strategyLogEntries.push(log));
+                renderStrategyLog();
+            }
         }
     } catch (e) {
         // Direct System alert
