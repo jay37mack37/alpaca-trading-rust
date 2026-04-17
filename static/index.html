@@ -525,7 +525,10 @@
                 <p style="color: #888; margin-bottom: 15px;">Idle strategies are ready to execute; live log updates appear below.</p>
                 <div class="strategies-grid" id="strategies-container"></div>
                 <div class="log-panel" style="margin-top: 20px;">
-                    <h3>Strategy Log</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h3 style="margin: 0;">Strategy Log</h3>
+                        <button id="clear-log-btn" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #888; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">🗑 Clear View</button>
+                    </div>
                     <div id="strategy-log-box" class="log-box" style="padding: 0; overflow-x: auto;">
                         <table id="strategy-log-table" style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
                             <thead>

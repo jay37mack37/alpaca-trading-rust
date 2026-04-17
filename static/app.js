@@ -1544,25 +1544,46 @@ function renderStrategyLog() {
     if (!logBody) return;
 
     if (strategyLogEntries.length === 0) {
-        logBody.innerHTML = '<tr><td colspan="6" style="padding: 8px; text-align: center; color: #888;">No log entries yet.</td></tr>';
+        logBody.innerHTML = '<tr><td colspan="6" style="padding: 15px; text-align: center; color: #888;">No activity logged for this session.</td></tr>';
         return;
     }
 
     logBody.innerHTML = strategyLogEntries.map(entry => {
-        let color = '#888'; // Gray / Heartbeat
-        if (entry.decision === 'BUY') color = '#00ff88'; // Green
-        else if (entry.decision === 'SCAN') color = '#ffd700'; // Yellow
-        else if (entry.decision === 'SKIP') color = '#ff4444'; // Red
-        else if (entry.decision === 'SYSTEM ALERT') color = '#ff4444'; // Red Alert
+        const decisionClass = `decision-${(entry.decision || 'INFO').toLowerCase().replace(' ', '-')}`;
+        
+        // Custom formatting for Math/Edge to look premium
+        let mathHtml = entry.math_edge || 'N/A';
+        if (mathHtml.includes('Fair:')) {
+            const parts = mathHtml.split(',');
+            const fair = parts[0]?.trim() || '';
+            const ask = parts[1]?.trim() || '';
+            const edge = parts[2]?.trim() || '';
+            const edgeVal = parseFloat(edge.replace('Edge:', '').replace('%', ''));
+            const edgeColorClass = edgeVal > 0 ? 'edge-positive' : (edgeVal < 0 ? 'edge-negative' : '');
+            
+            mathHtml = `
+                <div class="math-cell">
+                    <span class="math-label">Model Estimate</span>
+                    <span class="math-value">${fair}</span>
+                    <span class="math-label">Market Quote</span>
+                    <span class="math-value">${ask}</span>
+                    <span class="math-value ${edgeColorClass}" style="margin-top:2px; font-weight:bold;">${edge}</span>
+                </div>
+            `;
+        } else {
+            mathHtml = `<div class="math-cell"><span class="math-value">${mathHtml}</span></div>`;
+        }
 
         return `
-            <tr style="border-bottom: 1px solid #222;">
-                <td style="padding: 5px;">${entry.time || ''}</td>
-                <td style="padding: 5px; font-family: monospace;">${entry.symbol || 'N/A'}</td>
-                <td style="padding: 5px;">${entry.math_edge || 'N/A'}</td>
-                <td style="padding: 5px;">${entry.kronos_score || 'N/A'}</td>
-                <td style="padding: 5px; color: ${color}; font-weight: bold;">${entry.decision || 'INFO'}</td>
-                <td style="padding: 5px;">${entry.reasoning || ''}</td>
+            <tr>
+                <td style="padding: 12px; color: #666; font-size: 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.03);">${entry.time || ''}</td>
+                <td style="padding: 12px; font-weight: bold; color: #4a9eff; border-bottom: 1px solid rgba(255,255,255,0.03);">${entry.symbol || 'N/A'}</td>
+                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.03);">${mathHtml}</td>
+                <td style="padding: 12px; color: #aaa; font-size: 0.85rem; border-bottom: 1px solid rgba(255,255,255,0.03);">${entry.kronos_score || 'N/A'}</td>
+                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.03); vertical-align: middle;">
+                    <span class="${decisionClass}" style="display: inline-block; min-width: 60px; text-align: center;">${entry.decision || 'INFO'}</span>
+                </td>
+                <td style="padding: 12px; font-size: 0.85rem; color: #fff; border-bottom: 1px solid rgba(255,255,255,0.03);">${entry.reasoning || ''}</td>
             </tr>
         `;
     }).join('');
@@ -1579,21 +1600,26 @@ function renderStrategies() {
         const isRunning = status === 'Running';
 
         const card = document.createElement('div');
-        card.className = 'strategy-card';
+        card.className = `strategy-card ${isRunning ? 'active' : ''}`;
         card.innerHTML = `
             <div class="strategy-header">
-                <span class="strategy-name">${strategy.name}</span>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span class="strategy-name">${strategy.name}</span>
+                    <div class="live-badge ${isRunning ? 'active' : ''}">
+                        <div class="pulse-dot"></div><span>LIVE</span>
+                    </div>
+                </div>
                 <span class="strategy-status ${status.toLowerCase()}">
                     ${status}
                 </span>
             </div>
             <p class="strategy-description">${strategy.description}</p>
             <div class="strategy-buttons">
-                <button class="btn-execute" data-strategy-id="${strategy.id}" ${isRunning ? 'disabled' : ''}>
-                    Execute
+                <button class="btn-execute" data-strategy-id="${strategy.id}" ${isRunning ? 'disabled' : ''} style="display: flex; align-items: center; gap: 8px; justify-content: center;">
+                    ${isRunning ? 'Running...' : '▶ Execute Strategy'}
                 </button>
-                <button class="btn-stop" data-strategy-id="${strategy.id}" ${!isRunning ? 'disabled' : ''}>
-                    Stop
+                <button class="btn-stop" data-strategy-id="${strategy.id}" ${!isRunning ? 'disabled' : ''} style="display: flex; align-items: center; gap: 8px; justify-content: center;">
+                    ⏹ Stop
                 </button>
             </div>
         `;
@@ -1712,6 +1738,14 @@ function initStrategies() {
     renderStrategies();
     fetchStrategyLogs(); // Initial pull
     setInterval(fetchStrategyLogs, 3000); // 3 sec polling interval
+
+    const clearBtn = document.getElementById('clear-log-btn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            strategyLogEntries.length = 0;
+            renderStrategyLog();
+        });
+    }
 }
 
 // Options Chain Chart

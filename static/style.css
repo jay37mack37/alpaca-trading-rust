@@ -1295,3 +1295,114 @@ footer a:hover {
 .option-detail-item .value.put {
     color: #ff4444;
 }
+
+/* ==========================================================================
+   Quality of Life & Premium UI Enhancements
+   ========================================================================== */
+
+/* Strategy Card Pulsing Badge */
+.live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(0, 255, 136, 0.1);
+    color: #00ff88;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border: 1px solid rgba(0, 255, 136, 0.3);
+    margin-left: 10px;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.live-badge.active {
+    visibility: visible;
+    opacity: 1;
+}
+
+.live-badge .pulse-dot {
+    width: 6px;
+    height: 6px;
+    background: #00ff88;
+    border-radius: 50%;
+    box-shadow: 0 0 8px #00ff88;
+    animation: livePulse 1.5s infinite;
+}
+
+@keyframes livePulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.5); opacity: 0.5; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* Strategy Log Row Animations */
+#strategy-log-body tr {
+    animation: rowSlideIn 0.4s ease-out forwards;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+@keyframes rowSlideIn {
+    from { opacity: 0; transform: translateX(-10px); background: rgba(74, 158, 255, 0.1); }
+    to { opacity: 1; transform: translateX(0); background: transparent; }
+}
+
+/* Structured Math/Edge Column */
+.math-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.math-label {
+    font-size: 0.65rem;
+    color: #888;
+    text-transform: uppercase;
+}
+
+.math-value {
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.8rem;
+    color: #fff;
+}
+
+.edge-positive { color: #00ff88; font-weight: bold; }
+.edge-negative { color: #ff4444; }
+
+/* Decision Column Colors */
+.decision-buy { background: rgba(0, 255, 136, 0.15); color: #00ff88; border-radius: 4px; padding: 2px 6px; font-weight: bold; }
+.decision-scan { border-left: 3px solid #4a9eff; padding-left: 6px; color: #4a9eff; }
+.decision-skip { color: #888; font-style: italic; }
+.decision-system { color: #ffa500; font-weight: bold; }
+
+/* Log Box Custom Scrollbar */
+#strategy-log-box::-webkit-scrollbar {
+    width: 6px;
+}
+
+#strategy-log-box::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+#strategy-log-box::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+#strategy-log-box::-webkit-scrollbar-thumb:hover {
+    background: rgba(74, 158, 255, 0.3);
+}
+
+/* Stats Counter Badge */
+.stat-badge {
+    font-size: 0.7rem;
+    color: #888;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-right: 5px;
+}
