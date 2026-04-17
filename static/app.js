@@ -1097,6 +1097,11 @@ document.addEventListener('DOMContentLoaded', () => {
     initTabs();
     initHistory();
     initAnalytics();
+    initStrategies();
+    syncStrategiesStatus(); // Initial sync
+    setInterval(syncStrategiesStatus, 5000); // Sync every 5 seconds
+    syncStrategiesStatus(); // Initial sync
+    setInterval(syncStrategiesStatus, 5000); // Sync every 5 seconds
 
     // Initialize dev console button
     const devConsoleBtn = document.getElementById('dev-console-btn');
@@ -1454,8 +1459,159 @@ function initTabs() {
                 loadDataSummary();
                 loadPatterns();
             }
+            if (target === 'strategies-tab') {
+                renderStrategies();
+            }
         });
     });
+}
+
+// ============================================================
+// STRATEGIES MANAGEMENT
+// ============================================================
+
+const STRATEGIES = [
+    {
+        id: 1,
+        name: 'Listing Arbitrage',
+        description: 'Snipes new $SPY options via Black-Scholes valuation gaps and Kronos trend filtering.'
+    },
+    {
+        id: 2,
+        name: 'VWAP Mean Reversion',
+        description: 'Automated entries on standard deviation price extensions from the VWAP.'
+    },
+    {
+        id: 3,
+        name: '0DTE Delta-Neutral',
+        description: 'Harvests theta decay on same-day expiry options via automated spreads.'
+    },
+    {
+        id: 4,
+        name: 'Gamma Scalping',
+        description: 'Dynamic delta hedging to profit from realized volatility.'
+    },
+    {
+        id: 5,
+        name: 'Put-Call Parity',
+        description: 'Arbitrages discrepancies between synthesized and market option prices.'
+    }
+];
+
+// Store strategy statuses (Idle or Running)
+const strategyStatuses = {};
+
+// Initialize all strategies to Idle
+STRATEGIES.forEach(s => {
+    strategyStatuses[s.id] = 'Idle';
+});
+
+function renderStrategies() {
+    const container = document.getElementById('strategies-container');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    STRATEGIES.forEach(strategy => {
+        const status = strategyStatuses[strategy.id] || 'Idle';
+        const isRunning = status === 'Running';
+
+        const card = document.createElement('div');
+        card.className = 'strategy-card';
+        card.innerHTML = `
+            <div class="strategy-header">
+                <span class="strategy-name">${strategy.name}</span>
+                <span class="strategy-status ${status.toLowerCase()}">
+                    ${status}
+                </span>
+            </div>
+            <p class="strategy-description">${strategy.description}</p>
+            <div class="strategy-buttons">
+                <button class="btn-execute" data-strategy-id="${strategy.id}" ${isRunning ? 'disabled' : ''}>
+                    Execute
+                </button>
+                <button class="btn-stop" data-strategy-id="${strategy.id}" ${!isRunning ? 'disabled' : ''}>
+                    Stop
+                </button>
+            </div>
+        `;
+
+        container.appendChild(card);
+    });
+
+    // Add event listeners to all strategy buttons
+    document.querySelectorAll('.btn-execute').forEach(btn => {
+        btn.addEventListener('click', executeStrategy);
+    });
+
+    document.querySelectorAll('.btn-stop').forEach(btn => {
+        btn.addEventListener('click', stopStrategy);
+    });
+}
+
+async function executeStrategy(e) {
+    const strategyId = e.target.dataset.strategyId;
+    const strategy = STRATEGIES.find(s => s.id === parseInt(strategyId));
+
+    if (!strategy) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/strategies/${strategyId}/start`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({})
+        });
+
+        if (response.ok) {
+            strategyStatuses[strategyId] = 'Running';
+            devLog('STRATEGIES', `Strategy ${strategy.name} started successfully`);
+            showSuccessMessage(`${strategy.name} started!`);
+        } else {
+            const error = await response.text();
+            devError('STRATEGIES', `Failed to start strategy ${strategy.name}:`, error);
+            showErrorMessage(`Failed to start ${strategy.name}`);
+        }
+    } catch (error) {
+        devError('STRATEGIES', `Error executing strategy ${strategy.name}:`, error);
+        showErrorMessage(`Error: ${error.message}`);
+    }
+
+    renderStrategies();
+}
+
+async function stopStrategy(e) {
+    const strategyId = e.target.dataset.strategyId;
+    const strategy = STRATEGIES.find(s => s.id === parseInt(strategyId));
+
+    if (!strategy) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/strategies/${strategyId}/stop`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({})
+        });
+
+        if (response.ok) {
+            strategyStatuses[strategyId] = 'Idle';
+            devLog('STRATEGIES', `Strategy ${strategy.name} stopped successfully`);
+            showSuccessMessage(`${strategy.name} stopped!`);
+        } else {
+            const error = await response.text();
+            devError('STRATEGIES', `Failed to stop strategy ${strategy.name}:`, error);
+            showErrorMessage(`Failed to stop ${strategy.name}`);
+        }
+    } catch (error) {
+        devError('STRATEGIES', `Error stopping strategy ${strategy.name}:`, error);
+        showErrorMessage(`Error: ${error.message}`);
+    }
+
+    renderStrategies();
+}
+
+function initStrategies() {
+    // Render strategies when page loads
+    renderStrategies();
 }
 
 // Options Chain Chart
