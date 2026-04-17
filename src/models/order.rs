@@ -14,6 +14,9 @@ pub struct OrderRequest {
 }
 
 impl OrderRequest {
+    const VALID_TYPES: &'static [&'static str] = &["market", "limit", "stop", "stop_limit", "trailing_stop"];
+    const VALID_TIFS: &'static [&'static str] = &["day", "gtc", "opg", "cls", "ioc", "fok"];
+
     pub fn validate(&self) -> Result<(), String> {
         if self.symbol.is_empty() {
             return Err("Symbol is required".to_string());
@@ -46,21 +49,13 @@ impl OrderRequest {
         }
 
         let order_type = self.order_type.to_lowercase();
-        let valid_types = vec!["market", "limit", "stop", "stop_limit", "trailing_stop"];
-        if !valid_types.contains(&order_type.as_str()) {
-            return Err(format!(
-                "Invalid order type. Must be one of: {:?}",
-                valid_types
-            ));
+        if !Self::VALID_TYPES.contains(&order_type.as_str()) {
+            return Err(format!("Invalid order type. Must be one of: {:?}", Self::VALID_TYPES));
         }
 
         let tif = self.time_in_force.to_lowercase();
-        let valid_tifs = vec!["day", "gtc", "opg", "cls", "ioc", "fok"];
-        if !valid_tifs.contains(&tif.as_str()) {
-            return Err(format!(
-                "Invalid time in force. Must be one of: {:?}",
-                valid_tifs
-            ));
+        if !Self::VALID_TIFS.contains(&tif.as_str()) {
+            return Err(format!("Invalid time in force. Must be one of: {:?}", Self::VALID_TIFS));
         }
 
         if order_type == "limit" && self.limit_price.is_none() {
@@ -126,6 +121,38 @@ mod tests {
         let json = serde_json::to_string(&order).unwrap();
         assert!(json.contains("limit_price"));
         assert!(json.contains("150.5"));
+    }
+
+    #[test]
+    fn test_order_request_validation() {
+        let mut order = OrderRequest {
+            symbol: "".to_string(),
+            qty: 10.0,
+            side: "buy".to_string(),
+            order_type: "market".to_string(),
+            time_in_force: "gtc".to_string(),
+            limit_price: None,
+            asset_class: None,
+        };
+        assert!(order.validate().is_err(), "Empty symbol should fail");
+
+        order.symbol = "AAPL".to_string();
+        order.qty = -1.0;
+        assert!(order.validate().is_err(), "Negative quantity should fail");
+
+        order.qty = 10.0;
+        order.side = "invalid".to_string();
+        assert!(order.validate().is_err(), "Invalid side should fail");
+
+        order.side = "buy".to_string();
+        order.order_type = "invalid".to_string();
+        assert!(order.validate().is_err(), "Invalid order type should fail");
+
+        order.order_type = "limit".to_string();
+        assert!(order.validate().is_err(), "Limit order without price should fail");
+
+        order.limit_price = Some(150.0);
+        assert!(order.validate().is_ok(), "Valid limit order should pass");
     }
 
     #[test]

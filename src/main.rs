@@ -1,6 +1,7 @@
 use alpaca_trading3web::api::alpaca::AlpacaClient;
 use alpaca_trading3web::api::price_streamer::PriceStreamer;
 use alpaca_trading3web::api::ws_manager::WsManager;
+use alpaca_trading3web::strategies::StrategyManager;
 use alpaca_trading3web::{auth, build_app, AppState};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -39,9 +40,13 @@ async fn main() {
     let streamer = PriceStreamer::new(ws_manager.clone(), api_key, api_secret);
     streamer.start().await;
 
+    // Initialize Strategy Manager
+    let strategy_manager = Arc::new(StrategyManager::new());
+
     let state = AppState {
         alpaca: alpaca_client,
         ws_manager,
+        strategy_manager,
     };
 
     let app = build_app(state);

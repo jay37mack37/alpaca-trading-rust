@@ -189,6 +189,28 @@ function checkAuth() {
         });
     }
 
+    // Panic button handler
+    const panicBtn = document.getElementById('panic-btn');
+    if (panicBtn) {
+        panicBtn.addEventListener('click', async () => {
+            if (confirm('GLOBAL PANIC: This will kill all strategy threads and cancel all open orders. Continue?')) {
+                try {
+                    const response = await fetchWithLogging(`${API_BASE}/api/strategies/panic`, {
+                        method: 'POST',
+                        headers: getAuthHeaders()
+                    });
+                    const data = response._body;
+                    if (data.status === 'panic_executed') {
+                        alert('Panic executed successfully. All strategies halted.');
+                        await updateStrategyStatuses();
+                    }
+                } catch (error) {
+                    console.error('Panic failed:', error);
+                }
+            }
+        });
+    }
+
     return true;
 }
 
@@ -212,6 +234,12 @@ let cancelAllBtn, cancelSelectedBtn, selectAllCheckbox;
 // History Elements
 let historyBody, noHistory, historyTable;
 let filterSymbol, filterSide, filterStartDate, filterEndDate;
+
+// Analytics Elements
+let watchlistAddInput, watchlistAddBtn, watchlistSymbols, watchlistLoading, watchlistError;
+let fetchSymbolsInput, fetchSourceSelect, fetchDataBtn, fetchFullBtn, dataLoading, dataSummaryContainer, dataError;
+let analysisSymbols, minConfidenceInput, patternCheckboxes, analyzeBtn, storeSignalsCheckbox, updateDataCheckbox, analysisLoading, analysisError;
+let signalsTable, signalsBody, signalsNoData, signalsCount, signalFilterSymbol, signalFilterDirection, signalFilterPattern, exportSignalsBtn;
 
 function resolveElements() {
     statusDot = document.querySelector('.status-dot');
@@ -249,6 +277,36 @@ function resolveElements() {
     filterSide = document.getElementById('filter-side');
     filterStartDate = document.getElementById('filter-start-date');
     filterEndDate = document.getElementById('filter-end-date');
+
+    // Analytics Elements
+    watchlistAddInput = document.getElementById('watchlist-add-input');
+    watchlistAddBtn = document.getElementById('watchlist-add-btn');
+    watchlistSymbols = document.getElementById('watchlist-symbols');
+    watchlistLoading = document.getElementById('watchlist-loading');
+    watchlistError = document.getElementById('watchlist-error');
+    fetchSymbolsInput = document.getElementById('fetch-symbols-input');
+    fetchSourceSelect = document.getElementById('fetch-source-select');
+    fetchDataBtn = document.getElementById('fetch-data-btn');
+    fetchFullBtn = document.getElementById('fetch-full-btn');
+    dataLoading = document.getElementById('data-loading');
+    dataSummaryContainer = document.getElementById('data-summary-container');
+    dataError = document.getElementById('data-error');
+    analysisSymbols = document.getElementById('analysis-symbols');
+    minConfidenceInput = document.getElementById('min-confidence');
+    patternCheckboxes = document.getElementById('pattern-checkboxes');
+    analyzeBtn = document.getElementById('analyze-btn');
+    storeSignalsCheckbox = document.getElementById('store-signals-checkbox');
+    updateDataCheckbox = document.getElementById('update-data-checkbox');
+    analysisLoading = document.getElementById('analysis-loading');
+    analysisError = document.getElementById('analysis-error');
+    signalsTable = document.getElementById('signals-table');
+    signalsBody = document.getElementById('signals-body');
+    signalsNoData = document.getElementById('signals-no-data');
+    signalsCount = document.getElementById('signals-count');
+    signalFilterSymbol = document.getElementById('signal-filter-symbol');
+    signalFilterDirection = document.getElementById('signal-filter-direction');
+    signalFilterPattern = document.getElementById('signal-filter-pattern');
+    exportSignalsBtn = document.getElementById('export-signals-btn');
 }
 
 // Format currency
@@ -1038,6 +1096,12 @@ document.addEventListener('DOMContentLoaded', () => {
     initOptionsChain();
     initTabs();
     initHistory();
+    initAnalytics();
+    initStrategies();
+    syncStrategiesStatus(); // Initial sync
+    setInterval(syncStrategiesStatus, 5000); // Sync every 5 seconds
+    syncStrategiesStatus(); // Initial sync
+    setInterval(syncStrategiesStatus, 5000); // Sync every 5 seconds
 
     // Initialize dev console button
     const devConsoleBtn = document.getElementById('dev-console-btn');
@@ -1067,6 +1131,7 @@ setInterval(() => {
         fetchPositions();
         fetchOrders();
         syncHistoryWithAPI();
+        updateStrategyStatuses();
     }
 }, 30000);
 
@@ -1386,8 +1451,167 @@ function initTabs() {
             if (target === 'history-tab') {
                 renderHistory();
             }
+            if (target === 'strategies-tab') {
+                updateStrategyStatuses();
+            }
+            if (target === 'analytics-tab') {
+                loadWatchlist();
+                loadDataSummary();
+                loadPatterns();
+            }
+            if (target === 'strategies-tab') {
+                renderStrategies();
+            }
         });
     });
+}
+
+// ============================================================
+// STRATEGIES MANAGEMENT
+// ============================================================
+
+const STRATEGIES = [
+    {
+        id: 1,
+        name: 'Listing Arbitrage',
+        description: 'Snipes new $SPY options via Black-Scholes valuation gaps and Kronos trend filtering.'
+    },
+    {
+        id: 2,
+        name: 'VWAP Mean Reversion',
+        description: 'Automated entries on standard deviation price extensions from the VWAP.'
+    },
+    {
+        id: 3,
+        name: '0DTE Delta-Neutral',
+        description: 'Harvests theta decay on same-day expiry options via automated spreads.'
+    },
+    {
+        id: 4,
+        name: 'Gamma Scalping',
+        description: 'Dynamic delta hedging to profit from realized volatility.'
+    },
+    {
+        id: 5,
+        name: 'Put-Call Parity',
+        description: 'Arbitrages discrepancies between synthesized and market option prices.'
+    }
+];
+
+// Store strategy statuses (Idle or Running)
+const strategyStatuses = {};
+
+// Initialize all strategies to Idle
+STRATEGIES.forEach(s => {
+    strategyStatuses[s.id] = 'Idle';
+});
+
+function renderStrategies() {
+    const container = document.getElementById('strategies-container');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    STRATEGIES.forEach(strategy => {
+        const status = strategyStatuses[strategy.id] || 'Idle';
+        const isRunning = status === 'Running';
+
+        const card = document.createElement('div');
+        card.className = 'strategy-card';
+        card.innerHTML = `
+            <div class="strategy-header">
+                <span class="strategy-name">${strategy.name}</span>
+                <span class="strategy-status ${status.toLowerCase()}">
+                    ${status}
+                </span>
+            </div>
+            <p class="strategy-description">${strategy.description}</p>
+            <div class="strategy-buttons">
+                <button class="btn-execute" data-strategy-id="${strategy.id}" ${isRunning ? 'disabled' : ''}>
+                    Execute
+                </button>
+                <button class="btn-stop" data-strategy-id="${strategy.id}" ${!isRunning ? 'disabled' : ''}>
+                    Stop
+                </button>
+            </div>
+        `;
+
+        container.appendChild(card);
+    });
+
+    // Add event listeners to all strategy buttons
+    document.querySelectorAll('.btn-execute').forEach(btn => {
+        btn.addEventListener('click', executeStrategy);
+    });
+
+    document.querySelectorAll('.btn-stop').forEach(btn => {
+        btn.addEventListener('click', stopStrategy);
+    });
+}
+
+async function executeStrategy(e) {
+    const strategyId = e.target.dataset.strategyId;
+    const strategy = STRATEGIES.find(s => s.id === parseInt(strategyId));
+
+    if (!strategy) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/strategies/${strategyId}/start`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({})
+        });
+
+        if (response.ok) {
+            strategyStatuses[strategyId] = 'Running';
+            devLog('STRATEGIES', `Strategy ${strategy.name} started successfully`);
+            showSuccessMessage(`${strategy.name} started!`);
+        } else {
+            const error = await response.text();
+            devError('STRATEGIES', `Failed to start strategy ${strategy.name}:`, error);
+            showErrorMessage(`Failed to start ${strategy.name}`);
+        }
+    } catch (error) {
+        devError('STRATEGIES', `Error executing strategy ${strategy.name}:`, error);
+        showErrorMessage(`Error: ${error.message}`);
+    }
+
+    renderStrategies();
+}
+
+async function stopStrategy(e) {
+    const strategyId = e.target.dataset.strategyId;
+    const strategy = STRATEGIES.find(s => s.id === parseInt(strategyId));
+
+    if (!strategy) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/strategies/${strategyId}/stop`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({})
+        });
+
+        if (response.ok) {
+            strategyStatuses[strategyId] = 'Idle';
+            devLog('STRATEGIES', `Strategy ${strategy.name} stopped successfully`);
+            showSuccessMessage(`${strategy.name} stopped!`);
+        } else {
+            const error = await response.text();
+            devError('STRATEGIES', `Failed to stop strategy ${strategy.name}:`, error);
+            showErrorMessage(`Failed to stop ${strategy.name}`);
+        }
+    } catch (error) {
+        devError('STRATEGIES', `Error stopping strategy ${strategy.name}:`, error);
+        showErrorMessage(`Error: ${error.message}`);
+    }
+
+    renderStrategies();
+}
+
+function initStrategies() {
+    // Render strategies when page loads
+    renderStrategies();
 }
 
 // Options Chain Chart
@@ -1750,3 +1974,419 @@ function showStrikeDetails(strikeData) {
         </p>
     `;
 }
+
+// ============================================================
+// ANALYTICS TAB
+// ============================================================
+
+let currentSignals = [];
+let allPatterns = [];
+
+function initAnalytics() {
+    if (watchlistAddBtn) watchlistAddBtn.addEventListener('click', addToWatchlist);
+    if (watchlistAddInput) watchlistAddInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addToWatchlist(); });
+    if (fetchDataBtn) fetchDataBtn.addEventListener('click', () => fetchData(false));
+    if (fetchFullBtn) fetchFullBtn.addEventListener('click', () => fetchData(true));
+    if (analyzeBtn) analyzeBtn.addEventListener('click', runAnalysis);
+    if (exportSignalsBtn) exportSignalsBtn.addEventListener('click', exportSignals);
+    if (signalFilterSymbol) signalFilterSymbol.addEventListener('input', renderSignals);
+    if (signalFilterDirection) signalFilterDirection.addEventListener('change', renderSignals);
+    if (signalFilterPattern) signalFilterPattern.addEventListener('change', renderSignals);
+}
+
+async function loadWatchlist() {
+    try {
+        const response = await fetchWithLogging(`${API_BASE}/api/analytics/watchlist`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to load watchlist');
+        const data = await response.json();
+        renderWatchlist(data.symbols || []);
+    } catch (e) {
+        if (watchlistError) { watchlistError.textContent = e.message; watchlistError.style.display = 'block'; }
+    }
+}
+
+function renderWatchlist(symbols) {
+    if (!watchlistSymbols) return;
+    if (symbols.length === 0) {
+        watchlistSymbols.innerHTML = '<span style="color: #888;">No symbols in watchlist. Add some above.</span>';
+        return;
+    }
+    watchlistSymbols.innerHTML = symbols.map(sym => `
+        <div class="watchlist-tag">
+            ${sym}
+            <span class="remove-tag" onclick="removeFromWatchlist('${sym}')">&times;</span>
+        </div>
+    `).join('');
+}
+
+async function addToWatchlist() {
+    const input = watchlistAddInput.value.trim();
+    if (!input) return;
+    const symbols = input.split(/[,\s]+/).map(s => s.toUpperCase().trim()).filter(s => s);
+    if (symbols.length === 0) return;
+
+    try {
+        const response = await fetchWithLogging(`${API_BASE}/api/analytics/watchlist`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ add: symbols })
+        });
+        if (!response.ok) throw new Error('Failed to add symbols');
+        const data = await response.json();
+        renderWatchlist(data.symbols || []);
+        if (watchlistAddInput) watchlistAddInput.value = '';
+        loadDataSummary();
+    } catch (e) {
+        if (watchlistError) { watchlistError.textContent = e.message; watchlistError.style.display = 'block'; }
+    }
+}
+
+async function removeFromWatchlist(symbol) {
+    try {
+        const response = await fetchWithLogging(`${API_BASE}/api/analytics/watchlist`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ remove: [symbol] })
+        });
+        if (!response.ok) throw new Error('Failed to remove symbol');
+        const data = await response.json();
+        renderWatchlist(data.symbols || []);
+        loadDataSummary();
+    } catch (e) {
+        if (watchlistError) { watchlistError.textContent = e.message; watchlistError.style.display = 'block'; }
+    }
+}
+
+async function loadDataSummary() {
+    try {
+        const response = await fetchWithLogging(`${API_BASE}/api/analytics/summary`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to load summary');
+        const data = await response.json();
+        renderDataSummary(data);
+    } catch (e) {
+        // Silent fail for summary - non-critical
+    }
+}
+
+function renderDataSummary(data) {
+    if (!dataSummaryContainer) return;
+    const symbols = data.symbols || [];
+    if (symbols.length === 0) {
+        dataSummaryContainer.innerHTML = '<p style="color: #888; text-align: center;">No data yet. Fetch data to get started.</p>';
+        return;
+    }
+    let html = '<div class="data-summary-grid">';
+    for (const sym of symbols) {
+        html += `<div class="data-summary-item"><div class="symbol">${sym.symbol}</div>`;
+        for (const tf of sym.timeframes) {
+            const countStr = tf.bar_count > 0 ? `<span class="count">${tf.bar_count.toLocaleString()}</span>` : '<span style="color:#666;">no data</span>';
+            html += `<div class="tf-row"><span>${tf.timeframe}</span>${countStr}</div>`;
+        }
+        html += '</div>';
+    }
+    html += '</div>';
+    dataSummaryContainer.innerHTML = html;
+}
+
+async function fetchData(fullRefresh) {
+    const symbolsStr = fetchSymbolsInput ? fetchSymbolsInput.value.trim() : '';
+    const source = fetchSourceSelect ? fetchSourceSelect.value : 'yfinance';
+    const timeframes = [];
+    document.querySelectorAll('#fetch-timeframes input[type="checkbox"]:checked').forEach(cb => timeframes.push(cb.value));
+
+    const body = { source, timeframes: timeframes.length > 0 ? timeframes : undefined };
+    if (symbolsStr) body.symbols = symbolsStr.split(/[,\s]+/).map(s => s.toUpperCase().trim()).filter(s => s);
+    if (fullRefresh) body.full = true;
+
+    if (dataLoading) dataLoading.style.display = 'block';
+    if (dataError) dataError.style.display = 'none';
+
+    try {
+        const response = await fetchWithLogging(`${API_BASE}/api/analytics/fetch`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(body)
+        });
+        if (!response.ok) throw new Error('Failed to fetch data');
+        const data = await response.json();
+        renderFetchResults(data.results || []);
+        loadDataSummary();
+    } catch (e) {
+        if (dataError) { dataError.textContent = e.message; dataError.style.display = 'block'; }
+    } finally {
+        if (dataLoading) dataLoading.style.display = 'none';
+    }
+}
+
+function renderFetchResults(results) {
+    const container = document.getElementById('fetch-results-container');
+    if (!container || results.length === 0) return;
+    container.style.display = 'block';
+    let html = '<div style="margin-top: 15px;">';
+    for (const r of results) {
+        const statusClass = r.status === 'ok' ? 'status-ok' : 'status-error';
+        const statusText = r.status === 'ok' ? `${r.bars_fetched} bars` : `Error: ${r.error || 'unknown'}`;
+        html += `<div class="fetch-result"><span>${r.symbol} ${r.timeframe}</span><span class="${statusClass}">${statusText}</span></div>`;
+    }
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+async function loadPatterns() {
+    if (patternCheckboxes && patternCheckboxes.children.length > 0) return;
+    try {
+        const response = await fetchWithLogging(`${API_BASE}/api/analytics/patterns`);
+        if (!response.ok) return;
+        const data = await response.json();
+        allPatterns = data.patterns || [];
+        renderPatternCheckboxes();
+        renderPatternFilter();
+    } catch (e) {
+        // Use defaults on error
+    }
+}
+
+function renderPatternCheckboxes() {
+    if (!patternCheckboxes) return;
+    patternCheckboxes.innerHTML = allPatterns.map(p =>
+        `<label class="checkbox-label"><input type="checkbox" value="${p.id}" checked> ${p.name}</label>`
+    ).join('');
+}
+
+function renderPatternFilter() {
+    if (!signalFilterPattern) return;
+    let html = '<option value="all">All Patterns</option>';
+    // Use detector pattern IDs as filter options since analysis groups results by detector
+    for (const p of allPatterns) {
+        html += `<option value="${p.id}">${p.name}</option>`;
+    }
+    signalFilterPattern.innerHTML = html;
+}
+
+async function runAnalysis() {
+    const symbolsStr = analysisSymbols ? analysisSymbols.value.trim() : '';
+    const minConfidence = minConfidenceInput ? parseFloat(minConfidenceInput.value) || 0 : 0;
+    const patterns = [];
+    if (patternCheckboxes) {
+        patternCheckboxes.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => patterns.push(cb.value));
+    }
+
+    // Validate: must have at least one pattern selected
+    if (patterns.length === 0) {
+        if (analysisError) {
+            analysisError.textContent = 'Select at least one pattern to analyze.';
+            analysisError.style.display = 'block';
+        }
+        currentSignals = [];
+        renderSignals();
+        return;
+    }
+
+    const storeSignals = storeSignalsCheckbox ? storeSignalsCheckbox.checked : false;
+    const updateData = updateDataCheckbox ? updateDataCheckbox.checked : false;
+    const source = fetchSourceSelect ? fetchSourceSelect.value : 'yfinance';
+
+    const body = { min_confidence: minConfidence };
+    if (symbolsStr) body.symbols = symbolsStr.split(/[,\s]+/).map(s => s.toUpperCase().trim()).filter(s => s);
+    if (patterns.length > 0) body.patterns = patterns;
+    if (storeSignals) body.store = true;
+    if (updateData) body.update = true;
+    body.source = source;
+
+    if (analysisLoading) analysisLoading.style.display = 'block';
+    if (analysisError) analysisError.style.display = 'none';
+
+    try {
+        const response = await fetchWithLogging(`${API_BASE}/api/analytics/analyze`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(body)
+        });
+        if (!response.ok) throw new Error('Analysis failed');
+        const data = await response.json();
+        currentSignals = (data.signals || []).map(s => {
+            if (typeof s.details === 'string') { try { s.details = JSON.parse(s.details); } catch(e) {} }
+            return s;
+        });
+        renderSignals();
+        if (updateData) loadDataSummary();
+    } catch (e) {
+        if (analysisError) { analysisError.textContent = e.message; analysisError.style.display = 'block'; }
+    } finally {
+        if (analysisLoading) analysisLoading.style.display = 'none';
+    }
+}
+
+function renderSignals() {
+    if (!signalsBody || !signalsTable || !signalsNoData) return;
+
+    const filterSym = signalFilterSymbol ? signalFilterSymbol.value.toUpperCase().trim() : '';
+    const filterDir = signalFilterDirection ? signalFilterDirection.value : 'all';
+    const filterPat = signalFilterPattern ? signalFilterPattern.value : 'all';
+
+    let filtered = currentSignals;
+    if (filterSym) filtered = filtered.filter(s => s.symbol.toUpperCase().includes(filterSym));
+    if (filterDir !== 'all') filtered = filtered.filter(s => s.direction === filterDir);
+    if (filterPat !== 'all') {
+        // Filter by detector ID - match signals whose pattern starts with the detector prefix
+        // e.g. "gap_analysis" matches "gap_up", "gap_down"
+        // e.g. "momentum_1d" matches "momentum_5d", "momentum_10d", etc.
+        filtered = filtered.filter(s => {
+            const sigPat = s.pattern;
+            // Direct match
+            if (sigPat === filterPat) return true;
+            // Prefix match: detector "gap_analysis" matches signals "gap_up"/"gap_down"
+            // detector "unusual_volume_1m" matches "unusual_volume_1m"
+            const detectorPrefix = filterPat.replace(/_analysis$/, '').replace(/_\d+d$/, '');
+            if (sigPat.startsWith(detectorPrefix)) return true;
+            return false;
+        });
+    }
+
+    if (filtered.length === 0) {
+        signalsTable.style.display = 'none';
+        signalsNoData.style.display = 'block';
+        signalsNoData.textContent = currentSignals.length === 0 ? 'Run analysis to see signals' : 'No signals match your filters';
+        if (signalsCount) signalsCount.style.display = 'none';
+        return;
+    }
+
+    signalsTable.style.display = 'table';
+    signalsNoData.style.display = 'none';
+    if (signalsCount) {
+        signalsCount.style.display = 'block';
+        signalsCount.textContent = `Showing ${filtered.length} of ${currentSignals.length} signals`;
+    }
+
+    signalsBody.innerHTML = filtered.map(s => {
+        const dirClass = `direction-${s.direction}`;
+        const dirIcon = s.direction === 'bullish' ? '▲' : s.direction === 'bearish' ? '▼' : '—';
+        const confPct = Math.round(s.confidence * 100);
+        const confColor = confPct >= 70 ? '#00ff88' : confPct >= 40 ? '#ffa500' : '#ff4444';
+        const timeStr = s.timestamp ? new Date(s.timestamp).toLocaleString() : '-';
+        const details = s.details || {};
+        const keyDetails = {};
+        for (const k of ['vwap', 'price', 'gap_pct', 'volume', 'avg_volume', 'z_score', 'roc_pct', 'range_high', 'range_low', 'breakout_price', 'hist_fill_rate_up', 'hist_fill_rate_down', 'band_type']) {
+            if (details[k] !== undefined && details[k] !== null) keyDetails[k] = details[k];
+        }
+        const keyStr = Object.keys(keyDetails).length > 0 ? Object.entries(keyDetails).map(([k,v]) => `${k}: ${typeof v === 'number' ? v.toFixed(2) : v}`).join(', ') : '';
+        const detailId = `detail-${s.timestamp}-${s.symbol}-${s.pattern}`.replace(/[^a-zA-Z0-9-]/g, '_');
+
+        return `<tr onclick="toggleSignalDetail('${detailId}')" style="cursor:pointer;">
+            <td>${timeStr}</td>
+            <td style="font-weight:700;">${s.symbol}</td>
+            <td>${formatPatternName(s.pattern)}</td>
+            <td class="${dirClass}">${dirIcon} ${s.direction}</td>
+            <td><div class="confidence-bar-container"><div class="confidence-bar" style="width:${confPct}%;background:${confColor};"></div><span class="confidence-text">${confPct}%</span></div></td>
+            <td style="font-size:0.8rem;">${keyStr}</td>
+        </tr><tr id="${detailId}" class="signal-details-row" style="display:none;"><td colspan="6"><pre>${JSON.stringify(details, null, 2)}</pre></td></tr>`;
+    }).join('');
+}
+
+function formatPatternName(pattern) {
+    const names = {
+        'vwap_deviation': 'VWAP Deviation',
+        'opening_range_breakout_15m': 'ORB 15m',
+        'opening_range_breakout_30m': 'ORB 30m',
+        'intraday_mean_reversion': 'Mean Reversion',
+        'gap_up': 'Gap Up',
+        'gap_down': 'Gap Down',
+        'unusual_volume_1m': 'Volume Spike 1m',
+        'unusual_volume_1d': 'Volume Spike 1d',
+        'momentum_5d': 'Momentum 5d',
+        'momentum_10d': 'Momentum 10d',
+        'momentum_20d': 'Momentum 20d',
+        'momentum_51d': 'Momentum 51d',
+        'momentum_101d': 'Momentum 101d',
+        'momentum_201d': 'Momentum 201d',
+    };
+    return names[pattern] || pattern;
+}
+
+function toggleSignalDetail(detailId) {
+    const row = document.getElementById(detailId);
+    if (row) {
+        row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+    }
+}
+
+function exportSignals() {
+    if (currentSignals.length === 0) { alert('No signals to export. Run analysis first.'); return; }
+    const data = JSON.stringify(currentSignals, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `signals_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+// ============================================================
+// STRATEGIES TAB LOGIC
+// ============================================================
+
+async function updateStrategyStatuses() {
+    try {
+        const response = await fetchWithLogging(`${API_BASE}/api/strategies/status`, {
+            headers: getAuthHeaders()
+        });
+        const data = response._body;
+        if (data && data.strategies) {
+            data.strategies.forEach(strategy => {
+                const card = document.querySelector(`.strategy-card[data-strategy="${strategy.name}"]`);
+                if (card) {
+                    const statusVal = card.querySelector('.status-val');
+                    const toggleBtn = card.querySelector('.btn-strategy-toggle');
+
+                    statusVal.textContent = strategy.status;
+
+                    if (strategy.status === 'Running') {
+                        card.classList.add('running');
+                        toggleBtn.textContent = 'Stop Strategy';
+                        toggleBtn.dataset.action = 'stop';
+                    } else {
+                        card.classList.remove('running');
+                        toggleBtn.textContent = 'Start Strategy';
+                        toggleBtn.dataset.action = 'start';
+                    }
+                }
+            });
+        }
+    } catch (error) {
+        console.error('Failed to update strategy statuses:', error);
+    }
+}
+
+// Global strategy toggle handler
+window.addEventListener('click', async (e) => {
+    if (e.target.classList.contains('btn-strategy-toggle')) {
+        const btn = e.target;
+        const card = btn.closest('.strategy-card');
+        const strategyName = card.dataset.strategy;
+        const action = btn.dataset.action;
+
+        btn.disabled = true;
+        btn.textContent = action === 'start' ? 'Starting...' : 'Stopping...';
+
+        try {
+            const response = await fetchWithLogging(`${API_BASE}/api/strategies/${action}`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ name: strategyName })
+            });
+            const data = response._body;
+            if (data.status === 'started' || data.status === 'stopped') {
+                await updateStrategyStatuses();
+            }
+        } catch (error) {
+            console.error(`Failed to ${action} strategy ${strategyName}:`, error);
+        } finally {
+            btn.disabled = false;
+        }
+    }
+});

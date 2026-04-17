@@ -1,6 +1,7 @@
-use reqwest::Client;
+use reqwest::{header::HeaderMap, Client};
 use serde_json::Value;
 
+use crate::error::AppResult;
 use crate::models::option_chain::{OptionChainResponse, OptionEntry, StrikeData};
 use crate::models::order::OrderRequest;
 
@@ -48,8 +49,8 @@ impl AlpacaClient {
         })
     }
 
-    fn build_headers(&self) -> reqwest::header::HeaderMap {
-        let mut headers = reqwest::header::HeaderMap::new();
+    fn build_headers(&self) -> HeaderMap {
+        let mut headers = HeaderMap::new();
         if let Ok(key) = self.api_key.parse() {
             headers.insert("APCA-API-KEY-ID", key);
         }
@@ -60,39 +61,35 @@ impl AlpacaClient {
     }
 
     /// Get account information
-    pub async fn get_account(&self) -> Result<Value, reqwest::Error> {
+    pub async fn get_account(&self) -> AppResult<Value> {
         let url = format!("{}/account", self.base_url);
         let response = self
             .client
             .get(&url)
             .headers(self.build_headers())
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            tracing::error!("Alpaca API error ({})", status);
-            return Err(response.error_for_status().unwrap_err());
-        }
-
-        response.json().await
+        Ok(response.json().await?)
     }
 
     /// Get all open positions
-    pub async fn get_positions(&self) -> Result<Vec<Value>, reqwest::Error> {
+    pub async fn get_positions(&self) -> AppResult<Vec<Value>> {
         let url = format!("{}/positions", self.base_url);
         let response = self
             .client
             .get(&url)
             .headers(self.build_headers())
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
-        response.error_for_status()?.json().await
+        Ok(response.json().await?)
     }
 
     /// Get orders
-    pub async fn get_orders(&self, status: Option<&str>) -> Result<Vec<Value>, reqwest::Error> {
+    pub async fn get_orders(&self, status: Option<&str>) -> AppResult<Vec<Value>> {
         let mut url = format!("{}/orders", self.base_url);
         if let Some(s) = status {
             url = format!("{}?status={}", url, s);
@@ -102,13 +99,14 @@ impl AlpacaClient {
             .get(&url)
             .headers(self.build_headers())
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
-        response.error_for_status()?.json().await
+        Ok(response.json().await?)
     }
 
     /// Create a new order
-    pub async fn create_order(&self, order: OrderRequest) -> Result<Value, reqwest::Error> {
+    pub async fn create_order(&self, order: OrderRequest) -> AppResult<Value> {
         let url = format!("{}/orders", self.base_url);
 
         let mut body = serde_json::json!({
@@ -137,92 +135,55 @@ impl AlpacaClient {
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_json: Value = response
-                .json()
-                .await
-                .unwrap_or_else(|_| serde_json::json!({"message": "Unknown error"}));
+            let error_json: Value =
+                response.json().await.unwrap_or_else(|_| serde_json::json!({"message": "Unknown error"}));
             tracing::error!("Alpaca API error ({}): {:?}", status, error_json);
 
             // Return the error JSON as the result so the frontend can display the message from Alpaca
             return Ok(error_json);
         }
 
-        response.json().await
+        Ok(response.json().await?)
     }
 
     /// Get order by ID
-    pub async fn get_order_by_id(&self, order_id: &str) -> Result<Value, reqwest::Error> {
+    pub async fn get_order_by_id(&self, order_id: &str) -> AppResult<Value> {
         let url = format!("{}/orders/{}", self.base_url, order_id);
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.build_headers())
-            .send()
-            .await?;
+        let response = self.client.get(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
-        response.error_for_status()?.json().await
+        Ok(response.json().await?)
     }
 
     /// Cancel an order by ID
-    pub async fn cancel_order(&self, order_id: &str) -> Result<(), reqwest::Error> {
+    pub async fn cancel_order(&self, order_id: &str) -> AppResult<Value> {
         let url = format!("{}/orders/{}", self.base_url, order_id);
-        let response = self
-            .client
-            .delete(&url)
-            .headers(self.build_headers())
-            .send()
-            .await?;
+        let response = self.client.delete(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
-        response.error_for_status()?;
-        Ok(())
+        Ok(response.json().await?)
     }
 
     /// Cancel all open orders
-    pub async fn cancel_all_orders(&self) -> Result<Vec<Value>, reqwest::Error> {
+    pub async fn cancel_all_orders(&self) -> AppResult<Vec<Value>> {
         let url = format!("{}/orders", self.base_url);
-        let response = self
-            .client
-            .delete(&url)
-            .headers(self.build_headers())
-            .send()
-            .await?;
+        let response = self.client.delete(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
-        let response = response.error_for_status()?;
-        if response.status() == reqwest::StatusCode::NO_CONTENT {
-            Ok(Vec::new())
-        } else {
-            response.json().await
-        }
+        Ok(response.json().await?)
     }
 
     /// Get current price for a symbol
-    pub async fn get_current_price(&self, symbol: &str) -> Result<Value, reqwest::Error> {
+    pub async fn get_current_price(&self, symbol: &str) -> AppResult<Value> {
         // Use the market data API endpoint
-        let url = format!("{}/stocks/{}/quotes/latest", self.data_url, symbol);
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.build_headers())
-            .send()
-            .await?;
+        let url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
+        let response = self.client.get(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
-        response.error_for_status()?.json().await
+        Ok(response.json().await?)
     }
 
     /// Get option chain for a symbol (returns available strikes)
-    pub async fn get_option_strikes(
-        &self,
-        symbol: &str,
-        expiration: Option<&str>,
-    ) -> Result<Value, reqwest::Error> {
+    pub async fn get_option_strikes(&self, symbol: &str, expiration: Option<&str>) -> AppResult<Value> {
         // Get snapshot data for the underlying to determine ATM strike
-        let url = format!("{}/stocks/{}/quotes/latest", self.data_url, symbol);
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.build_headers())
-            .send()
-            .await?;
+        let url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
+        let response = self.client.get(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
         let quote: Value = response.json().await?;
 
@@ -294,19 +255,11 @@ impl AlpacaClient {
     }
 
     /// Get real option chain for a symbol
-    pub async fn get_option_chain(
-        &self,
-        symbol: &str,
-        expiration: Option<&str>,
-    ) -> Result<OptionChainResponse, reqwest::Error> {
+    pub async fn get_option_chain(&self, symbol: &str) -> AppResult<OptionChainResponse> {
         // 1. Get current stock price
-        let price_url = format!("{}/stocks/{}/quotes/latest", self.data_url, symbol);
-        let price_response = self
-            .client
-            .get(&price_url)
-            .headers(self.build_headers())
-            .send()
-            .await?;
+        let price_url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
+        let price_response =
+            self.client.get(&price_url).headers(self.build_headers()).send().await?.error_for_status()?;
 
         let price_data: Value = price_response.json().await?;
         let quote_obj = price_data.get("quote").unwrap_or(&price_data);
@@ -334,22 +287,12 @@ impl AlpacaClient {
                 self.options_url, symbol, option_type
             );
 
-            let response = self
-                .client
-                .get(&url)
-                .headers(self.build_headers())
-                .send()
-                .await?;
+            let response = self.client.get(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
             let data: Value = response.json().await?;
 
             if let Some(snapshots) = data.get("snapshots").and_then(|s| s.as_object()) {
                 for (occ_symbol, snapshot) in snapshots {
-                    if let Some(filter) = expiration {
-                        if occ_expiration_date(occ_symbol).as_deref() != Some(filter) {
-                            continue;
-                        }
-                    }
                     if let Some(quote) = snapshot.get("latestQuote") {
                         let bid = quote.get("bp").and_then(|p| p.as_f64()).unwrap_or(0.0);
                         let ask = quote.get("ap").and_then(|p| p.as_f64()).unwrap_or(0.0);
@@ -417,7 +360,7 @@ impl AlpacaClient {
     }
 
     /// Get current price for an option
-    pub async fn get_option_price(&self, option_symbol: &str) -> Result<Value, reqwest::Error> {
+    pub async fn get_option_price(&self, option_symbol: &str) -> AppResult<Value> {
         // Extract underlying symbol from OCC format
         // OCC format: SYMBOL + YYMMDD + C/P + STRIKE (8 chars)
         // For short symbols (like SPY), no padding: SPY260408C00670000
@@ -475,12 +418,7 @@ impl AlpacaClient {
             self.options_url, underlying, option_type
         );
 
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.build_headers())
-            .send()
-            .await?;
+        let response = self.client.get(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
         let data: Value = response.json().await?;
 

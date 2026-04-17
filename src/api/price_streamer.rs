@@ -74,7 +74,7 @@ async fn handle_alpaca_ws(
     url: String,
     key: String,
     secret: String,
-    is_options: Option<bool>, // is_options is used for logging/special handling if needed
+    is_options: Option<bool>,
 ) {
     loop {
         tracing::info!("Connecting to Alpaca WS: {}", url);
@@ -91,9 +91,10 @@ async fn handle_alpaca_ws(
                     "key": key,
                     "secret": secret
                 });
-                let _ = ws_stream
-                    .send(Message::Text(auth_msg.to_string().into()))
-                    .await;
+                if let Err(e) = ws_stream.send(Message::Text(auth_msg.to_string().into())).await {
+                    tracing::error!("Failed to send auth message: {}", e);
+                    continue;
+                }
 
                 // 3. Wait for auth success
                 if let Some(Ok(Message::Text(text))) = ws_stream.next().await {
@@ -112,18 +113,14 @@ async fn handle_alpaca_ws(
                 loop {
                     tokio::select! {
                         _ = interval.tick() => {
-                            let current_vec = ws_manager.get_active_symbols();
-                            let current_symbols: std::collections::HashSet<String> = current_vec.iter().cloned().collect();
+                            let current_symbols: std::collections::HashSet<String> = ws_manager.get_active_symbols().into_iter().collect();
 
                             if current_symbols != last_subscribed_symbols {
-                                // Filter symbols based on whether this is stock or option WS
-                                // (Alpaca expects certain formats)
+                                let is_options_flag = is_options.unwrap_or(false);
                                 let filtered: Vec<String> = current_symbols.iter()
                                     .filter(|s| {
                                         let is_opt = s.len() > 10 && s.chars().any(|c| c.is_ascii_digit());
-                                        // Simplified: stocks if not looks like OCC, options if looks like OCC
-                                        // This matches the user's assumption of OCC format
-                                        if is_options.unwrap_or(false) { is_opt } else { !is_opt }
+                                        if is_options_flag { is_opt } else { !is_opt }
                                     })
                                     .cloned()
                                     .collect();
@@ -134,7 +131,10 @@ async fn handle_alpaca_ws(
                                         "trades": filtered,
                                         "quotes": filtered
                                     });
-                                    let _ = ws_stream.send(Message::Text(sub_msg.to_string().into())).await;
+                                    if let Err(e) = ws_stream.send(Message::Text(sub_msg.to_string().into())).await {
+                                        tracing::error!("Failed to send subscribe message: {}", e);
+                                        break;
+                                    }
                                 }
                                 last_subscribed_symbols = current_symbols;
                             }
@@ -142,11 +142,9 @@ async fn handle_alpaca_ws(
                         msg = ws_stream.next() => {
                             match msg {
                                 Some(Ok(Message::Text(text))) => {
-                                    if let Ok(updates) = serde_json::from_str::<Value>(&text) {
-                                        if let Some(arr) = updates.as_array() {
-                                            for item in arr {
-                                                process_alpaca_message(item, &ws_manager);
-                                            }
+                                    if let Ok(Value::Array(arr)) = serde_json::from_str::<Value>(&text) {
+                                        for item in arr {
+                                            process_alpaca_message(&item, &ws_manager);
                                         }
                                     }
                                 }

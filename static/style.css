@@ -551,7 +551,218 @@ footer a:hover {
     display: block;
 }
 
-/* Modal Styles */
+/* Analytics Styles */
+.analytics-controls {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+}
+
+.analytics-controls .form-group {
+    min-width: 120px;
+}
+
+.watchlist-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 40px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    margin-top: 10px;
+}
+
+.watchlist-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(74, 158, 255, 0.2);
+    border: 1px solid #4a9eff;
+    border-radius: 6px;
+    color: #4a9eff;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.watchlist-tag .remove-tag {
+    cursor: pointer;
+    color: #ff4444;
+    font-size: 1.1rem;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.watchlist-tag .remove-tag:hover {
+    color: #ff8888;
+}
+
+.data-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    margin-top: 15px;
+}
+
+.data-summary-item {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.data-summary-item .symbol {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #4a9eff;
+    margin-bottom: 8px;
+}
+
+.data-summary-item .tf-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    color: #aaa;
+    padding: 2px 0;
+}
+
+.data-summary-item .tf-row .count {
+    color: #00ff88;
+    font-weight: 600;
+}
+
+.checkbox-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.checkbox-group .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.input-with-buttons {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.input-with-buttons input {
+    flex: 1;
+}
+
+.confidence-bar-container {
+    position: relative;
+    width: 100px;
+    height: 18px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 9px;
+    overflow: hidden;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.confidence-bar {
+    height: 100%;
+    border-radius: 9px;
+    transition: width 0.3s;
+}
+
+.confidence-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+.direction-bullish {
+    color: #00ff88;
+    font-weight: 600;
+}
+
+.direction-bearish {
+    color: #ff4444;
+    font-weight: 600;
+}
+
+.direction-neutral {
+    color: #888;
+    font-weight: 600;
+}
+
+.signal-details-row td {
+    background: rgba(0, 0, 0, 0.3) !important;
+    padding: 15px !important;
+}
+
+.signal-details-row pre {
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 6px;
+    padding: 12px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    color: #aaa;
+    margin: 0;
+    white-space: pre-wrap;
+}
+
+.fetch-result {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 0.9rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.fetch-result .status-ok {
+    color: #00ff88;
+}
+
+.fetch-result .status-error {
+    color: #ff4444;
+}
+
+#signals-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+#signals-table th {
+    text-align: left;
+    padding: 8px 6px;
+    border-bottom: 2px solid rgba(74, 158, 255, 0.3);
+    color: #4a9eff;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+#signals-table td {
+    padding: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 0.85rem;
+    color: #ccc;
+}
+
+#signals-table tr:hover {
+    background: rgba(255, 255, 255, 0.03);
+    cursor: pointer;
+}
 .modal {
     display: none;
     position: fixed;
@@ -646,6 +857,87 @@ footer a:hover {
     font-size: 0.75rem;
 }
 
+/* Strategy Grid */
+.strategy-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+    margin-top: 10px;
+}
+
+.strategy-card {
+    background-color: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.2s, border-color 0.2s;
+}
+
+.strategy-card:hover {
+    border-color: #4CAF50;
+    transform: translateY(-2px);
+}
+
+.strategy-card h3 {
+    margin-top: 0;
+    color: #4CAF50;
+    font-size: 1.2rem;
+}
+
+.strategy-desc {
+    font-size: 0.9rem;
+    color: #aaa;
+    margin-bottom: 15px;
+    flex-grow: 1;
+    line-height: 1.4;
+}
+
+.strategy-status {
+    font-size: 0.85rem;
+    font-weight: bold;
+    margin-bottom: 15px;
+}
+
+.status-val {
+    color: #888;
+}
+
+.strategy-card.running .status-val {
+    color: #4CAF50;
+}
+
+.strategy-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-strategy-toggle {
+    flex-grow: 1;
+    padding: 10px;
+    background-color: #333;
+    color: white;
+    border: 1px solid #444;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background-color 0.2s;
+}
+
+.btn-strategy-toggle:hover {
+    background-color: #444;
+}
+
+.strategy-card.running .btn-strategy-toggle {
+    background-color: #b71c1c;
+    border-color: #d32f2f;
+}
+
+.strategy-card.running .btn-strategy-toggle:hover {
+    background-color: #d32f2f;
+}
+
 /* History Filters */
 .history-filters {
     display: flex;
@@ -668,6 +960,140 @@ footer a:hover {
 .sortable:hover {
     color: #fff;
     background: rgba(74, 158, 255, 0.3);
+}
+
+/* ============================================================
+   STRATEGIES GRID & CARDS
+   ============================================================ */
+
+.strategies-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+}
+
+.strategy-card {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(74, 158, 255, 0.3);
+    border-radius: 12px;
+    padding: 20px;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.strategy-card:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(74, 158, 255, 0.6);
+    box-shadow: 0 8px 24px rgba(74, 158, 255, 0.2);
+    transform: translateY(-4px);
+}
+
+.strategy-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 15px;
+}
+
+.strategy-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #fff;
+    flex: 1;
+}
+
+.strategy-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    background: rgba(100, 100, 100, 0.5);
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #aaa;
+}
+
+.strategy-status.idle {
+    background: rgba(100, 100, 100, 0.5);
+    color: #aaa;
+}
+
+.strategy-status.running {
+    background: rgba(0, 255, 100, 0.2);
+    color: #00ff64;
+}
+
+.strategy-status::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.strategy-description {
+    color: #aaa;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    margin-bottom: 20px;
+    flex: 1;
+}
+
+.strategy-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: auto;
+}
+
+.btn-execute {
+    flex: 1;
+    background: linear-gradient(135deg, #00ff64 0%, #00cc4d 100%);
+    color: #000;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-execute:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 20px rgba(0, 255, 100, 0.4);
+}
+
+.btn-execute:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-stop {
+    flex: 1;
+    background: linear-gradient(135deg, #ff4444 0%, #cc0000 100%);
+    color: #fff;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-stop:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 20px rgba(255, 68, 68, 0.4);
+}
+
+.btn-stop:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
 }
 
 .event-tag {
