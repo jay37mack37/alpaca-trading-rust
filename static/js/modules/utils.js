@@ -1,7 +1,12 @@
 export const DEV_MODE = true;
-const LOG_BUFFER = [];
+export const LOG_BUFFER = [];
+export const NETWORK_LOG = [];
 const MAX_LOG_SIZE = 100;
 export const API_BASE = window.location.origin;
+
+export function openDevConsole() {
+    window.open('/dev-console.html', 'dev-console', 'width=1200,height=600,resizable=yes');
+}
 
 export function devLog(category, message, data = null) {
     if (!DEV_MODE) return;
@@ -60,6 +65,19 @@ export async function fetchWithLogging(url, options = {}) {
             body: data
         });
 
+        NETWORK_LOG.push({
+            type: response.ok ? 'success' : 'error',
+            method,
+            url: shortUrl,
+            status: response.status,
+            statusText: response.statusText,
+            duration: `${duration}ms`,
+            size: `${(size / 1024).toFixed(2)}KB`,
+            timestamp: new Date().toLocaleTimeString(),
+            body: data
+        });
+        if (NETWORK_LOG.length > MAX_LOG_SIZE) NETWORK_LOG.shift();
+
         if (response.status === 401 && !url.includes('/api/login') && !url.includes('/api/verify')) {
             devWarn('AUTH', 'Session expired, redirecting to login');
             localStorage.removeItem('token');
@@ -72,6 +90,16 @@ export async function fetchWithLogging(url, options = {}) {
     } catch (error) {
         const duration = (performance.now() - startTime).toFixed(2);
         devError('API', `${method} ${shortUrl} failed (${duration}ms)`, error.message);
+        NETWORK_LOG.push({
+            type: 'error',
+            method,
+            url: shortUrl,
+            status: 0,
+            statusText: error.message,
+            duration: `${duration}ms`,
+            timestamp: new Date().toLocaleTimeString()
+        });
+        if (NETWORK_LOG.length > MAX_LOG_SIZE) NETWORK_LOG.shift();
         throw error;
     }
 }

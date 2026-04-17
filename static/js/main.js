@@ -4,7 +4,12 @@ import { fetchOrders, cancelOrder, cancelAllOrders, cancelSelectedOrders, viewOr
 import { initHistory, renderHistory } from './modules/history.js';
 import { initOptionsChain } from './modules/options.js';
 import { loadWatchlist, addToWatchlist, fetchData, runAnalysis, loadDataSummary, loadPatterns } from './modules/analytics.js';
-import { devLog, API_BASE, fetchWithLogging } from './modules/utils.js';
+import { devLog, API_BASE, fetchWithLogging, openDevConsole, LOG_BUFFER, NETWORK_LOG } from './modules/utils.js';
+
+// Expose for dev console popup window
+window.LOG_BUFFER = LOG_BUFFER;
+window.API_BASE = API_BASE;
+window.NETWORK_LOG = NETWORK_LOG;
 
 async function loadStrategiesStatus() {
     try {
@@ -189,6 +194,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Dev Console button
+    document.getElementById('dev-console-btn')?.addEventListener('click', openDevConsole);
+
     // Auto-refresh
     setInterval(() => {
         if (localStorage.getItem('token')) {
@@ -197,4 +205,11 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchOrders();
         }
     }, 30000);
+
+    // Strategy status polling every 5 seconds
+    setInterval(() => {
+        if (localStorage.getItem('token')) {
+            loadStrategiesStatus();
+        }
+    }, 5000);
 });
