@@ -5,6 +5,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod math;
 mod api;
 mod auth;
 mod error;
@@ -18,6 +19,7 @@ use api::ws_manager::WsManager;
 use routes::websocket::AppState;
 use strategies::StrategyManager;
 use std::sync::Arc;
+use strategies::StrategyManager;
 
 #[tokio::main]
 async fn main() {
