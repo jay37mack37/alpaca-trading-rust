@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 pub struct OrderRequest {
     pub symbol: String,
     pub qty: f64,
-    pub side: String,          // "buy" or "sell"
-    pub order_type: String,    // "market", "limit", etc.
+    pub side: String,        // "buy" or "sell"
+    pub order_type: String,  // "market", "limit", etc.
     pub time_in_force: String, // "day", "gtc", etc.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit_price: Option<f64>,
@@ -27,24 +27,7 @@ impl OrderRequest {
         }
 
         let side = self.side.to_lowercase();
-        let is_option_order = self.asset_class.as_deref() == Some("us_option");
-        let valid_sides: &[&str] = if is_option_order {
-            &[
-                "buy_to_open",
-                "sell_to_open",
-                "buy_to_close",
-                "sell_to_close",
-            ]
-        } else {
-            &["buy", "sell"]
-        };
-        if !valid_sides.contains(&side.as_str()) {
-            if is_option_order {
-                return Err(
-                    "Option side must be one of: buy_to_open, sell_to_open, buy_to_close, sell_to_close"
-                        .to_string(),
-                );
-            }
+        if side != "buy" && side != "sell" {
             return Err("Side must be 'buy' or 'sell'".to_string());
         }
 

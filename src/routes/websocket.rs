@@ -16,7 +16,6 @@ use crate::api::alpaca::AlpacaApi;
 use crate::api::ws_manager::WsManager;
 use crate::auth;
 use crate::models::websocket::{WsAction, WsUpdate};
-use crate::error::AppError;
 use crate::strategies::StrategyManager;
 
 #[derive(Deserialize)]
@@ -24,12 +23,7 @@ pub struct WsParams {
     token: String,
 }
 
-#[derive(Clone)]
-pub struct AppState {
-    pub alpaca: Option<Arc<dyn AlpacaApi>>,
-    pub ws_manager: Arc<WsManager>,
-    pub strategy_manager: Arc<StrategyManager>,
-}
+use crate::error::AppError;
 
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
@@ -40,6 +34,13 @@ pub async fn ws_handler(
         Some(username) => ws.on_upgrade(move |socket| handle_socket(socket, state, username)),
         None => AppError::Unauthorized("Invalid or expired token".to_string()).into_response(),
     }
+}
+
+#[derive(Clone)]
+pub struct AppState {
+    pub alpaca: Option<Arc<dyn AlpacaApi>>,
+    pub ws_manager: Arc<WsManager>,
+    pub strategy_manager: Arc<StrategyManager>,
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState, _username: String) {

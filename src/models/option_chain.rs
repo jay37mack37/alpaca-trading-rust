@@ -106,21 +106,23 @@ mod tests {
         let response = OptionChainResponse {
             symbol: "SPY".to_string(),
             underlying_price: 500.0,
-            strikes: vec![StrikeData {
-                strike: 500.0,
-                call: OptionEntry {
-                    symbol: "SPY240621C00500000".to_string(),
-                    bid: 5.0,
-                    ask: 5.1,
-                    size: 5,
+            strikes: vec![
+                StrikeData {
+                    strike: 500.0,
+                    call: OptionEntry {
+                        symbol: "SPY240621C00500000".to_string(),
+                        bid: 5.0,
+                        ask: 5.1,
+                        size: 5,
+                    },
+                    put: OptionEntry {
+                        symbol: "SPY240621P00500000".to_string(),
+                        bid: 5.2,
+                        ask: 5.3,
+                        size: 5,
+                    },
                 },
-                put: OptionEntry {
-                    symbol: "SPY240621P00500000".to_string(),
-                    bid: 5.2,
-                    ask: 5.3,
-                    size: 5,
-                },
-            }],
+            ],
         };
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("SPY"));

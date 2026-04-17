@@ -1,12 +1,12 @@
-use chrono::Utc;
-use futures_util::{SinkExt, StreamExt};
-use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::time::{self, Duration};
+use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use serde_json::{json, Value};
+use chrono::Utc;
 
 use crate::api::ws_manager::WsManager;
-use crate::models::websocket::{QuoteUpdate, TradeUpdate, WsUpdate};
+use crate::models::websocket::{WsUpdate, TradeUpdate, QuoteUpdate};
 
 pub struct PriceStreamer {
     ws_manager: Arc<WsManager>,
@@ -15,11 +15,7 @@ pub struct PriceStreamer {
 }
 
 impl PriceStreamer {
-    pub fn new(
-        ws_manager: Arc<WsManager>,
-        api_key: Option<String>,
-        api_secret: Option<String>,
-    ) -> Self {
+    pub fn new(ws_manager: Arc<WsManager>, api_key: Option<String>, api_secret: Option<String>) -> Self {
         Self {
             ws_manager,
             api_key,
@@ -106,8 +102,7 @@ async fn handle_alpaca_ws(
                 }
 
                 // 4. Main loop
-                let mut last_subscribed_symbols: std::collections::HashSet<String> =
-                    std::collections::HashSet::new();
+                let mut last_subscribed_symbols: std::collections::HashSet<String> = std::collections::HashSet::new();
                 let mut interval = time::interval(Duration::from_secs(1));
 
                 loop {
@@ -170,11 +165,7 @@ fn process_alpaca_message(item: &Value, ws_manager: &Arc<WsManager>) {
             let symbol = item.get("S").and_then(|s| s.as_str()).unwrap_or("");
             let price = item.get("p").and_then(|p| p.as_f64()).unwrap_or(0.0);
             let size = item.get("s").and_then(|s| s.as_u64()).unwrap_or(0) as u32;
-            let timestamp = item
-                .get("t")
-                .and_then(|t| t.as_str())
-                .unwrap_or("")
-                .to_string();
+            let timestamp = item.get("t").and_then(|t| t.as_str()).unwrap_or("").to_string();
 
             let _ = ws_manager.tx.send(WsUpdate::Trade(TradeUpdate {
                 symbol: symbol.to_string(),
@@ -188,11 +179,7 @@ fn process_alpaca_message(item: &Value, ws_manager: &Arc<WsManager>) {
             let bid = item.get("bp").and_then(|p| p.as_f64()).unwrap_or(0.0);
             let ask = item.get("ap").and_then(|p| p.as_f64()).unwrap_or(0.0);
             let size = item.get("as").and_then(|s| s.as_u64()).unwrap_or(0) as u32;
-            let timestamp = item
-                .get("t")
-                .and_then(|t| t.as_str())
-                .unwrap_or("")
-                .to_string();
+            let timestamp = item.get("t").and_then(|t| t.as_str()).unwrap_or("").to_string();
 
             let _ = ws_manager.tx.send(WsUpdate::Quote(QuoteUpdate {
                 symbol: symbol.to_string(),
@@ -222,31 +209,18 @@ async fn run_fallback_polling(ws_manager: Arc<WsManager>) {
 
         // Yahoo Finance Quote API
         let symbols_str = symbols.join(",");
-        let url = format!(
-            "https://query1.finance.yahoo.com/v7/finance/quote?symbols={}",
-            symbols_str
-        );
+        let url = format!("https://query1.finance.yahoo.com/v7/finance/quote?symbols={}", symbols_str);
 
         match client.get(&url).send().await {
             Ok(resp) => {
                 if let Ok(data) = resp.json::<Value>().await {
-                    if let Some(result) = data
-                        .get("quoteResponse")
-                        .and_then(|r| r.get("result"))
-                        .and_then(|res| res.as_array())
-                    {
+                    if let Some(result) = data.get("quoteResponse").and_then(|r| r.get("result")).and_then(|res| res.as_array()) {
                         for quote in result {
                             let symbol = quote.get("symbol").and_then(|s| s.as_str()).unwrap_or("");
-                            let price = quote
-                                .get("regularMarketPrice")
-                                .and_then(|p| p.as_f64())
-                                .unwrap_or(0.0);
+                            let price = quote.get("regularMarketPrice").and_then(|p| p.as_f64()).unwrap_or(0.0);
                             let bid = quote.get("bid").and_then(|p| p.as_f64()).unwrap_or(price);
                             let ask = quote.get("ask").and_then(|p| p.as_f64()).unwrap_or(price);
-                            let size = quote
-                                .get("regularMarketVolume")
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(0) as u32;
+                            let size = quote.get("regularMarketVolume").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
 
                             let _ = ws_manager.tx.send(WsUpdate::Quote(QuoteUpdate {
                                 symbol: symbol.to_string(),

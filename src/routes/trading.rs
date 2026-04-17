@@ -55,7 +55,7 @@ pub async fn get_orders(
     Query(query): Query<OrdersQuery>,
 ) -> AppResult<Json<Vec<Value>>> {
     let api_client = get_authenticated_client(&headers, &state).await?;
-    let orders = api_client.get_orders(query.status.clone()).await?;
+    let orders = api_client.get_orders(query.status).await?;
     Ok(Json(orders))
 }
 
@@ -109,7 +109,7 @@ pub async fn get_option_strikes(
     Query(params): Query<OptionsQuery>,
 ) -> AppResult<Json<Value>> {
     let api_client = get_authenticated_client(&headers, &state).await?;
-    let strikes = api_client.get_option_strikes(&symbol, params.expiration.clone()).await?;
+    let strikes = api_client.get_option_strikes(&symbol, params.expiration).await?;
     Ok(Json(strikes))
 }
 

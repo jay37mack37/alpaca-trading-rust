@@ -1,9 +1,8 @@
 use axum::Json;
 use serde_json::{json, Value};
 use std::sync::Arc;
-use crate::api::alpaca::AlpacaApi;
 
-use crate::api::alpaca::AlpacaClient;
+use crate::api::alpaca::{AlpacaApi, AlpacaClient};
 use crate::auth;
 use crate::auth::{ApiKeyRequest, LoginRequest, PasswordRequest};
 use crate::error::{AppError, AppResult};

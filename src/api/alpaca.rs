@@ -82,7 +82,8 @@ impl AlpacaApi for AlpacaClient {
     /// Get account information
     async fn get_account(&self) -> AppResult<Value> {
         let url = format!("{}/account", self.base_url);
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .headers(self.build_headers())
             .send()
@@ -95,7 +96,8 @@ impl AlpacaApi for AlpacaClient {
     /// Get all open positions
     async fn get_positions(&self) -> AppResult<Vec<Value>> {
         let url = format!("{}/positions", self.base_url);
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .headers(self.build_headers())
             .send()
@@ -111,7 +113,8 @@ impl AlpacaApi for AlpacaClient {
         if let Some(s) = status {
             url = format!("{}?status={}", url, s);
         }
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .headers(self.build_headers())
             .send()
@@ -141,7 +144,8 @@ impl AlpacaApi for AlpacaClient {
             body["asset_class"] = serde_json::json!(asset_class);
         }
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .headers(self.build_headers())
             .json(&body)
@@ -150,7 +154,8 @@ impl AlpacaApi for AlpacaClient {
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_json: Value = response.json().await.unwrap_or_else(|_| serde_json::json!({"message": "Unknown error"}));
+            let error_json: Value =
+                response.json().await.unwrap_or_else(|_| serde_json::json!({"message": "Unknown error"}));
             tracing::error!("Alpaca API error ({}): {:?}", status, error_json);
 
             // Return the error JSON as the result so the frontend can display the message from Alpaca
@@ -163,12 +168,7 @@ impl AlpacaApi for AlpacaClient {
     /// Get order by ID
     async fn get_order_by_id(&self, order_id: &str) -> AppResult<Value> {
         let url = format!("{}/orders/{}", self.base_url, order_id);
-        let response = self.client
-            .get(&url)
-            .headers(self.build_headers())
-            .send()
-            .await?
-            .error_for_status()?;
+        let response = self.client.get(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
         Ok(response.json().await?)
     }
@@ -176,12 +176,7 @@ impl AlpacaApi for AlpacaClient {
     /// Cancel an order by ID
     async fn cancel_order(&self, order_id: &str) -> AppResult<Value> {
         let url = format!("{}/orders/{}", self.base_url, order_id);
-        let response = self.client
-            .delete(&url)
-            .headers(self.build_headers())
-            .send()
-            .await?
-            .error_for_status()?;
+        let response = self.client.delete(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
         Ok(response.json().await?)
     }
@@ -189,12 +184,7 @@ impl AlpacaApi for AlpacaClient {
     /// Cancel all open orders
     async fn cancel_all_orders(&self) -> AppResult<Vec<Value>> {
         let url = format!("{}/orders", self.base_url);
-        let response = self.client
-            .delete(&url)
-            .headers(self.build_headers())
-            .send()
-            .await?
-            .error_for_status()?;
+        let response = self.client.delete(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
         Ok(response.json().await?)
     }
@@ -203,12 +193,7 @@ impl AlpacaApi for AlpacaClient {
     async fn get_current_price(&self, symbol: &str) -> AppResult<Value> {
         // Use the market data API endpoint
         let url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
-        let response = self.client
-            .get(&url)
-            .headers(self.build_headers())
-            .send()
-            .await?
-            .error_for_status()?;
+        let response = self.client.get(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
         Ok(response.json().await?)
     }
@@ -217,12 +202,7 @@ impl AlpacaApi for AlpacaClient {
     async fn get_option_strikes(&self, symbol: &str, expiration: Option<String>) -> AppResult<Value> {
         // Get snapshot data for the underlying to determine ATM strike
         let url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
-        let response = self.client
-            .get(&url)
-            .headers(self.build_headers())
-            .send()
-            .await?
-            .error_for_status()?;
+        let response = self.client.get(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
         let quote: Value = response.json().await?;
 
@@ -243,7 +223,13 @@ impl AlpacaApi for AlpacaClient {
         };
 
         // Determine strike increment based on price level
-        let strike_increment = if current_price < 25.0 { 0.5 } else if current_price < 200.0 { 1.0 } else { 5.0 };
+        let strike_increment = if current_price < 25.0 {
+            0.5
+        } else if current_price < 200.0 {
+            1.0
+        } else {
+            5.0
+        };
 
         // For ITM Call: closest strike below current price
         // floor(price/inc) * inc gives the strike at or below price
@@ -288,12 +274,8 @@ impl AlpacaApi for AlpacaClient {
     async fn get_option_chain(&self, symbol: &str) -> AppResult<OptionChainResponse> {
         // 1. Get current stock price
         let price_url = format!("{}/stocks/{}/quotes/latest", ALPACA_DATA_URL, symbol);
-        let price_response = self.client
-            .get(&price_url)
-            .headers(self.build_headers())
-            .send()
-            .await?
-            .error_for_status()?;
+        let price_response =
+            self.client.get(&price_url).headers(self.build_headers()).send().await?.error_for_status()?;
 
         let price_data: Value = price_response.json().await?;
         let quote_obj = price_data.get("quote").unwrap_or(&price_data);
@@ -319,12 +301,7 @@ impl AlpacaApi for AlpacaClient {
                 option_type
             );
 
-            let response = self.client
-                .get(&url)
-                .headers(self.build_headers())
-                .send()
-                .await?
-                .error_for_status()?;
+            let response = self.client.get(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
             let data: Value = response.json().await?;
 
@@ -433,12 +410,7 @@ impl AlpacaApi for AlpacaClient {
             option_type
         );
 
-        let response = self.client
-            .get(&url)
-            .headers(self.build_headers())
-            .send()
-            .await?
-            .error_for_status()?;
+        let response = self.client.get(&url).headers(self.build_headers()).send().await?.error_for_status()?;
 
         let data: Value = response.json().await?;
 

@@ -1,7 +1,7 @@
-use crate::models::websocket::WsUpdate;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
+use crate::models::websocket::WsUpdate;
 
 pub struct WsManager {
     /// Channel to broadcast updates to all connected clients

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::env;
-use std::fs;
 use std::sync::{Arc, RwLock};
+use std::fs;
+use std::path::Path;
 
 lazy_static::lazy_static! {
     static ref USERS: Arc<RwLock<HashMap<String, User>>> = Arc::new(RwLock::new(HashMap::new()));
@@ -10,7 +10,6 @@ lazy_static::lazy_static! {
 }
 
 const CONFIG_FILE: &str = "config.json";
-const ENV_FILE: &str = ".env";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -58,8 +57,7 @@ pub struct ApiKeyConfig {
 
 impl Config {
     pub fn load() -> Self {
-        let config_path = config_file_path();
-        let path = config_path.as_path();
+        let path = Path::new(CONFIG_FILE);
         if path.exists() {
             if let Ok(content) = fs::read_to_string(path) {
                 if let Ok(config) = serde_json::from_str(&content) {
@@ -81,21 +79,9 @@ impl Config {
 
     pub fn save(&self) {
         if let Ok(content) = serde_json::to_string_pretty(self) {
-            let _ = fs::write(config_file_path(), content);
+            let _ = fs::write(CONFIG_FILE, content);
         }
     }
-}
-
-fn config_file_path() -> std::path::PathBuf {
-    env::var("ALPACA_CONFIG_FILE")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from(CONFIG_FILE))
-}
-
-fn env_file_path() -> std::path::PathBuf {
-    env::var("ALPACA_ENV_FILE")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from(ENV_FILE))
 }
 
 fn hash_password(password: &str) -> String {
@@ -112,26 +98,15 @@ fn generate_token() -> String {
     use std::hash::{Hash, Hasher};
     use std::time::{SystemTime, UNIX_EPOCH};
     let mut hasher = DefaultHasher::new();
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos()
-        .hash(&mut hasher);
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos().hash(&mut hasher);
     format!("{:x}", hasher.finish())
 }
 
 pub fn init() {
     let config = Config::load();
-    {
-        let mut users = USERS.write().unwrap();
-        users.clear();
-        for user in config.users {
-            users.insert(user.username.clone(), user);
-        }
-    }
-    {
-        let mut sessions = SESSIONS.write().unwrap();
-        sessions.clear();
+    let mut users = USERS.write().unwrap();
+    for user in config.users {
+        users.insert(user.username.clone(), user);
     }
 }
 
@@ -160,11 +135,7 @@ pub fn verify_token(token: &str) -> Option<String> {
     sessions.get(token).cloned()
 }
 
-pub fn change_password(
-    username: &str,
-    current_password: &str,
-    new_password: &str,
-) -> Result<(), String> {
+pub fn change_password(username: &str, current_password: &str, new_password: &str) -> Result<(), String> {
     let mut users = USERS.write().unwrap();
     let user = users.get(username).ok_or("User not found")?;
 
@@ -188,21 +159,13 @@ pub fn change_password(
     Ok(())
 }
 
-pub fn save_api_keys(
-    username: &str,
-    api_key: &str,
-    api_secret: &str,
-    environment: &str,
-) -> Result<(), String> {
+pub fn save_api_keys(username: &str, api_key: &str, api_secret: &str, environment: &str) -> Result<(), String> {
     let mut config = Config::load();
-    config.api_keys.insert(
-        username.to_string(),
-        ApiKeyConfig {
-            api_key: api_key.to_string(),
-            api_secret: api_secret.to_string(),
-            environment: environment.to_string(),
-        },
-    );
+    config.api_keys.insert(username.to_string(), ApiKeyConfig {
+        api_key: api_key.to_string(),
+        api_secret: api_secret.to_string(),
+        environment: environment.to_string(),
+    });
     config.save();
 
     // Also update .env file for the main app
@@ -210,11 +173,7 @@ pub fn save_api_keys(
         "# Alpaca API Credentials\n# Get your keys at: https://alpaca.markets/\n\nALPACA_API_KEY={}\nALPACA_API_SECRET={}\n\n# Environment: 'paper' for paper trading (default) or 'live' for real trading\nALPACA_ENV={}\n",
         api_key, api_secret, environment
     );
-    let _ = fs::write(env_file_path(), env_content);
-
-    env::set_var("ALPACA_API_KEY", api_key);
-    env::set_var("ALPACA_API_SECRET", api_secret);
-    env::set_var("ALPACA_ENV", environment);
+    let _ = fs::write(".env", env_content);
 
     Ok(())
 }
@@ -226,34 +185,10 @@ pub fn get_api_key_status(username: &str) -> (bool, Option<String>) {
     (configured, environment)
 }
 
-static MOCK_API_KEYS: once_cell::sync::Lazy<RwLock<HashMap<String, ApiKeyConfig>>> =
-    once_cell::sync::Lazy::new(|| RwLock::new(HashMap::new()));
-
-pub fn set_mock_api_keys(username: &str, api_key: &str, api_secret: &str, environment: &str) {
-    let mut mocks = MOCK_API_KEYS.write().unwrap();
-    mocks.insert(username.to_string(), ApiKeyConfig {
-        api_key: api_key.to_string(),
-        api_secret: api_secret.to_string(),
-        environment: environment.to_string(),
-    });
-}
-
 pub fn get_api_keys(username: &str) -> Option<(String, String, String)> {
-    // Check mock keys first (for tests)
-    {
-        let mocks = MOCK_API_KEYS.read().unwrap();
-        if let Some(k) = mocks.get(username) {
-            return Some((k.api_key.clone(), k.api_secret.clone(), k.environment.clone()));
-        }
-    }
-
     let config = Config::load();
     config.api_keys.get(username).map(|k| {
-        (
-            k.api_key.clone(),
-            k.api_secret.clone(),
-            k.environment.clone(),
-        )
+        (k.api_key.clone(), k.api_secret.clone(), k.environment.clone())
     })
 }
 
@@ -283,10 +218,7 @@ mod tests {
     fn test_hash_password_uniqueness() {
         let hash1 = hash_password("password1");
         let hash2 = hash_password("password2");
-        assert_ne!(
-            hash1, hash2,
-            "Different passwords should produce different hashes"
-        );
+        assert_ne!(hash1, hash2, "Different passwords should produce different hashes");
     }
 
     #[test]
@@ -308,10 +240,7 @@ mod tests {
     fn test_generate_token_format() {
         let token = generate_token();
         // Token should be a hexadecimal string
-        assert!(
-            token.chars().all(|c| c.is_ascii_hexdigit()),
-            "Token should be hexadecimal"
-        );
+        assert!(token.chars().all(|c| c.is_ascii_hexdigit()), "Token should be hexadecimal");
     }
 
     #[test]
@@ -362,10 +291,7 @@ mod tests {
     fn test_config_default() {
         cleanup_test_config();
         let config = Config::load();
-        assert!(
-            !config.users.is_empty(),
-            "Default config should have at least one user"
-        );
+        assert!(!config.users.is_empty(), "Default config should have at least one user");
         assert_eq!(config.users[0].username, "admin");
         cleanup_test_config();
     }
@@ -373,7 +299,7 @@ mod tests {
     #[test]
     fn test_config_save_and_load() {
         cleanup_test_config();
-
+        
         let config = Config {
             users: vec![User {
                 username: "testuser".to_string(),
@@ -382,11 +308,11 @@ mod tests {
             api_keys: HashMap::new(),
         };
         config.save();
-
+        
         let loaded = Config::load();
         // The loaded config should have at least one user (either testuser if saved properly, or admin as default)
         assert!(!loaded.users.is_empty(), "Config should have users");
-
+        
         cleanup_test_config();
     }
 
