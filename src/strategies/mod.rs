@@ -1,3 +1,4 @@
+pub mod listing_arbitrage;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -137,42 +138,22 @@ impl StrategyManager {
 // STRATEGY IMPLEMENTATIONS
 // ============================================================
 
+pub trait StrategyTrait {
+    fn name(&self) -> &str;
+    #[allow(async_fn_in_trait)]
+    async fn run(&self);
+}
+
 /// Strategy 1: Listing Arbitrage
-/// Snipes new $SPY options via Black-Scholes valuation gaps and Kronos trend filtering.
-/// Connects to Kronos AI bridge on localhost:8000
 async fn run_listing_arbitrage(states: &Arc<RwLock<HashMap<u32, StrategyState>>>) {
     tracing::info!("Starting Listing Arbitrage strategy...");
     
-    // Connect to Kronos AI bridge
-    match connect_to_kronos_bridge().await {
-        Ok(_) => {
-            tracing::info!("Connected to Kronos AI bridge for Listing Arbitrage");
-            
-            // Main strategy loop
-            loop {
-                tokio::select! {
-                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
-                        // Check if we should stop (state changed)
-                        if let Some(state) = states.read().await.get(&1) {
-                            if *state != StrategyState::Running {
-                                break;
-                            }
-                        }
-                        
-                        // Perform listing arbitrage logic
-                        // - Monitor SPY options
-                        // - Calculate Black-Scholes valuations
-                        // - Check Kronos trend filters
-                        // - Execute trades on valuation gaps
-                        tracing::debug!("Listing Arbitrage: Scanning for opportunities...");
-                    }
-                }
-            }
-        }
-        Err(e) => {
-            tracing::error!("Failed to connect to Kronos bridge: {}", e);
-            states.write().await.insert(1, StrategyState::Error);
-        }
+    if let Ok(alpaca) = crate::api::alpaca::AlpacaClient::new() {
+        let strategy = listing_arbitrage::ListingArbitrage::new(alpaca);
+        strategy.run().await;
+    } else {
+        tracing::error!("Failed to initialize AlpacaClient. Check ENV variables.");
+        states.write().await.insert(1, StrategyState::Error);
     }
 
     tracing::info!("Listing Arbitrage strategy stopped");

@@ -32,8 +32,13 @@ impl AlpacaClient {
             ALPACA_PAPER_URL.to_string()
         };
 
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|_| "Failed to build reqwest client")?;
+
         Ok(Self {
-            client: Client::new(),
+            client,
             api_key,
             api_secret,
             base_url,
@@ -41,8 +46,13 @@ impl AlpacaClient {
     }
 
     pub fn with_keys(api_key: &str, api_secret: &str) -> Result<Self, &'static str> {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|_| "Failed to build reqwest client")?;
+
         Ok(Self {
-            client: Client::new(),
+            client,
             api_key: api_key.to_string(),
             api_secret: api_secret.to_string(),
             base_url: ALPACA_PAPER_URL.to_string(), // Default to paper

@@ -526,7 +526,23 @@
                 <div class="strategies-grid" id="strategies-container"></div>
                 <div class="log-panel" style="margin-top: 20px;">
                     <h3>Strategy Log</h3>
-                    <div id="strategy-log-box" class="log-box">No log entries yet.</div>
+                    <div id="strategy-log-box" class="log-box" style="padding: 0; overflow-x: auto;">
+                        <table id="strategy-log-table" style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+                            <thead>
+                                <tr style="border-bottom: 2px solid #333;">
+                                    <th style="padding: 8px;">Time</th>
+                                    <th style="padding: 8px;">Symbol</th>
+                                    <th style="padding: 8px;">Math/Edge</th>
+                                    <th style="padding: 8px;">Kronos Score</th>
+                                    <th style="padding: 8px;">Decision</th>
+                                    <th style="padding: 8px;">Reasoning</th>
+                                </tr>
+                            </thead>
+                            <tbody id="strategy-log-body">
+                                <tr><td colspan="6" style="padding: 8px; text-align: center; color: #888;">No log entries yet.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
         </div>
@@ -537,7 +553,7 @@
     </div>
 
     <script src="/static/auth-helper.js"></script>
-    <script src="/static/app.js?v=7"></script>
+    <script src="/static/app.js?v=8"></script>
 </body>
 
 </html>

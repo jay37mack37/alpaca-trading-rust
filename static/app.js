@@ -1507,34 +1507,65 @@ STRATEGIES.forEach(s => {
     strategyStatuses[s.id] = 'Idle';
 });
 
-function addStrategyLog(message, level = 'info') {
-    const timestamp = new Date().toLocaleTimeString();
-    strategyLogEntries.unshift({
-        time: timestamp,
-        message,
-        level
-    });
-    if (strategyLogEntries.length > 50) {
-        strategyLogEntries.pop();
+async function addStrategyLog(logDataOrMessage, level = 'info') {
+    let logEntry;
+    if (typeof logDataOrMessage === 'string') {
+        const timestamp = new Date().toLocaleTimeString();
+        logEntry = {
+            time: timestamp,
+            symbol: 'SYSTEM',
+            math_edge: 'N/A',
+            kronos_score: 'N/A',
+            decision: level === 'error' ? 'SYSTEM ALERT' : 'HEARTBEAT',
+            reasoning: logDataOrMessage
+        };
+    } else {
+        logEntry = logDataOrMessage;
     }
-    renderStrategyLog();
+
+    try {
+        await fetch(`${API_BASE}/api/strategies/logs`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(logEntry)
+        });
+        // We do not unshift locally anymore. fetchStrategyLogs will pick it up on the next tick!
+        // But for instant feedback, we can optimistically insert it:
+        strategyLogEntries.unshift(logEntry);
+        if (strategyLogEntries.length > 50) strategyLogEntries.pop();
+        renderStrategyLog();
+    } catch(e) {
+        console.error("Failed to post log:", e);
+    }
 }
 
 function renderStrategyLog() {
-    const logBox = document.getElementById('strategy-log-box');
-    if (!logBox) return;
+    const logBody = document.getElementById('strategy-log-body');
+    if (!logBody) return;
 
     if (strategyLogEntries.length === 0) {
-        logBox.innerHTML = 'No log entries yet.';
+        logBody.innerHTML = '<tr><td colspan="6" style="padding: 8px; text-align: center; color: #888;">No log entries yet.</td></tr>';
         return;
     }
 
-    logBox.innerHTML = strategyLogEntries.map(entry => `
-        <div class="log-entry ${entry.level}">
-            <span class="log-time">${entry.time}</span>
-            <span class="log-message">${entry.message}</span>
-        </div>
-    `).join('');
+    logBody.innerHTML = strategyLogEntries.map(entry => {
+        let color = '#888'; // Gray / Heartbeat
+        if (entry.decision === 'BUY') color = '#00ff88'; // Green
+        else if (entry.decision === 'SCAN') color = '#ffd700'; // Yellow
+        else if (entry.decision === 'SKIP') color = '#ff4444'; // Red
+        else if (entry.decision === 'SYSTEM ALERT') color = '#ff4444'; // Red Alert
+
+        return `
+            <tr style="border-bottom: 1px solid #222;">
+                <td style="padding: 5px;">${entry.time || ''}</td>
+                <td style="padding: 5px; font-family: monospace;">${entry.symbol || 'N/A'}</td>
+                <td style="padding: 5px;">${entry.math_edge || 'N/A'}</td>
+                <td style="padding: 5px;">${entry.kronos_score || 'N/A'}</td>
+                <td style="padding: 5px; color: ${color}; font-weight: bold;">${entry.decision || 'INFO'}</td>
+                <td style="padding: 5px;">${entry.reasoning || ''}</td>
+            </tr>
+        `;
+    }).join('');
 }
 
 function renderStrategies() {
@@ -1587,6 +1618,10 @@ async function executeStrategy(e) {
     const strategy = STRATEGIES.find(s => s.id === parseInt(strategyId));
 
     if (!strategy) return;
+    
+    // OPTIMISTIC UPDATE UI
+    strategyStatuses[strategyId] = 'Running';
+    renderStrategies();
 
     try {
         const response = await fetch(`${API_BASE}/api/strategies/${strategyId}/start`, {
@@ -1618,6 +1653,10 @@ async function stopStrategy(e) {
 
     if (!strategy) return;
 
+    // OPTIMISTIC UPDATE UI
+    strategyStatuses[strategyId] = 'Idle';
+    renderStrategies();
+
     try {
         const response = await fetch(`${API_BASE}/api/strategies/${strategyId}/stop`, {
             method: 'POST',
@@ -1642,9 +1681,37 @@ async function stopStrategy(e) {
     renderStrategies();
 }
 
+async function fetchStrategyLogs() {
+    try {
+        const response = await fetch(`${API_BASE}/api/strategies/logs`, { headers: getAuthHeaders() });
+        if (!response.ok) throw new Error("HTTP error");
+        const data = await response.json();
+        
+        if (data.success && data.logs) {
+            strategyLogEntries.length = 0;
+            // The file contains oldest entries first, we want newest first at the top
+            const reversedLogs = data.logs.slice().reverse();
+            reversedLogs.forEach(log => strategyLogEntries.push(log));
+            renderStrategyLog();
+        }
+    } catch(e) {
+        // Direct System alert
+        addStrategyLog({ 
+            time: new Date().toLocaleTimeString(), 
+            symbol: 'SYSTEM', 
+            math_edge: 'N/A', 
+            kronos_score: 'N/A', 
+            decision: 'SYSTEM ALERT', 
+            reasoning: 'Connection lost or API unavailable' 
+        });
+    }
+}
+
 function initStrategies() {
     // Render strategies when page loads
     renderStrategies();
+    fetchStrategyLogs(); // Initial pull
+    setInterval(fetchStrategyLogs, 3000); // 3 sec polling interval
 }
 
 // Options Chain Chart

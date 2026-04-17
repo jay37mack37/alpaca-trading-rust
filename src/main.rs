@@ -104,6 +104,8 @@ async fn main() {
 
         // Strategies routes (authenticated)
         .route("/api/strategies", get(routes::strategies::list_strategies))
+        .route("/api/strategies/logs", get(routes::strategies::get_strategy_logs))
+        .route("/api/strategies/logs", post(routes::strategies::append_strategy_log))
         .route("/api/strategies/status", get(routes::strategies::get_strategies_status))
         .route("/api/strategies/{id}/start", post(routes::strategies::start_strategy))
         .route("/api/strategies/{id}/stop", post(routes::strategies::stop_strategy))
