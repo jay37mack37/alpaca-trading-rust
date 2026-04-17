@@ -17,6 +17,7 @@ use api::alpaca::AlpacaClient;
 use api::price_streamer::PriceStreamer;
 use api::ws_manager::WsManager;
 use routes::websocket::AppState;
+use strategies::StrategyManager;
 use std::sync::Arc;
 use strategies::StrategyManager;
 
@@ -100,11 +101,11 @@ async fn main() {
         .route("/api/analytics/analyze", post(routes::analytics::run_analysis))
         .route("/api/analytics/patterns", get(routes::analytics::get_patterns))
 
-        // Strategy routes (authenticated)
-        .route("/api/strategies/status", get(routes::strategies::get_strategy_status))
-        .route("/api/strategies/start", post(routes::strategies::start_strategy))
-        .route("/api/strategies/stop", post(routes::strategies::stop_strategy))
-        .route("/api/strategies/panic", post(routes::strategies::panic_button))
+        // Strategies routes (authenticated)
+        .route("/api/strategies", get(routes::strategies::list_strategies))
+        .route("/api/strategies/status", get(routes::strategies::get_strategies_status))
+        .route("/api/strategies/{id}/start", post(routes::strategies::start_strategy))
+        .route("/api/strategies/{id}/stop", post(routes::strategies::stop_strategy))
 
         // WebSocket route
         .route("/api/ws/prices", get(routes::websocket::ws_handler))
