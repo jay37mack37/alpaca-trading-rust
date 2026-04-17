@@ -193,20 +193,30 @@ function checkAuth() {
     const panicBtn = document.getElementById('panic-btn');
     if (panicBtn) {
         panicBtn.addEventListener('click', async () => {
-            if (confirm('GLOBAL PANIC: This will kill all strategy threads and cancel all open orders. Continue?')) {
-                try {
-                    const response = await fetchWithLogging(`${API_BASE}/api/strategies/panic`, {
-                        method: 'POST',
-                        headers: getAuthHeaders()
-                    });
-                    const data = response._body;
-                    if (data.status === 'panic_executed') {
-                        alert('Panic executed successfully. All strategies halted.');
-                        await updateStrategyStatuses();
-                    }
-                } catch (error) {
-                    console.error('Panic failed:', error);
+            try {
+                // Stop all strategies
+                const stratResponse = await fetchWithLogging(`${API_BASE}/api/strategies/stop-all`, {
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+                const stratData = stratResponse._body;
+
+                // Cancel all orders
+                const ordersResponse = await fetchWithLogging(`${API_BASE}/api/orders/cancel-all`, {
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+                const ordersData = ordersResponse._body;
+
+                if (stratData && stratData.success) {
+                    alert('PANIC EXECUTED: ' + (stratData.message || 'All strategies halted.') + ' | Orders: ' + (ordersData ? 'Cancel request sent.' : 'No response.'));
+                    await updateStrategyStatuses();
+                } else {
+                    alert('Panic response: ' + (stratData && stratData.message ? stratData.message : 'Unknown response'));
                 }
+            } catch (error) {
+                console.error('Panic failed:', error);
+                alert('Panic failed: ' + error.message);
             }
         });
     }
