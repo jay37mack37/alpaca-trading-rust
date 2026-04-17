@@ -2508,56 +2508,24 @@ async function updateStrategyStatuses() {
         });
         const data = response._body;
         if (data && data.strategies) {
+            let changed = false;
             data.strategies.forEach(strategy => {
-                const card = document.querySelector(`.strategy-card[data-strategy="${strategy.name}"]`);
-                if (card) {
-                    const statusVal = card.querySelector('.status-val');
-                    const toggleBtn = card.querySelector('.btn-strategy-toggle');
-
-                    statusVal.textContent = strategy.status;
-
-                    if (strategy.status === 'Running') {
-                        card.classList.add('running');
-                        toggleBtn.textContent = 'Stop Strategy';
-                        toggleBtn.dataset.action = 'stop';
-                    } else {
-                        card.classList.remove('running');
-                        toggleBtn.textContent = 'Start Strategy';
-                        toggleBtn.dataset.action = 'start';
-                    }
+                const currentState = strategyStatuses[strategy.id];
+                const newState = strategy.state || 'Idle';
+                if (currentState !== newState) {
+                    strategyStatuses[strategy.id] = newState;
+                    changed = true;
                 }
             });
+            // Only re-render if something actually changed
+            if (changed) {
+                renderStrategies();
+            }
         }
     } catch (error) {
         console.error('Failed to update strategy statuses:', error);
     }
 }
 
-// Global strategy toggle handler
-window.addEventListener('click', async (e) => {
-    if (e.target.classList.contains('btn-strategy-toggle')) {
-        const btn = e.target;
-        const card = btn.closest('.strategy-card');
-        const strategyName = card.dataset.strategy;
-        const action = btn.dataset.action;
-
-        btn.disabled = true;
-        btn.textContent = action === 'start' ? 'Starting...' : 'Stopping...';
-
-        try {
-            const response = await fetchWithLogging(`${API_BASE}/api/strategies/${action}`, {
-                method: 'POST',
-                headers: getAuthHeaders(),
-                body: JSON.stringify({ name: strategyName })
-            });
-            const data = response._body;
-            if (data.status === 'started' || data.status === 'stopped') {
-                await updateStrategyStatuses();
-            }
-        } catch (error) {
-            console.error(`Failed to ${action} strategy ${strategyName}:`, error);
-        } finally {
-            btn.disabled = false;
-        }
-    }
-});
+// Strategy start/stop is handled by executeStrategy() and stopStrategy() event listeners
+// attached in renderStrategies()
