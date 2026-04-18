@@ -445,7 +445,7 @@ pub struct CreateStrategyRequest {
     pub run_interval_ms: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateStrategyRequest {
     pub name: Option<String>,
     pub enabled: Option<bool>,

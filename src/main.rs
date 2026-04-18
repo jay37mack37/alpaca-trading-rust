@@ -11,7 +11,6 @@ use std::{env, net::SocketAddr, sync::Arc, time::Duration};
 use auth::{require_token, ApiToken};
 use futures_util::future::join_all;
 use axum::{
-    extract::{Path, State},
     http::{HeaderValue, Method},
     middleware,
     routing::{delete, get, post},
@@ -177,6 +176,9 @@ async fn main() -> anyhow::Result<()> {
             post(handlers::misc::sync_strategy_broker),
         )
         .route("/api/strategies/:strategy_id/run", post(handlers::agents::run_strategy))
+        .route("/api/strategies/:strategy_id/start", post(handlers::agents::start_strategy))
+        .route("/api/strategies/:strategy_id/stop", post(handlers::agents::stop_strategy))
+        .route("/api/panic", post(handlers::agents::panic_all))
         .route("/api/watchlist", post(handlers::watchlist::add_watchlist_symbol))
         .route("/api/watchlist/:symbol", delete(handlers::watchlist::remove_watchlist_symbol))
         .route("/api/collect", post(handlers::misc::collect_now))
