@@ -24,6 +24,8 @@ Thumbs.db
 # Logs
 *.log
 
-# Analytics runtime data
-analytics/market_data.db
-analytics/__pycache__/
+# Data and Databases
+data/
+*.db
+*.db-shm
+*.db-wal

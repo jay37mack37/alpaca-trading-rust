@@ -5,71 +5,77 @@ echo =============================================
 echo  AutoStonks Algo Suite - Overhaul Launcher
 echo =============================================
 
-REM ── Kill any prior instance running on port 8080 ──
-for /f "tokens=5" %%p in ('netstat -aon ^| findstr ":8080 " ^| findstr LISTENING') do (
-    echo Killing existing backend on port 8080 (PID %%p)...
-    taskkill /PID %%p /F >nul 2>&1
-)
+echo Cleaning up port 8080...
+powershell -Command "Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
 
-REM ── Kill any prior Vite dev server ──
-for /f "tokens=5" %%p in ('netstat -aon ^| findstr ":5173 " ^| findstr LISTENING') do (
-    echo Killing existing frontend on port 5173 (PID %%p)...
-    taskkill /PID %%p /F >nul 2>&1
-)
+echo Cleaning up port 5173...
+powershell -Command "Get-NetTCPConnection -LocalPort 5173 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
+
+
 
 timeout /t 1 /nobreak >nul
 
-REM ── Load Alpaca keys from .env ──
-if exist ".env" (
-    for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
-        set "line=%%a"
-        if not "!line:~0,1!"=="#" (
-            set "%%a=%%b"
+echo Loading environment from .env...
+if not exist ".env" goto no_env
+for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
+    set "key=%%a"
+    set "val=%%b"
+    if defined key (
+        if not "!key:~0,1!"=="#" (
+            set "!key!=!val!"
         )
     )
 )
+:no_env
 
-REM ── Create data directory if needed ──
 if not exist "data" mkdir data
 
-REM ── Start backend ──
 echo.
 echo [1/2] Starting backend (port 8080)...
 set AUTO_STONKS_HOST=127.0.0.1
 set AUTO_STONKS_PORT=8080
 set AUTO_STONKS_ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
-start "AutoStonks Backend" cmd /c "cargo run 2>&1 | tee data\backend.log"
 
-REM ── Wait for backend to be ready ──
-echo Waiting for backend...
+start "AutoStonks Backend" powershell -NoExit -Command "cargo run 2>&1 | Tee-Object -FilePath data\backend.log"
+
+echo Waiting for backend to initialize...
+set "retries=0"
+set "max_retries=60"
+
 :wait_backend
+set /a retries+=1
+if %retries% geq %max_retries% goto backend_timeout
+
+powershell -Command "try { $r = Invoke-WebRequest -Uri http://127.0.0.1:8080/api/health -UseBasicParsing -ErrorAction Stop; exit 0 } catch { exit 1 }" >nul 2>&1
+if %errorlevel% equ 0 goto backend_ready
+
+if %retries% equ 1 echo Still waiting...
 timeout /t 2 /nobreak >nul
-curl -s http://127.0.0.1:8080/api/health >nul 2>&1
-if errorlevel 1 goto wait_backend
+goto wait_backend
+
+:backend_timeout
+echo [ERROR] Backend failed to start.
+pause
+exit /b 1
+
+:backend_ready
 echo Backend is ready!
 
-REM ── Check if ui/.env exists, prompt if VITE_API_TOKEN is missing ──
-if not exist "ui\.env" (
-    echo.
-    echo [!] ui\.env not found. Creating from example...
-    echo     Check the backend log above for your API token, then update ui\.env
-    copy "ui\.env.example" "ui\.env" >nul
-)
+if exist "ui\.env" goto frontend_env_ok
+copy "ui\.env.example" "ui\.env" >nul
+:frontend_env_ok
 
-REM ── Start frontend ──
-echo.
 echo [2/2] Starting frontend (port 5173)...
+if exist "ui\node_modules" goto npm_ok
+echo [!] node_modules missing. Running npm install...
+start "AutoStonks Frontend Install" cmd /c "cd ui && npm install"
+pause
+:npm_ok
+
 start "AutoStonks Frontend" cmd /c "cd ui && npm run dev"
 
 echo.
 echo =============================================
-echo  Both services are running:
-echo    Backend  : http://127.0.0.1:8080
-echo    Frontend : http://127.0.0.1:5173
+echo  Both services are running!
 echo =============================================
-echo.
-echo NOTE: If the frontend shows a token error, check the
-echo backend log window for the API token and add it to ui\.env
-echo Then restart the frontend (Ctrl+C in its window, re-run start.bat).
-echo.
 pause
