@@ -500,6 +500,15 @@ pub enum RealtimeEvent {
         state: String,
         message: String,
     },
+    Log {
+        strategy_id: String,
+        symbol: String,
+        math_edge: String,
+        kronos_score: String,
+        decision: String,
+        reasoning: String,
+        time: String,
+    },
 }
 
 impl RealtimeEvent {
@@ -508,6 +517,7 @@ impl RealtimeEvent {
             Self::Market { .. } => "market",
             Self::BrokerSync { .. } => "broker_sync",
             Self::Status { .. } => "status",
+            Self::Log { .. } => "log",
         }
     }
 }
@@ -558,11 +568,21 @@ pub struct PositionRecord {
     pub legs: Vec<PositionLeg>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SignalAction {
     Buy,
     Sell,
     Hold,
+}
+
+impl SignalAction {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Buy => "buy",
+            Self::Sell => "sell",
+            Self::Hold => "hold",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

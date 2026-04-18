@@ -5,6 +5,7 @@ mod strategies;
 mod services;
 mod handlers;
 mod config;
+mod math;
 
 use std::{env, net::SocketAddr, sync::Arc, time::Duration};
 
@@ -352,6 +353,16 @@ pub async fn run_strategy_once(
             current_position.as_ref(),
         ).await;
 
+        broadcast_strategy_log(
+            state,
+            strategy_id,
+            &symbol,
+            &format!("Price: ${:.2}", quote.quote.price),
+            "N/A", // Score could be added later
+            signal.action.as_str(),
+            &signal.reason,
+        );
+
         let prepared_trade = if matches!(signal.action, SignalAction::Hold) {
             None
         } else if latest_strategy.execution_mode.requires_external_broker() {
@@ -506,6 +517,26 @@ pub async fn run_strategy_once(
     Ok(last_trade)
 }
 
+pub fn broadcast_strategy_log(
+    state: &AppState,
+    strategy_id: &str,
+    symbol: &str,
+    math_edge: &str,
+    kronos_score: &str,
+    decision: &str,
+    reasoning: &str,
+) {
+    let _ = state.streams.send_event(RealtimeEvent::Log {
+        strategy_id: strategy_id.to_string(),
+        symbol: symbol.to_string(),
+        math_edge: math_edge.to_string(),
+        kronos_score: kronos_score.to_string(),
+        decision: decision.to_string(),
+        reasoning: reasoning.to_string(),
+        time: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+    });
+}
+
 pub async fn resolve_alpaca_credential(
     state: &AppState,
     preferred_id: Option<&str>,
@@ -593,6 +624,9 @@ pub fn stream_matches(
             "broker" => credential_id.is_some(),
             _ => true,
         },
+        RealtimeEvent::Log { strategy_id: event_strategy_id, .. } => {
+            strategy_ids.contains(event_strategy_id)
+        }
     }
 }
 

@@ -37,6 +37,10 @@ impl StreamHub {
         self.tx.subscribe()
     }
 
+    pub fn send_event(&self, event: RealtimeEvent) -> Result<usize, broadcast::error::SendError<RealtimeEvent>> {
+        self.tx.send(event)
+    }
+
     pub async fn ensure_market_stream(
         &self,
         state: AppState,

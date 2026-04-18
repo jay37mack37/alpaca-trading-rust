@@ -344,10 +344,22 @@ export interface StatusRealtimeEvent {
   message: string;
 }
 
+export interface LogRealtimeEvent {
+  type: "log";
+  strategy_id: string;
+  symbol: string;
+  math_edge: string;
+  kronos_score: string;
+  decision: string;
+  reasoning: string;
+  time: string;
+}
+
 export type RealtimeEvent =
   | MarketRealtimeEvent
   | BrokerSyncRealtimeEvent
-  | StatusRealtimeEvent;
+  | StatusRealtimeEvent
+  | LogRealtimeEvent;
 
 export interface Watchlist {
   id: string;

@@ -5,6 +5,8 @@
   import InteractiveTicker from "./components/InteractiveTicker.svelte";
   import MetricTile from "./components/MetricTile.svelte";
   import OptionsPanel from "./components/OptionsPanel.svelte";
+  import StrategyLogTable from "./components/StrategyLogTable.svelte";
+  import AnalyticsWorkspace from "./components/AnalyticsWorkspace.svelte";
   import { api, apiTokenConfigured } from "./lib/api";
   import type {
     CreateCredentialRequest,
@@ -17,7 +19,7 @@
     UpdateStrategyRequest,
   } from "./lib/types";
 
-  let page: "market" | "agents" = "market";
+  let page: "market" | "agents" | "analytics" | "logs" = "market";
   let symbol = "SPY";
   let symbolDraft = "SPY";
   let provider: DataProvider = "yahoo";
@@ -33,6 +35,14 @@
   let stream: EventSource | null = null;
   let streamKey = "";
   let streamState: "idle" | "connecting" | "live" | "reconnecting" = "idle";
+  let strategyLogs: Array<{
+    time: string;
+    symbol: string;
+    math_edge: string;
+    kronos_score: string;
+    decision: string;
+    reasoning: string;
+  }> = [];
 
   function prettyMoney(value: number | null | undefined) {
     return value == null ? "—" : `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -170,6 +180,11 @@
       return;
     }
 
+    if (event.type === "log") {
+      strategyLogs = [event, ...strategyLogs].slice(0, 200);
+      return;
+    }
+
     streamState = event.state === "live" ? "live" : event.state === "connecting" ? "connecting" : "reconnecting";
     if (event.state === "failed") {
       error = event.message;
@@ -201,6 +216,9 @@
       handleRealtimeEvent(JSON.parse(message.data) as RealtimeEvent);
     });
     stream.addEventListener("status", (message) => {
+      handleRealtimeEvent(JSON.parse(message.data) as RealtimeEvent);
+    });
+    stream.addEventListener("log", (message) => {
       handleRealtimeEvent(JSON.parse(message.data) as RealtimeEvent);
     });
     stream.onopen = () => {
@@ -371,6 +389,8 @@
       <nav class="tab-strip" aria-label="Primary">
         <button class:active={page === "market"} type="button" on:click={() => (page = "market")}>Market</button>
         <button class:active={page === "agents"} type="button" on:click={() => (page = "agents")}>Agents</button>
+        <button class:active={page === "analytics"} type="button" on:click={() => (page = "analytics")}>Analytics</button>
+        <button class:active={page === "logs"} type="button" on:click={() => (page = "logs")}>Logs</button>
       </nav>
       <button type="button" class="panic-button" on:click={globalPanic} title="Stop all running strategies">
         ⚠️ Global Panic
@@ -505,7 +525,7 @@
           </section>
         </section>
       </section>
-    {:else}
+    {:else if page === "agents"}
       <section class="agents-page">
         <AgentsWorkspace
           strategies={dashboard.strategies}
@@ -521,6 +541,14 @@
           on:sync={syncStrategy}
         />
         <CredentialsPanel credentials={dashboard.credentials} on:submit={storeCredential} />
+      </section>
+    {:else if page === "analytics"}
+      <section class="analytics-page">
+        <AnalyticsWorkspace />
+      </section>
+    {:else if page === "logs"}
+      <section class="logs-page">
+        <StrategyLogTable logs={strategyLogs} />
       </section>
     {/if}
   {:else if loading}
