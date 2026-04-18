@@ -3,76 +3,86 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde_json::json;
+use serde::Serialize;
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Debug, Error)]
 pub enum AppError {
-    #[error("API Error: {0}")]
-    ApiError(#[from] reqwest::Error),
-
-    #[error("Authentication Error: {0}")]
-    AuthError(String),
-
-    #[error("Validation Error: {0}")]
-    ValidationError(String),
-
-    #[error("Unauthorized: {0}")]
-    Unauthorized(String),
-
-    #[error("Forbidden: {0}")]
-    Forbidden(String),
-
-    #[error("Internal Server Error: {0}")]
-    Internal(String),
-
-    #[error("Not Found: {0}")]
+    #[error("not found: {0}")]
     NotFound(String),
+    #[error("validation error: {0}")]
+    Validation(String),
+    #[error("external provider error: {0}")]
+    External(String),
+    #[error("internal error: {0}")]
+    Internal(String),
+    #[error("unauthorized: {0}")]
+    Unauthorized(String),
+}
+
+#[derive(Debug, Serialize)]
+pub struct ApiResponse<T> {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<T>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl<T: Serialize> IntoResponse for ApiResponse<T> {
+    fn into_response(self) -> Response {
+        Json(self).into_response()
+    }
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, error_message) = match self {
-            AppError::ApiError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-            AppError::AuthError(e) => (StatusCode::UNAUTHORIZED, e),
-            AppError::ValidationError(e) => (StatusCode::BAD_REQUEST, e),
-            AppError::Unauthorized(e) => (StatusCode::UNAUTHORIZED, e),
-            AppError::Forbidden(e) => (StatusCode::FORBIDDEN, e),
-            AppError::Internal(e) => (StatusCode::INTERNAL_SERVER_ERROR, e),
-            AppError::NotFound(e) => (StatusCode::NOT_FOUND, e),
+        let status = match self {
+            Self::NotFound(_) => StatusCode::NOT_FOUND,
+            Self::Validation(_) => StatusCode::BAD_REQUEST,
+            Self::External(_) => StatusCode::BAD_GATEWAY,
+            Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Unauthorized(_) => StatusCode::UNAUTHORIZED,
         };
 
-        let body = Json(json!({
-            "error": error_message,
-        }));
+        let body: ApiResponse<()> = ApiResponse {
+            success: false,
+            data: None,
+            error: Some(self.to_string()),
+        };
 
-        (status, body).into_response()
+        (status, Json(body)).into_response()
+    }
+}
+
+impl From<rusqlite::Error> for AppError {
+    fn from(value: rusqlite::Error) -> Self {
+        Self::Internal(value.to_string())
+    }
+}
+
+impl From<reqwest::Error> for AppError {
+    fn from(value: reqwest::Error) -> Self {
+        Self::External(value.to_string())
+    }
+}
+
+impl From<serde_json::Error> for AppError {
+    fn from(value: serde_json::Error) -> Self {
+        Self::Internal(value.to_string())
+    }
+}
+
+impl From<anyhow::Error> for AppError {
+    fn from(value: anyhow::Error) -> Self {
+        Self::Internal(value.to_string())
+    }
+}
+
+impl From<tokio_tungstenite::tungstenite::Error> for AppError {
+    fn from(value: tokio_tungstenite::tungstenite::Error) -> Self {
+        Self::External(value.to_string())
     }
 }
 
 pub type AppResult<T> = Result<T, AppError>;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use axum::response::IntoResponse;
-
-    #[test]
-    fn test_app_error_into_response() {
-        let err = AppError::ValidationError("test validation error".to_string());
-        let response = err.into_response();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-
-        let err = AppError::Unauthorized("test unauthorized".to_string());
-        let response = err.into_response();
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-
-        let err = AppError::Forbidden("test forbidden".to_string());
-        let response = err.into_response();
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
-
-        let err = AppError::NotFound("test not found".to_string());
-        let response = err.into_response();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    }
-}

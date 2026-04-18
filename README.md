@@ -1,80 +1,67 @@
-# Alpaca Trading Web API
+# AutoStonks Algo Suite
 
-Educational trading web application built with Rust for speed and reliability.
+The **AutoStonks Algo Suite** is a high-performance, multi-strategy algorithmic trading workstation built with **Rust** (backend) and **Svelte** (frontend). It provides real-time market data streaming, automated strategy execution, and deep integration with Alpaca Markets.
 
-## Features
+## 🚀 Key Features
 
-- **Fast**: Built with Axum web framework on Tokio async runtime
-- **Alpaca API Integration**: Connect to Alpaca Markets for paper/live trading
-- **REST API**: Clean endpoints for account, positions, and orders
+- **Multi-Strategy Workstation**: Execute and manage multiple trading strategies (VWAP Reflexive, RSI Mean Reversion, SMA Trend, Listing Arbitrage) simultaneously.
+- **Kronos AI Bridge**: Advanced integration points for external AI-driven signals and trend filtering.
+- **Real-time Streaming**: Sub-second market data updates and broker synchronization via WebSockets (backend) and SSE (frontend).
+- **Hybrid Execution**: Support for Local Paper, Alpaca Paper, and Alpaca Live trading modes.
+- **Advanced Options Support**: Specialized logic for 0DTE delta-neutral harvesting, bull/bear spreads, and Black-Scholes valuation.
 
-## API Endpoints
+## 📁 Project Structure
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/` | API info |
-| GET | `/health` | Health check |
-| GET | `/api/account` | Get account information |
-| GET | `/api/positions` | Get all open positions |
-| GET | `/api/orders` | Get orders |
-| POST | `/api/orders` | Create a new order |
+```text
+.
+├── src/                # Backend (Rust/Axum)
+│   ├── handlers/       # REST API endpoint handlers
+│   ├── services/       # Core business logic (DB, Streaming, Providers)
+│   ├── models/         # Shared data structures and schemas
+│   ├── strategies/     # Strategy evaluation logic
+│   └── config/         # Environment and application configuration
+├── ui/                 # Frontend (Svelte/Vite/TypeScript)
+│   ├── src/
+│   │   ├── components/ # Reusable UI components
+│   │   ├── lib/        # API client and shared utilities
+│   │   └── App.svelte  # Main dashboard entry point
+└── data/               # Persistent storage (SQLite)
+```
 
-## Setup
+## 🛠 Setup
 
 ### Prerequisites
 
-- Rust 1.70+ (install via [rustup](https://rustup.rs/))
-- Alpaca Markets account ([sign up free](https://alpaca.markets/))
+- **Rust**: 1.75+
+- **Node.js**: 18+ (for the frontend)
+- **Alpaca API Keys**: Required for live/paper trading.
 
-### Installation
+### Backend Setup
 
-1. Clone the repository:
+1. Copy `.env.example` to `.env`.
+2. Configure your `AUTO_STONKS_MASTER_KEY` and other environment variables.
+3. Run the backend:
    ```bash
-   git clone https://github.com/jay37mack37/alpaca-trading-rust.git
-   cd alpaca-trading-rust
-   ```
-
-2. Copy `.env.example` to `.env` and add your Alpaca API credentials:
-   ```bash
-   cp .env.example .env
-   ```
-
-3. Edit `.env` with your credentials:
-   ```
-   ALPACA_API_KEY=your_key_here
-   ALPACA_API_SECRET=your_secret_here
-   ```
-
-4. Build and run:
-   ```bash
-   cargo build --release
    cargo run --release
    ```
 
-The server will start on `http://localhost:3000`.
+### Frontend Setup
 
-## Development
+1. Navigate to the `ui/` directory.
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Set your `VITE_API_TOKEN` (printed by the backend on first start) in `ui/.env`.
+4. Run in development mode:
+   ```bash
+   npm run dev
+   ```
 
-```bash
-# Run in development mode with hot reload (requires cargo-watch)
-cargo install cargo-watch
-cargo watch -x run
-```
+## ⚖️ Safety Note
 
-## Testing
+⚠️ **This is for educational purposes only.** Algorithmic trading involves significant risk. Always test thoroughly in paper trading mode before committing real capital.
 
-```bash
-cargo test
-```
-
-## Safety Note
-
-⚠️ **This is for educational purposes only.** 
-
-- This project uses Alpaca's **paper trading** API by default
-- Never commit your `.env` file with real API credentials
-- Always test strategies in paper trading mode first
-
-## License
+## 📄 License
 
 MIT

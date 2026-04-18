@@ -1,319 +1,312 @@
-pub mod listing_arbitrage;
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::task::JoinHandle;
-use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
+pub mod listing_arb;
 
-/// Represents the state of a single strategy
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub enum StrategyState {
-    #[serde(rename = "Idle")]
-    Idle,
-    #[serde(rename = "Running")]
-    Running,
-    #[serde(rename = "Error")]
-    Error,
-}
+use crate::models::{
+    Candle, PositionRecord, Quote, SignalAction, StrategyKind, StrategyRecord, StrategySignal,
+};
 
-/// Represents a single strategy configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Strategy {
-    pub id: u32,
-    pub name: String,
-    pub description: String,
-    pub state: StrategyState,
-}
-
-/// Global Strategy Manager - maintains task handles and state for all strategies
-pub struct StrategyManager {
-    tasks: Arc<RwLock<HashMap<u32, JoinHandle<()>>>>,
-    states: Arc<RwLock<HashMap<u32, StrategyState>>>,
-}
-
-impl StrategyManager {
-    pub fn new() -> Self {
-        let mut states = HashMap::new();
-        
-        // Initialize all 5 strategies as Idle
-        states.insert(1, StrategyState::Idle);
-        states.insert(2, StrategyState::Idle);
-        states.insert(3, StrategyState::Idle);
-        states.insert(4, StrategyState::Idle);
-        states.insert(5, StrategyState::Idle);
-
-        Self {
-            tasks: Arc::new(RwLock::new(HashMap::new())),
-            states: Arc::new(RwLock::new(states)),
-        }
-    }
-
-    /// Get the current state of a strategy
-    pub async fn get_state(&self, strategy_id: u32) -> Option<StrategyState> {
-        self.states.read().await.get(&strategy_id).copied()
-    }
-
-    /// Start a strategy by spawning a background task
-    pub async fn start_strategy(&self, strategy_id: u32) -> Result<(), String> {
-        // Check if already running
-        if let Some(state) = self.get_state(strategy_id).await {
-            if state == StrategyState::Running {
-                return Err("Strategy is already running".to_string());
-            }
-        } else {
-            return Err("Strategy not found".to_string());
-        }
-
-        // Update state to Running
-        self.states.write().await.insert(strategy_id, StrategyState::Running);
-
-        // Spawn background task for this strategy
-        let states = Arc::clone(&self.states);
-        let task = tokio::spawn(async move {
-            match strategy_id {
-                1 => run_listing_arbitrage(&states).await,
-                2 => run_vwap_mean_reversion(&states).await,
-                3 => run_0dte_delta_neutral(&states).await,
-                4 => run_gamma_scalping(&states).await,
-                5 => run_put_call_parity(&states).await,
-                _ => {
-                    tracing::error!("Unknown strategy ID: {}", strategy_id);
-                    states.write().await.insert(strategy_id, StrategyState::Error);
-                }
-            }
-        });
-
-        self.tasks.write().await.insert(strategy_id, task);
-        tracing::info!("Strategy {} started", strategy_id);
-        Ok(())
-    }
-
-    /// Stop a strategy by aborting its task
-    pub async fn stop_strategy(&self, strategy_id: u32) -> Result<(), String> {
-        // Check if running
-        if let Some(state) = self.get_state(strategy_id).await {
-            if state != StrategyState::Running {
-                return Err("Strategy is not running".to_string());
-            }
-        } else {
-            return Err("Strategy not found".to_string());
-        }
-
-        // Abort the task if it exists
-        if let Some(task) = self.tasks.write().await.remove(&strategy_id) {
-            task.abort();
-        }
-
-        // Update state to Idle
-        self.states.write().await.insert(strategy_id, StrategyState::Idle);
-        tracing::info!("Strategy {} stopped", strategy_id);
-        Ok(())
-    }
-
-    /// Stop all running strategies
-    pub async fn stop_all_strategies(&self) -> Vec<(u32, String)> {
-        let mut results = Vec::new();
-        let states = self.states.read().await;
-        let running_ids: Vec<u32> = states
-            .iter()
-            .filter(|(_, state)| **state == StrategyState::Running)
-            .map(|(id, _)| *id)
-            .collect();
-        drop(states);
-
-        for strategy_id in running_ids {
-            match self.stop_strategy(strategy_id).await {
-                Ok(_) => results.push((strategy_id, "stopped".to_string())),
-                Err(e) => results.push((strategy_id, e)),
-            }
-        }
-        results
-    }
-
-    /// Get all strategies with their current state
-    pub async fn get_all_strategies(&self) -> Vec<Strategy> {
-        let strategies_data = vec![
-            (1, "Listing Arbitrage", "Snipes new $SPY options via Black-Scholes valuation gaps and Kronos trend filtering."),
-            (2, "VWAP Mean Reversion", "Automated entries on standard deviation price extensions from the VWAP."),
-            (3, "0DTE Delta-Neutral", "Harvests theta decay on same-day expiry options via automated spreads."),
-            (4, "Gamma Scalping", "Dynamic delta hedging to profit from realized volatility."),
-            (5, "Put-Call Parity", "Arbitrages discrepancies between synthesized and market option prices."),
-        ];
-
-        let states = self.states.read().await;
-        
-        strategies_data
-            .iter()
-            .map(|(id, name, desc)| Strategy {
-                id: *id,
-                name: name.to_string(),
-                description: desc.to_string(),
-                state: *states.get(id).unwrap_or(&StrategyState::Idle),
-            })
-            .collect()
+pub async fn evaluate_strategy(
+    strategy: &StrategyRecord,
+    candles: &[Candle],
+    quote: &Quote,
+    position: Option<&PositionRecord>,
+) -> StrategySignal {
+    match strategy.kind {
+        StrategyKind::VwapReflexive => evaluate_vwap_reflexive(candles, quote, position).await,
+        StrategyKind::RsiMeanReversion => evaluate_rsi_mean_reversion(candles, quote, position).await,
+        StrategyKind::SmaTrend => evaluate_sma_trend(candles, quote, position).await,
+        StrategyKind::ListingArbitrage => listing_arb::evaluate_listing_arbitrage_wrapper(strategy, candles, quote, position).await,
     }
 }
 
-// ============================================================
-// STRATEGY IMPLEMENTATIONS
-// ============================================================
+async fn evaluate_vwap_reflexive(
+    candles: &[Candle],
+    quote: &Quote,
+    position: Option<&PositionRecord>,
+) -> StrategySignal {
+    let session_vwap = quote.vwap.or_else(|| intraday_vwap(candles));
+    let Some(vwap) = session_vwap else {
+        return hold("VWAP unavailable");
+    };
 
-pub trait StrategyTrait {
-    fn name(&self) -> &str;
-    #[allow(async_fn_in_trait)]
-    async fn run(&self);
+    if vwap <= 0.0 {
+        return hold("VWAP invalid");
+    }
+
+    let distance = (quote.price - vwap) / vwap;
+    match (position, distance) {
+        (None, d) if d > 0.002 => StrategySignal {
+            action: SignalAction::Buy,
+            allocation_fraction: 0.18,
+            reason: format!("Price is {:.2}% above session VWAP", d * 100.0),
+        },
+        (Some(_), d) if d < -0.001 => StrategySignal {
+            action: SignalAction::Sell,
+            allocation_fraction: 1.0,
+            reason: format!("Price fell {:.2}% below session VWAP", d * 100.0),
+        },
+        _ => hold("Waiting for VWAP displacement"),
+    }
 }
 
-/// Strategy 1: Listing Arbitrage
-async fn run_listing_arbitrage(states: &Arc<RwLock<HashMap<u32, StrategyState>>>) {
-    tracing::info!("Starting Listing Arbitrage strategy...");
-    
-    if let Ok(alpaca) = crate::api::alpaca::AlpacaClient::new() {
-        let strategy = listing_arbitrage::ListingArbitrage::new(alpaca);
-        strategy.run().await;
+async fn evaluate_rsi_mean_reversion(
+    candles: &[Candle],
+    _quote: &Quote,
+    position: Option<&PositionRecord>,
+) -> StrategySignal {
+    let closes = closes(candles);
+    let Some(rsi) = rsi(&closes, 14) else {
+        return hold("RSI unavailable");
+    };
+
+    match (position, rsi) {
+        (None, value) if value < 30.0 => StrategySignal {
+            action: SignalAction::Buy,
+            allocation_fraction: 0.12,
+            reason: format!("RSI mean reversion entry at {:.1}", value),
+        },
+        (Some(_), value) if value > 62.0 => StrategySignal {
+            action: SignalAction::Sell,
+            allocation_fraction: 1.0,
+            reason: format!("RSI exit at {:.1}", value),
+        },
+        _ => hold("RSI within neutral zone"),
+    }
+}
+
+async fn evaluate_sma_trend(
+    candles: &[Candle],
+    _quote: &Quote,
+    position: Option<&PositionRecord>,
+) -> StrategySignal {
+    let closes = closes(candles);
+    let Some(fast) = sma(&closes, 20) else {
+        return hold("20 period SMA unavailable");
+    };
+    let Some(slow) = sma(&closes, 50) else {
+        return hold("50 period SMA unavailable");
+    };
+
+    match (position, fast > slow) {
+        (None, true) => StrategySignal {
+            action: SignalAction::Buy,
+            allocation_fraction: 0.15,
+            reason: format!("Fast SMA {:.2} crossed above slow SMA {:.2}", fast, slow),
+        },
+        (Some(_), false) => StrategySignal {
+            action: SignalAction::Sell,
+            allocation_fraction: 1.0,
+            reason: format!("Fast SMA {:.2} dropped below slow SMA {:.2}", fast, slow),
+        },
+        _ => hold("Trend regime unchanged"),
+    }
+}
+
+pub(crate) fn hold(reason: impl Into<String>) -> StrategySignal {
+    StrategySignal {
+        action: SignalAction::Hold,
+        allocation_fraction: 0.0,
+        reason: reason.into(),
+    }
+}
+
+fn closes(candles: &[Candle]) -> Vec<f64> {
+    candles.iter().map(|candle| candle.close).collect()
+}
+
+fn intraday_vwap(candles: &[Candle]) -> Option<f64> {
+    let mut cumulative_price_volume = 0.0;
+    let mut cumulative_volume = 0.0;
+
+    for candle in candles {
+        if candle.volume <= 0.0 {
+            continue;
+        }
+        let typical_price = (candle.high + candle.low + candle.close) / 3.0;
+        cumulative_price_volume += typical_price * candle.volume;
+        cumulative_volume += candle.volume;
+    }
+
+    if cumulative_volume > 0.0 {
+        Some(cumulative_price_volume / cumulative_volume)
     } else {
-        tracing::error!("Failed to initialize AlpacaClient. Check ENV variables.");
-        states.write().await.insert(1, StrategyState::Error);
+        None
     }
-
-    tracing::info!("Listing Arbitrage strategy stopped");
 }
 
-/// Strategy 2: VWAP Mean Reversion
-/// Automated entries on standard deviation price extensions from the VWAP.
-async fn run_vwap_mean_reversion(states: &Arc<RwLock<HashMap<u32, StrategyState>>>) {
-    tracing::info!("Starting VWAP Mean Reversion strategy...");
-    
-    loop {
-        tokio::select! {
-            _ = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {
-                // Check if we should stop
-                if let Some(state) = states.read().await.get(&2) {
-                    if *state != StrategyState::Running {
-                        break;
-                    }
-                }
-                
-                // VWAP mean reversion logic
-                // - Calculate VWAP
-                // - Detect std dev extensions
-                // - Place reverting trades
-                tracing::debug!("VWAP Mean Reversion: Analyzing price deviations...");
-            }
+fn sma(values: &[f64], period: usize) -> Option<f64> {
+    if values.len() < period || period == 0 {
+        return None;
+    }
+
+    let slice = &values[values.len() - period..];
+    Some(slice.iter().sum::<f64>() / period as f64)
+}
+
+fn rsi(values: &[f64], period: usize) -> Option<f64> {
+    if values.len() <= period || period == 0 {
+        return None;
+    }
+
+    let mut gains = 0.0;
+    let mut losses = 0.0;
+
+    for window in values[values.len() - (period + 1)..].windows(2) {
+        let delta = window[1] - window[0];
+        if delta >= 0.0 {
+            gains += delta;
+        } else {
+            losses += delta.abs();
         }
     }
 
-    tracing::info!("VWAP Mean Reversion strategy stopped");
+    if losses == 0.0 {
+        return Some(100.0);
+    }
+
+    let rs = gains / losses;
+    Some(100.0 - (100.0 / (1.0 + rs)))
 }
 
-/// Strategy 3: 0DTE Delta-Neutral
-/// Harvests theta decay on same-day expiry options via automated spreads.
-async fn run_0dte_delta_neutral(states: &Arc<RwLock<HashMap<u32, StrategyState>>>) {
-    tracing::info!("Starting 0DTE Delta-Neutral strategy...");
-    
-    loop {
-        tokio::select! {
-            _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
-                // Check if we should stop
-                if let Some(state) = states.read().await.get(&3) {
-                    if *state != StrategyState::Running {
-                        break;
-                    }
-                }
-                
-                // 0DTE delta-neutral logic
-                // - Monitor same-day expiry options
-                // - Build delta-neutral spreads
-                // - Harvest theta decay
-                tracing::debug!("0DTE Delta-Neutral: Harvesting theta...");
-            }
+#[cfg(test)]
+mod tests {
+    use crate::models::{
+        AssetClassTarget, Candle, DataProvider, ExecutionMode, OptionEntryStyle,
+        OptionStructurePreset, PositionRecord, Quote, SignalAction, StrategyKind, StrategyRecord,
+    };
+    use super::*;
+
+    fn make_quote(price: f64, vwap: Option<f64>) -> Quote {
+        Quote {
+            symbol: "AAPL".to_string(),
+            provider: DataProvider::Yahoo,
+            price,
+            previous_close: None,
+            change: None,
+            change_percent: None,
+            bid: None,
+            ask: None,
+            volume: None,
+            vwap,
+            session_high: None,
+            session_low: None,
+            timestamp: "2021-01-01T00:00:00Z".to_string(),
         }
     }
 
-    tracing::info!("0DTE Delta-Neutral strategy stopped");
-}
-
-/// Strategy 4: Gamma Scalping
-/// Dynamic delta hedging to profit from realized volatility.
-async fn run_gamma_scalping(states: &Arc<RwLock<HashMap<u32, StrategyState>>>) {
-    tracing::info!("Starting Gamma Scalping strategy...");
-    
-    loop {
-        tokio::select! {
-            _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
-                // Check if we should stop
-                if let Some(state) = states.read().await.get(&4) {
-                    if *state != StrategyState::Running {
-                        break;
-                    }
-                }
-                
-                // Gamma scalping logic
-                // - Monitor gamma and delta
-                // - Dynamic rehedging
-                // - Profit from realized volatility
-                tracing::debug!("Gamma Scalping: Rehedging positions...");
-            }
+    fn make_position() -> PositionRecord {
+        PositionRecord {
+            underlying_symbol: "AAPL".to_string(),
+            instrument_symbol: "AAPL".to_string(),
+            asset_type: "equity".to_string(),
+            quantity: 10.0,
+            average_price: 100.0,
+            market_price: 100.0,
+            multiplier: 1.0,
+            option_structure_preset: None,
+            option_type: None,
+            expiration: None,
+            strike: None,
+            stale_quote: false,
+            legs: Vec::new(),
         }
     }
 
-    tracing::info!("Gamma Scalping strategy stopped");
-}
-
-/// Strategy 5: Put-Call Parity
-/// Arbitrages discrepancies between synthesized and market option prices.
-async fn run_put_call_parity(states: &Arc<RwLock<HashMap<u32, StrategyState>>>) {
-    tracing::info!("Starting Put-Call Parity strategy...");
-    
-    loop {
-        tokio::select! {
-            _ = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {
-                // Check if we should stop
-                if let Some(state) = states.read().await.get(&5) {
-                    if *state != StrategyState::Running {
-                        break;
-                    }
-                }
-                
-                // Put-call parity arbitrage logic
-                // - Calculate synthetic prices
-                // - Monitor market prices
-                // - Execute arbitrage trades
-                tracing::debug!("Put-Call Parity: Scanning for discrepancies...");
-            }
+    fn make_candle(close: f64) -> Candle {
+        Candle {
+            timestamp: "2021-01-01T00:00:00Z".to_string(),
+            open: close,
+            high: close,
+            low: close,
+            close,
+            volume: 100.0,
+            vwap: None,
         }
     }
 
-    tracing::info!("Put-Call Parity strategy stopped");
-}
-
-// ============================================================
-// KRONOS AI BRIDGE INTEGRATION
-// ============================================================
-
-/// Connect to Kronos AI bridge on localhost:8000
-async fn connect_to_kronos_bridge() -> Result<(), String> {
-    let client = reqwest::Client::new();
-    
-    match client
-        .get("http://localhost:8000/health")
-        .timeout(std::time::Duration::from_secs(5))
-        .send()
-        .await
-    {
-        Ok(response) => {
-            if response.status().is_success() {
-                Ok(())
-            } else {
-                Err(format!("Kronos bridge returned status: {}", response.status()))
-            }
-        }
-        Err(e) => Err(format!("Failed to connect to Kronos bridge: {}", e)),
+    #[test]
+    fn test_rsi_not_enough_data() {
+        assert_eq!(rsi(&[10.0, 11.0], 2), None);
+        assert_eq!(rsi(&[10.0], 2), None);
+        assert_eq!(rsi(&[], 2), None);
     }
-}
 
-impl Default for StrategyManager {
-    fn default() -> Self {
-        Self::new()
+    #[test]
+    fn test_rsi_period_zero() {
+        assert_eq!(rsi(&[10.0, 11.0, 12.0], 0), None);
+    }
+
+    #[test]
+    fn test_rsi_all_gains() {
+        assert_eq!(rsi(&[10.0, 11.0, 12.0, 13.0], 3), Some(100.0));
+    }
+
+    #[test]
+    fn test_rsi_all_losses() {
+        assert_eq!(rsi(&[13.0, 12.0, 11.0, 10.0], 3), Some(0.0));
+    }
+
+    #[test]
+    fn test_evaluate_vwap_reflexive_basic() {
+        let candles = vec![];
+        let quote = make_quote(100.5, Some(100.0));
+        let signal = tokio_test::block_on(evaluate_vwap_reflexive(&candles, &quote, None));
+        assert_eq!(signal.action, SignalAction::Buy);
+    }
+
+    #[test]
+    fn test_evaluate_rsi_mean_reversion() {
+        let mut candles = vec![];
+        for i in 0..15 {
+            candles.push(make_candle(100.0 - i as f64));
+        }
+        let quote = make_quote(100.0, None);
+        let signal = tokio_test::block_on(evaluate_rsi_mean_reversion(&candles, &quote, None));
+        assert_eq!(signal.action, SignalAction::Buy);
+    }
+
+    #[test]
+    fn test_evaluate_sma_trend() {
+        let mut candles = vec![];
+        for i in 0..50 {
+            candles.push(make_candle(100.0 + i as f64));
+        }
+        let quote = make_quote(100.0, None);
+        let signal = tokio_test::block_on(evaluate_sma_trend(&candles, &quote, None));
+        assert_eq!(signal.action, SignalAction::Buy);
+    }
+
+    #[test]
+    fn test_intraday_vwap() {
+        let candles = vec![
+            Candle { timestamp: "".into(), open: 10.0, high: 12.0, low: 8.0, close: 10.0, volume: 100.0, vwap: None },
+            Candle { timestamp: "".into(), open: 20.0, high: 22.0, low: 18.0, close: 20.0, volume: 200.0, vwap: None },
+        ];
+        let vwap = intraday_vwap(&candles).unwrap();
+        assert!((vwap - 16.666666666666668).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_sma() {
+        let values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        assert_eq!(sma(&values, 3), Some(4.0));
+        assert_eq!(sma(&values, 5), Some(3.0));
+        assert_eq!(sma(&values, 6), None);
+    }
+
+    #[test]
+    fn test_rsi() {
+        let values = vec![10.0, 11.0, 12.0, 13.0, 14.0];
+        assert_eq!(rsi(&values, 4), Some(100.0));
+
+        let values = vec![10.0, 9.0, 8.0, 7.0, 6.0];
+        assert_eq!(rsi(&values, 4), Some(0.0));
+    }
+
+    #[test]
+    fn test_evaluate_vwap_reflexive_unavailable() {
+        let quote = make_quote(150.0, None);
+        let signal = tokio_test::block_on(evaluate_vwap_reflexive(&[], &quote, None));
+        assert_eq!(signal.action, SignalAction::Hold);
+        assert_eq!(signal.reason, "VWAP unavailable");
     }
 }
