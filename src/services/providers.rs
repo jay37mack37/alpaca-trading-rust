@@ -147,7 +147,19 @@ pub async fn submit_alpaca_order(
     client: &Client,
     credential: &StoredCredential,
     request: &AlpacaOrderRequest,
+    mock: bool,
 ) -> AppResult<SubmittedOrder> {
+    if mock {
+        let order_id = Uuid::new_v4().to_string();
+        return Ok(SubmittedOrder {
+            order_id: order_id.clone(),
+            raw_json: json!({
+                "id": order_id,
+                "status": "accepted",
+            }),
+        });
+    }
+
     let order = match request {
         AlpacaOrderRequest::Single {
             symbol,
@@ -229,7 +241,16 @@ pub async fn fetch_alpaca_order(
     client: &Client,
     credential: &StoredCredential,
     order_id: &str,
+    mock: bool,
 ) -> AppResult<Value> {
+    if mock {
+        return Ok(json!({
+            "id": order_id,
+            "status": "filled",
+            "filled_qty": "1", // Mocked, ideally should match requested qty
+            "filled_avg_price": "100.00", // Mocked
+        }));
+    }
     alpaca_get(client, credential, &format!("/v2/orders/{order_id}"), &[]).await
 }
 
@@ -243,11 +264,29 @@ pub async fn poll_alpaca_order_until_filled(
     credential: &StoredCredential,
     order_id: &str,
     timeout: Duration,
+    mock: bool,
+    expected_qty: f64,
+    expected_price: f64,
 ) -> AppResult<OrderFill> {
+    if mock {
+        return Ok(OrderFill {
+            order_id: order_id.to_string(),
+            status: "filled".to_string(),
+            filled_qty: expected_qty,
+            filled_avg_price: expected_price,
+            raw_json: json!({
+                "id": order_id,
+                "status": "filled",
+                "filled_qty": expected_qty.to_string(),
+                "filled_avg_price": expected_price.to_string(),
+            }),
+        });
+    }
+
     let start = std::time::Instant::now();
     let mut delay = Duration::from_millis(250);
     loop {
-        let raw = fetch_alpaca_order(client, credential, order_id).await?;
+        let raw = fetch_alpaca_order(client, credential, order_id, false).await?;
         let status = raw["status"].as_str().unwrap_or("unknown").to_string();
 
         // Alpaca terminal statuses. `filled` is the happy path; the others all
@@ -301,7 +340,61 @@ pub async fn poll_alpaca_order_until_filled(
 pub async fn fetch_alpaca_broker_sync(
     client: &Client,
     credential: &StoredCredential,
+    mock: bool,
 ) -> AppResult<FetchedBrokerSync> {
+    if mock {
+        let raw_account = json!({
+            "id": "mock_account_id",
+            "account_number": "MOCK123",
+            "status": "ACTIVE",
+            "currency": "USD",
+            "buying_power": "100000.00",
+            "cash": "50000.00",
+            "equity": "100000.00",
+            "portfolio_value": "100000.00",
+            "last_equity": "99000.00",
+            "long_market_value": "50000.00",
+            "short_market_value": "0.00",
+            "pattern_day_trader": false,
+            "trading_blocked": false,
+            "transfers_blocked": false,
+            "account_blocked": false,
+        });
+        let raw_positions = json!([]);
+        let raw_orders = json!([]);
+
+        let synced_at = now();
+        let account = BrokerAccountSummary {
+            credential_id: credential.id.clone(),
+            environment: credential.environment,
+            account_id: "mock_account_id".to_string(),
+            account_number: Some("MOCK123".to_string()),
+            status: Some("ACTIVE".to_string()),
+            currency: Some("USD".to_string()),
+            buying_power: Some(100000.0),
+            cash: Some(50000.0),
+            equity: Some(100000.0),
+            portfolio_value: Some(100000.0),
+            last_equity: Some(99000.0),
+            long_market_value: Some(50000.0),
+            short_market_value: Some(0.0),
+            pattern_day_trader: false,
+            trading_blocked: false,
+            transfers_blocked: false,
+            account_blocked: false,
+            synced_at: synced_at.clone(),
+        };
+
+        return Ok(FetchedBrokerSync {
+            account,
+            positions: Vec::new(),
+            orders: Vec::new(),
+            raw_account,
+            raw_positions,
+            raw_orders,
+        });
+    }
+
     let raw_account = alpaca_get(client, credential, "/v2/account", &[]).await?;
     let raw_positions = alpaca_get(client, credential, "/v2/positions", &[]).await?;
     let raw_orders = alpaca_get(

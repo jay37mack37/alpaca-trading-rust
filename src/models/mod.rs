@@ -9,6 +9,7 @@ pub struct AppConfig {
     pub default_watchlist: Vec<String>,
     pub polling_seconds: u64,
     pub allowed_origins: Vec<String>,
+    pub mock_alpaca: bool,
 }
 
 pub fn normalize_symbol(symbol: &str) -> String {

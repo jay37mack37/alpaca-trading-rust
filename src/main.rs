@@ -424,7 +424,14 @@ pub async fn run_strategy_once(
                     .as_ref()
                     .ok_or_else(|| AppError::Validation("missing Alpaca trading credential".to_string()))?;
                 if let Some(order) = prepared_trade.broker_order.as_ref() {
-                    let submitted = match submit_alpaca_order(&state.http, credential, order).await {
+                    let submitted = match submit_alpaca_order(
+                        &state.http,
+                        credential,
+                        order,
+                        state.config.mock_alpaca,
+                    )
+                    .await
+                    {
                         Ok(order) => order,
                         Err(err) => {
                             let db = state.db.lock().await;
@@ -441,6 +448,9 @@ pub async fn run_strategy_once(
                         credential,
                         &submitted.order_id,
                         Duration::from_secs(30),
+                        state.config.mock_alpaca,
+                        prepared_trade.local.quantity,
+                        prepared_trade.local.price,
                     )
                     .await
                     {
@@ -568,7 +578,7 @@ pub async fn sync_strategy_broker_state(
         .await?;
     let credential = credential.ok_or_else(|| AppError::Validation("missing Alpaca credential".to_string()))?;
 
-    let fetched = fetch_alpaca_broker_sync(&state.http, &credential).await?;
+    let fetched = fetch_alpaca_broker_sync(&state.http, &credential, state.config.mock_alpaca).await?;
 
     {
         let db = state.db.lock().await;

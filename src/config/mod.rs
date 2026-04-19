@@ -37,6 +37,9 @@ impl AppConfig {
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(120),
             allowed_origins,
+            mock_alpaca: env::var("AUTO_STONKS_MOCK_ALPACA")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
         }
     }
 }

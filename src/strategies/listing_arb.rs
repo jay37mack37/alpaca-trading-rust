@@ -83,20 +83,20 @@ pub fn evaluate_listing_arbitrage(
 /// Format: [Underlying][YY][MM][DD][C/P][Strike]
 /// Example: AAPL250419C00150000 -> Some("2025-04-19")
 fn parse_expiration_from_occ(symbol: &str) -> Option<String> {
-    // Find the C or P that marks the option type
-    let option_type_pos = symbol.find(|c| c == 'C' || c == 'P')?;
+    // OCC format: [Root][YY][MM][DD][C/P][Strike]
+    // The tail (YYMMDDTXXXXXXXX) is always 15 characters.
+    if symbol.len() < 15 {
+        return None;
+    }
 
-    // The expiration should be 6 characters before the option type
-    if option_type_pos < 6 {
+    let option_type_pos = symbol.len() - 9;
+    let option_type = symbol.as_bytes()[option_type_pos] as char;
+    if option_type != 'C' && option_type != 'P' {
         return None;
     }
 
     let exp_start = option_type_pos - 6;
     let exp_str = &symbol[exp_start..option_type_pos];
-
-    if exp_str.len() != 6 {
-        return None;
-    }
 
     // Parse YY, MM, DD
     let yy: u32 = exp_str[0..2].parse().ok()?;

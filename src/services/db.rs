@@ -71,6 +71,10 @@ impl Database {
         }
 
         let conn = Connection::open(path)?;
+        conn.execute("PRAGMA busy_timeout = 5000;", [])?;
+        // PRAGMA journal_mode = WAL; can return results, which rusqlite's execute() might complain about
+        // if it expects zero rows. Using pragma_update instead.
+        conn.pragma_update(None, "journal_mode", "WAL")?;
         Self::init_schema(&conn)?;
         let salt = load_or_create_credential_salt(&conn)?;
         let credential_cipher = derive_credential_cipher(master_key, &salt)?;
@@ -96,7 +100,6 @@ impl Database {
 
         conn.execute_batch(
             r#"
-            PRAGMA journal_mode = WAL;
             PRAGMA foreign_keys = ON;
 
             CREATE TABLE IF NOT EXISTS credentials (

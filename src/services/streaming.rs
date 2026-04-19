@@ -335,7 +335,7 @@ async fn alpaca_broker_loop(
 
                 // When an order is filled, we want to trigger a full broker sync
                 // to reconcile our local paper account with reality.
-                let fetched = fetch_alpaca_broker_sync(&state.http, credential).await?;
+                let fetched = fetch_alpaca_broker_sync(&state.http, credential, state.config.mock_alpaca).await?;
 
                 let (strategies, strategy_ids) = {
                     let db = state.db.lock().await;
