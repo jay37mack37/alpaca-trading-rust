@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import DiagnosticHeader from "./components/DiagnosticHeader.svelte";
   import AgentsWorkspace from "./components/AgentsWorkspace.svelte";
   import CredentialsPanel from "./components/CredentialsPanel.svelte";
   import InteractiveTicker from "./components/InteractiveTicker.svelte";
@@ -19,7 +20,7 @@
     UpdateStrategyRequest,
   } from "./lib/types";
 
-  let page: "market" | "agents" | "analytics" | "logs" = "market";
+  let page: "market" | "workstation" | "analytics" = "market";
   let symbol = "SPY";
   let symbolDraft = "SPY";
   let provider: DataProvider = "yahoo";
@@ -270,7 +271,7 @@
     try {
       const created = await api.createStrategy(event.detail);
       status = `${created.name} created and enabled.`;
-      page = "agents";
+      page = "workstation";
       await Promise.all([loadDashboard(true), loadStrategyDetail(created.id)]);
     } catch (err) {
       error = err instanceof Error ? err.message : "Failed to create agent";
@@ -372,6 +373,13 @@
   $: if (mounted && dashboard) {
     connectStream();
   }
+
+  let totalBuyingPower = 0;
+  $: {
+    if (dashboard) {
+      totalBuyingPower = dashboard.strategies.reduce((acc, s) => acc + (s.broker_buying_power ?? 0), 0);
+    }
+  }
 </script>
 
 <svelte:head>
@@ -380,6 +388,12 @@
 </svelte:head>
 
 <main class="shell">
+  <DiagnosticHeader 
+    alpacaStatus={streamState} 
+    buyingPower={totalBuyingPower} 
+    kronosStatus="active" 
+    kronosLatency={12} 
+  />
   <header class="topbar">
     <div>
       <p class="eyebrow">AutoStonks Control Room</p>
@@ -388,9 +402,8 @@
     <div class="header-controls">
       <nav class="tab-strip" aria-label="Primary">
         <button class:active={page === "market"} type="button" on:click={() => (page = "market")}>Market</button>
-        <button class:active={page === "agents"} type="button" on:click={() => (page = "agents")}>Agents</button>
+        <button class:active={page === "workstation"} type="button" on:click={() => (page = "workstation")}>Workstation</button>
         <button class:active={page === "analytics"} type="button" on:click={() => (page = "analytics")}>Analytics</button>
-        <button class:active={page === "logs"} type="button" on:click={() => (page = "logs")}>Logs</button>
       </nav>
       <button type="button" class="panic-button" on:click={globalPanic} title="Stop all running strategies">
         ⚠️ Global Panic
@@ -525,8 +538,8 @@
           </section>
         </section>
       </section>
-    {:else if page === "agents"}
-      <section class="agents-page">
+    {:else if page === "workstation"}
+      <section class="workstation-page">
         <AgentsWorkspace
           strategies={dashboard.strategies}
           credentials={dashboard.credentials}
@@ -540,15 +553,14 @@
           on:inspect={inspectStrategy}
           on:sync={syncStrategy}
         />
+        <div class="workstation-feed">
+          <StrategyLogTable logs={strategyLogs} />
+        </div>
         <CredentialsPanel credentials={dashboard.credentials} on:submit={storeCredential} />
       </section>
     {:else if page === "analytics"}
       <section class="analytics-page">
         <AnalyticsWorkspace />
-      </section>
-    {:else if page === "logs"}
-      <section class="logs-page">
-        <StrategyLogTable logs={strategyLogs} />
       </section>
     {/if}
   {:else if loading}

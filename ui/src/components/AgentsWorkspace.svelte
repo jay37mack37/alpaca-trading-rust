@@ -194,10 +194,26 @@
     draft.reset_portfolio = false;
   }
 
+  function getDescriptionForKind(kind: StrategyKind) {
+    switch (kind) {
+      case "listing_arbitrage": return "Snipes new $SPY options via Black-Scholes valuation gaps and Kronos trend filtering.";
+      case "vwap_reflexive": return "Automated entries on standard deviation price extensions from the VWAP.";
+      case "rsi_mean_reversion": return "Gamma Scalping: Harvesting theta while maintaining a delta-neutral profile.";
+      case "sma_trend": return "0DTE Delta-Neutral: Capturing premium decay on same-day SPY expirations.";
+      case "put_call_parity": return "Put-Call Parity: Arbitraging discrepancies between synthesized and market option prices.";
+      default: return "Automated algorithmic execution strategy.";
+    }
+  }
+
   function labelForKind(kind: StrategyKind) {
-    return kind
-      .replaceAll("_", " ")
-      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    switch (kind) {
+      case "listing_arbitrage": return "Listing Arbitrage";
+      case "vwap_reflexive": return "VWAP Mean Reversion";
+      case "rsi_mean_reversion": return "Gamma Scalping";
+      case "sma_trend": return "0DTE Delta-Neutral";
+      case "put_call_parity": return "Put-Call Parity";
+      default: return (kind as string).replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+    }
   }
 
   function money(value: number | null | undefined) {
@@ -250,17 +266,44 @@
   function structureLabel(value: OptionStructurePreset | null | undefined) {
     return (value ?? "single").replaceAll("_", " ");
   }
+
+  let pendingStatus: Record<string, boolean> = {};
+
+  async function toggleAgent(strategy: StrategySummary) {
+    const nextEnabled = !strategy.enabled;
+    const strategyId = strategy.id;
+    
+    // Optimistic Update
+    pendingStatus[strategyId] = nextEnabled;
+    pendingStatus = pendingStatus;
+
+    try {
+      if (nextEnabled) {
+        await api.startStrategy(strategyId);
+      } else {
+        await api.stopStrategy(strategyId);
+      }
+    } catch (err) {
+      console.error("Failed to toggle agent:", err);
+      delete pendingStatus[strategyId];
+      pendingStatus = pendingStatus;
+    } finally {
+      setTimeout(() => {
+        delete pendingStatus[strategyId];
+        pendingStatus = pendingStatus;
+      }, 1000);
+    }
+  }
+
+  function getEffectiveEnabled(strategy: StrategySummary) {
+    return pendingStatus[strategy.id] ?? strategy.enabled;
+  }
 </script>
 
 <section class="workspace">
   <div class="workspace-header">
-    <div>
-      <p>Agents</p>
-      <h2>Running strategy instances</h2>
-    </div>
-    <div class="runtime-chip">
-      Backend loop {collectorIntervalSeconds > 0 ? `every ${collectorIntervalSeconds}s` : "manual only"}
-    </div>
+    <p>AutoStonks Command Center</p>
+    <h2>Multi-Strategy Workstation</h2>
   </div>
 
   <section class="create-agent">
@@ -375,245 +418,46 @@
   </section>
 
   <section class="agents-layout">
-    <div class="agent-list">
+    <div class="workstation-grid">
       {#each strategies as strategy}
-        <article class:selected={strategy.id === selectedStrategyId} class:flipped={flipped[strategy.id]} class="agent-card">
-          <div class="agent-card-inner">
-            <div class="agent-face agent-face--front">
-              <header>
-                <div>
-                  <p>{labelForKind(strategy.kind)}</p>
-                  <h3>{strategy.name}</h3>
-                </div>
-                <span class:running={strategy.enabled} class="status-chip">
-                  {strategy.enabled ? "Running" : "Paused"}
-                </span>
-              </header>
-
-              <div class="mini-stats">
-                <div><span>Equity</span><strong>{money(strategy.equity)}</strong></div>
-                <div><span>PnL</span><strong>{strategy.pnl >= 0 ? "+" : ""}{money(strategy.pnl)}</strong></div>
-                <div><span>Trades</span><strong>{strategy.total_trades}</strong></div>
-                <div><span>Watching</span><strong>{strategy.tracked_symbols.join(", ")}</strong></div>
-              </div>
-
-              <div class="agent-meta">
-                <span>{strategy.execution_mode.replaceAll("_", " ")}</span>
-                <span>{strategy.asset_class_target}</span>
-                {#if strategy.asset_class_target === "options"}
-                  <span>{structureLabel(strategy.option_structure_preset)}</span>
-                {/if}
-              </div>
-
-              <div class="agent-signal">{strategy.last_signal ?? "No signal yet"}</div>
-
-              {#if strategy.tracked_symbols.length > 0}
-                <AgentCardTicker
-                  symbol={strategy.tracked_symbols[0]}
-                  showVwap={strategy.kind === "vwap_reflexive"}
-                  height={120}
-                />
-              {/if}
-
-              <footer>
-                <button type="button" class="ghost" on:click={() => dispatch("inspect", { strategyId: strategy.id })}>
-                  Activity
-                </button>
-                <button type="button" class="ghost" on:click={() => dispatch("run", { strategyId: strategy.id })}>
-                  Run now
-                </button>
-                <button type="button" on:click={() => { flipped[strategy.id] = true; dispatch("inspect", { strategyId: strategy.id }); }}>
-                  Settings
-                </button>
-              </footer>
+        <article class="strat-card" class:active={getEffectiveEnabled(strategy)}>
+          <div class="strat-header">
+            <div class="strat-title">
+              <h3>{labelForKind(strategy.kind)}</h3>
+              <p class="strat-desc">{getDescriptionForKind(strategy.kind)}</p>
             </div>
-
-            <div class="agent-face agent-face--back">
-              <header>
-                <div>
-                  <p>Settings</p>
-                  <h3>{strategy.name}</h3>
-                </div>
-                <button type="button" class="ghost" on:click={() => (flipped[strategy.id] = false)}>
-                  Close
-                </button>
-              </header>
-
-              <div class="settings-grid">
-                <label>
-                  <span>Name</span>
-                  <input id={`agent-name-${strategy.id}`} name={`agent_name_${strategy.id}`} bind:value={drafts[strategy.id].name} />
-                </label>
-                <label>
-                  <span>Enabled</span>
-                  <input id={`agent-enabled-${strategy.id}`} name={`agent_enabled_${strategy.id}`} type="checkbox" bind:checked={drafts[strategy.id].enabled} />
-                </label>
-                <label>
-                  <span>Execution mode</span>
-                  <select
-                    id={`agent-mode-${strategy.id}`}
-                    name={`agent_mode_${strategy.id}`}
-                    value={drafts[strategy.id].execution_mode}
-                    on:change={(e) => {
-                      const value = e.currentTarget.value as ExecutionMode;
-                      if (value === "alpaca_live") {
-                        const confirmed = window.prompt("WARNING: You are about to enable live trading with REAL MONEY. This could lead to severe financial loss. Type 'TRADE REAL MONEY' to proceed.");
-                        if (confirmed !== "TRADE REAL MONEY") {
-                          if (confirmed !== null) {
-                            window.alert("Confirmation phrase incorrect. Live trading not enabled.");
-                          }
-                          e.currentTarget.value = drafts[strategy.id].execution_mode;
-                          return;
-                        }
-                        drafts[strategy.id].live_confirmation = confirmed;
-                      }
-                      drafts[strategy.id].execution_mode = value;
-                    }}
-                  >
-                    <option value="local_paper">Local paper</option>
-                    <option value="alpaca_paper">Alpaca paper</option>
-                    <option value="alpaca_live">Alpaca live</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Asset class</span>
-                  <select id={`agent-asset-class-${strategy.id}`} name={`agent_asset_class_${strategy.id}`} bind:value={drafts[strategy.id].asset_class_target}>
-                    <option value="equity">Equity</option>
-                    <option value="options">Options</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Credential</span>
-                  <select id={`agent-credential-${strategy.id}`} name={`agent_credential_${strategy.id}`} bind:value={drafts[strategy.id].credential_id}>
-                    <option value="">No broker credential</option>
-                    {#each credentials as credential}
-                      <option value={credential.id}>{credential.label} · {credential.environment}</option>
-                    {/each}
-                  </select>
-                </label>
-                <label>
-                  <span>Starting cash</span>
-                  <input id={`agent-cash-${strategy.id}`} name={`agent_cash_${strategy.id}`} type="number" min="1000" step="500" bind:value={drafts[strategy.id].starting_cash} />
-                </label>
-                <label>
-                  <span>Tracked symbols</span>
-                  <input id={`agent-symbols-${strategy.id}`} name={`agent_symbols_${strategy.id}`} bind:value={drafts[strategy.id].tracked_symbols} />
-                </label>
-                <label>
-                  <span>Run Interval Mode</span>
-                  <select id={`agent-interval-unit-${strategy.id}`} name={`agent_interval_unit_${strategy.id}`} bind:value={drafts[strategy.id].run_interval_unit}>
-                    <option value="seconds">Seconds</option>
-                    <option value="milliseconds">Milliseconds</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Run Interval Duration</span>
-                  <input id={`agent-interval-duration-${strategy.id}`} name={`agent_interval_duration_${strategy.id}`} type="number" min="1" step="1" bind:value={drafts[strategy.id].run_interval} />
-                </label>
-                {#if drafts[strategy.id].asset_class_target === "options"}
-                  <label>
-                    <span>Options structure</span>
-                    <select id={`agent-option-structure-${strategy.id}`} name={`agent_option_structure_${strategy.id}`} bind:value={drafts[strategy.id].option_structure_preset}>
-                      <option value="single">Single contract</option>
-                      <option value="bull_call_spread">Bull call spread</option>
-                      <option value="bear_put_spread">Bear put spread</option>
-                    </select>
-                  </label>
-                  {#if drafts[strategy.id].option_structure_preset === "single"}
-                    <label>
-                      <span>Option entry style</span>
-                      <select id={`agent-option-style-${strategy.id}`} name={`agent_option_style_${strategy.id}`} bind:value={drafts[strategy.id].option_entry_style}>
-                        <option value="long_call">Long call</option>
-                        <option value="long_put">Long put</option>
-                      </select>
-                    </label>
-                  {/if}
-                  {#if drafts[strategy.id].option_structure_preset !== "single"}
-                    <label>
-                      <span>Spread width</span>
-                      <input id={`agent-option-width-${strategy.id}`} name={`agent_option_width_${strategy.id}`} type="number" min="0.5" step="0.5" bind:value={drafts[strategy.id].option_spread_width} />
-                    </label>
-                  {/if}
-                  <label>
-                    <span>Target delta</span>
-                    <input id={`agent-option-delta-${strategy.id}`} name={`agent_option_delta_${strategy.id}`} type="number" min="0" max="1" step="0.01" bind:value={drafts[strategy.id].option_target_delta} />
-                  </label>
-                  <label>
-                    <span>Min DTE</span>
-                    <input id={`agent-option-dte-min-${strategy.id}`} name={`agent_option_dte_min_${strategy.id}`} type="number" min="1" step="1" bind:value={drafts[strategy.id].option_dte_min} />
-                  </label>
-                  <label>
-                    <span>Max DTE</span>
-                    <input id={`agent-option-dte-max-${strategy.id}`} name={`agent_option_dte_max_${strategy.id}`} type="number" min="1" step="1" bind:value={drafts[strategy.id].option_dte_max} />
-                  </label>
-                  <label>
-                    <span>Max spread pct</span>
-                    <input id={`agent-option-spread-${strategy.id}`} name={`agent_option_spread_${strategy.id}`} type="number" min="0" max="1" step="0.01" bind:value={drafts[strategy.id].option_max_spread_pct} />
-                  </label>
-                  <label>
-                    <span>Limit buffer pct</span>
-                    <input id={`agent-option-buffer-${strategy.id}`} name={`agent_option_buffer_${strategy.id}`} type="number" min="0" max="1" step="0.01" bind:value={drafts[strategy.id].option_limit_buffer_pct} />
-                  </label>
-                {/if}
-                {#if drafts[strategy.id].execution_mode === "alpaca_live"}
-                  <label class="danger">
-                    <span>Live confirmation phrase</span>
-                    <input
-                      id={`agent-live-confirmation-${strategy.id}`}
-                      name={`agent_live_confirmation_${strategy.id}`}
-                      placeholder="TRADE REAL MONEY"
-                      bind:value={drafts[strategy.id].live_confirmation}
-                    />
-                  </label>
-                {/if}
-
-                <div class="risk-controls">
-                  <header>
-                    <h4>Pre-Trade Risk Limits</h4>
-                  </header>
-                  <div class="risk-controls-grid">
-                    <label>
-                      <span>Max Position ($)</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="100"
-                        bind:value={drafts[strategy.id].max_position_size}
-                      />
-                    </label>
-                    <label>
-                      <span>Max Loss ($)</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="50"
-                        bind:value={drafts[strategy.id].max_daily_loss}
-                      />
-                    </label>
-                    <label class="full-width">
-                      <span>Blacklisted symbols</span>
-                      <input
-                        type="text"
-                        placeholder="GME, AMC"
-                        bind:value={drafts[strategy.id].blacklisted_symbols}
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                <label class="inline-checkbox">
-                  <input id={`agent-reset-${strategy.id}`} name={`agent_reset_${strategy.id}`} type="checkbox" bind:checked={drafts[strategy.id].reset_portfolio} />
-                  <span>Reset ledger on save</span>
-                </label>
-              </div>
-
-              <footer>
-                <button type="button" class="ghost" on:click={() => dispatch("inspect", { strategyId: strategy.id })}>
-                  View activity
-                </button>
-                <button type="button" on:click={() => save(strategy.id)}>Save agent</button>
-              </footer>
+            <div class="strat-status">
+              <span class="status-dot" class:live={getEffectiveEnabled(strategy)}></span>
+              <span class="status-label">{getEffectiveEnabled(strategy) ? "Live" : "Idle"}</span>
             </div>
+          </div>
+
+          <div class="strat-actions">
+            <button 
+              type="button" 
+              class="btn-execute" 
+              class:dim={getEffectiveEnabled(strategy)}
+              on:click={() => !getEffectiveEnabled(strategy) && toggleAgent(strategy)}
+            >
+              Execute
+            </button>
+            <button 
+              type="button" 
+              class="btn-stop" 
+              class:dim={!getEffectiveEnabled(strategy)}
+              on:click={() => getEffectiveEnabled(strategy) && toggleAgent(strategy)}
+            >
+              Stop
+            </button>
+          </div>
+          
+          <div class="strat-footer">
+            <button class="ghost-link" on:click={() => dispatch("inspect", { strategyId: strategy.id })}>
+              Activity
+            </button>
+            <button class="ghost-link" on:click={() => { flipped[strategy.id] = true; dispatch("inspect", { strategyId: strategy.id }); }}>
+              Config
+            </button>
           </div>
         </article>
       {/each}
@@ -709,60 +553,30 @@
     gap: 1rem;
   }
 
-  .workspace-header,
-  .detail-header,
-  .create-agent {
-    border-radius: 28px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-  }
-
   .workspace-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
-    padding: 1.2rem 1.3rem;
-    background:
-      radial-gradient(circle at top right, rgba(107, 231, 255, 0.16), transparent 35%),
-      linear-gradient(180deg, rgba(13, 22, 38, 0.96), rgba(8, 12, 22, 0.92));
+    margin-bottom: 2rem;
   }
 
-  .workspace-header p,
-  .detail-header p,
-  .create-copy p {
+  .workspace-header h2 {
+    font-size: 1.8rem;
+    font-weight: 700;
     margin: 0;
-    color: rgba(221, 233, 255, 0.62);
+  }
+
+  .workspace-header p {
+    font-size: 0.8rem;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 0.78rem;
-  }
-
-  .workspace-header h2,
-  .detail-header h3,
-  .create-copy h3 {
-    margin: 0.25rem 0 0;
-    color: white;
-  }
-
-  .runtime-chip,
-  .status-chip {
-    padding: 0.65rem 0.85rem;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(255, 255, 255, 0.04);
-    color: rgba(236, 243, 255, 0.82);
-  }
-
-  .running {
-    background: rgba(91, 231, 172, 0.12);
-    border-color: rgba(91, 231, 172, 0.22);
-    color: #b8ffe1;
+    letter-spacing: 2px;
+    color: rgba(221, 233, 255, 0.66);
+    margin-bottom: 4px;
   }
 
   .create-agent {
     display: grid;
     gap: 1rem;
     padding: 1.25rem;
+    border-radius: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
     background:
       radial-gradient(circle at top left, rgba(249, 212, 119, 0.14), transparent 35%),
       linear-gradient(180deg, rgba(29, 24, 18, 0.96), rgba(14, 11, 9, 0.94));
@@ -776,7 +590,6 @@
   }
 
   .create-grid,
-  .settings-grid,
   .detail-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -789,7 +602,6 @@
   }
 
   label span,
-  .mini-stats span,
   .detail-grid span {
     color: rgba(221, 233, 255, 0.66);
     font-size: 0.82rem;
@@ -810,123 +622,132 @@
     cursor: pointer;
   }
 
-  .create-button,
-  .agent-face--front footer button:last-child,
-  .agent-face--back footer button:last-child {
+  .create-button {
     background: linear-gradient(135deg, #f0b450, #f7dc72);
     color: #180e00;
     font-weight: 700;
   }
 
-  .ghost {
-    background: rgba(255, 255, 255, 0.05);
-    color: rgba(236, 243, 255, 0.86);
-  }
-
-  .agents-layout {
+  .workstation-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.95fr);
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 3rem;
   }
 
-  .agent-list {
-    display: grid;
-    gap: 1rem;
-  }
-
-  .agent-card {
-    perspective: 1500px;
-  }
-
-  .agent-card-inner {
-    position: relative;
-    min-height: 760px;
-    transform-style: preserve-3d;
-    transition: transform 260ms ease;
-  }
-
-  .agent-card.flipped .agent-card-inner {
-    transform: rotateY(180deg);
-  }
-
-  .agent-face {
-    position: absolute;
-    inset: 0;
+  .strat-card {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 20px;
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
-    padding: 1rem;
-    border-radius: 28px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    backface-visibility: hidden;
+    gap: 20px;
+    transition: all 0.2s ease;
   }
 
-  .agent-face--front {
-    background:
-      radial-gradient(circle at top right, rgba(90, 166, 255, 0.14), transparent 36%),
-      linear-gradient(180deg, rgba(13, 20, 34, 0.96), rgba(8, 11, 19, 0.92));
+  .strat-card.active {
+    border-color: rgba(34, 197, 94, 0.3);
+    box-shadow: 0 0 20px rgba(34, 197, 94, 0.05);
   }
 
-  .agent-face--back {
-    background:
-      radial-gradient(circle at top right, rgba(249, 212, 119, 0.12), transparent 38%),
-      linear-gradient(180deg, rgba(24, 19, 15, 0.96), rgba(12, 10, 9, 0.92));
-    transform: rotateY(180deg);
-    justify-content: space-between;
-  }
-
-  .selected .agent-face {
-    border-color: rgba(108, 176, 255, 0.4);
-    box-shadow: 0 0 0 1px rgba(108, 176, 255, 0.14);
-  }
-
-  .agent-face header,
-  .agent-face footer {
+  .strat-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    gap: 0.5rem;
+    align-items: flex-start;
   }
 
-  .agent-face h3,
-  .mini-stats strong,
-  .detail-grid strong,
-  h4 {
+  .strat-title h3 {
+    margin: 0 0 6px 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+
+  .strat-desc {
+    font-size: 0.85rem;
+    color: rgba(221, 233, 255, 0.66);
+    line-height: 1.4;
     margin: 0;
-    color: white;
   }
 
-  .agent-signal,
-  .detail-block,
-  .empty,
-  .detail-grid article {
-    padding: 0.95rem;
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.07);
-  }
-
-  .mini-stats {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.7rem;
-  }
-
-  .agent-meta {
+  .strat-status {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.45rem;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 4px 10px;
+    border-radius: 100px;
+    font-size: 0.75rem;
+    color: rgba(221, 233, 255, 0.66);
   }
 
-  .agent-meta span {
-    padding: 0.35rem 0.6rem;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.05);
-    color: rgba(236, 243, 255, 0.78);
-    font-size: 0.78rem;
-    text-transform: capitalize;
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #4b5563;
   }
+
+  .status-dot.live {
+    background: #4ade80;
+    box-shadow: 0 0 8px #4ade80;
+  }
+
+  .strat-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .btn-execute, .btn-stop {
+    border: none;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .btn-execute {
+    background: #10b981;
+    color: #062016;
+  }
+
+  .btn-stop {
+    background: #ef4444;
+    color: #fff;
+  }
+
+  .btn-execute.dim, .btn-stop.dim {
+    opacity: 0.2;
+    cursor: default;
+    filter: grayscale(0.5);
+  }
+
+  .btn-execute:not(.dim):hover { background: #34d399; transform: translateY(-1px); }
+  .btn-stop:not(.dim):hover { background: #f87171; transform: translateY(-1px); }
+
+  .strat-footer {
+    display: flex;
+    gap: 16px;
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .ghost-link {
+    background: none;
+    border: none;
+    color: rgba(221, 233, 255, 0.66);
+    font-size: 0.75rem;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .ghost-link:hover { color: white; }
 
   .agent-detail {
     display: grid;
@@ -937,6 +758,8 @@
   .detail-header,
   .detail-block {
     padding: 1.1rem;
+    border-radius: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
     background: linear-gradient(180deg, rgba(16, 24, 21, 0.96), rgba(9, 13, 11, 0.92));
   }
 
@@ -961,66 +784,10 @@
 
   .trade-feed p,
   .trade-feed small,
-  .agent-signal,
   .empty {
     margin: 0;
     color: rgba(231, 239, 255, 0.78);
     line-height: 1.45;
-  }
-
-  .danger {
-    grid-column: 1 / -1;
-  }
-
-  .risk-controls {
-    grid-column: 1 / -1;
-    margin: 0;
-    padding: 0.5rem 0.7rem;
-    border-radius: 12px;
-    background: rgba(255, 117, 117, 0.05);
-    border: 1px dashed rgba(255, 117, 117, 0.2);
-  }
-
-  .risk-controls header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.4rem;
-  }
-
-  .risk-controls h4 {
-    margin: 0;
-    color: #ff8a8a;
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
-  .risk-controls-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.4rem;
-  }
-
-  .risk-controls-grid .full-width {
-    grid-column: 1 / -1;
-  }
-
-  .risk-controls-grid input {
-    padding: 0.4rem 0.5rem;
-    font-size: 0.8rem;
-  }
-
-  .risk-controls-grid span {
-    font-size: 0.75rem;
-  }
-
-  .inline-checkbox {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    grid-column: 1 / -1;
-    font-size: 0.8rem;
   }
 
   .empty--small {
@@ -1035,36 +802,8 @@
 
   @media (max-width: 720px) {
     .create-grid,
-    .settings-grid,
-    .detail-grid,
-    .mini-stats {
+    .detail-grid {
       grid-template-columns: 1fr;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .agent-card-inner {
-      min-height: auto;
-      transition: none;
-      transform: none !important;
-    }
-
-    .agent-face {
-      position: static;
-      backface-visibility: visible;
-    }
-
-    .agent-face--back {
-      display: none;
-      transform: none;
-    }
-
-    .agent-card.flipped .agent-face--front {
-      display: none;
-    }
-
-    .agent-card.flipped .agent-face--back {
-      display: grid;
     }
   }
 </style>

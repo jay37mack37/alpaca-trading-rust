@@ -437,65 +437,78 @@ impl Database {
     }
 
     fn seed_default_strategies(&self) -> AppResult<()> {
-        let count: i64 = self
-            .conn
-            .query_row("SELECT COUNT(*) FROM strategies", [], |row| row.get(0))?;
-
-        if count > 0 {
-            return Ok(());
-        }
-
         let now = now();
         let defaults = [
             (
+                "listing-arbitrage",
+                "Listing Arbitrage",
+                StrategyKind::ListingArbitrage,
+                vec!["SPY"],
+            ),
+            (
                 "vwap-reflexive",
-                "VWAP Reflexive Agent",
+                "VWAP Mean Reversion",
                 StrategyKind::VwapReflexive,
-                vec!["AAPL", "SPY"],
+                vec!["SPY", "AAPL"],
             ),
             (
-                "rsi-mean-reversion",
-                "RSI Mean Reversion",
+                "gamma-scalping",
+                "Gamma Scalping",
                 StrategyKind::RsiMeanReversion,
-                vec!["QQQ", "NVDA"],
+                vec!["SPY", "NVDA"],
             ),
             (
-                "sma-trend",
-                "SMA Trend Filter",
+                "delta-neutral",
+                "0DTE Delta-Neutral",
                 StrategyKind::SmaTrend,
-                vec!["MSFT", "META"],
+                vec!["SPY"],
+            ),
+            (
+                "put-call-parity",
+                "Put-Call Parity",
+                StrategyKind::PutCallParity,
+                vec!["SPY"],
             ),
         ];
 
         for (id, name, kind, symbols) in defaults {
-            self.conn.execute(
-                "INSERT INTO strategies (
-                    id, name, kind, enabled, execution_mode, asset_class_target, option_entry_style,
-                    option_structure_preset, option_spread_width, option_target_delta,
-                    option_dte_min, option_dte_max, option_max_spread_pct, option_limit_buffer_pct, credential_id,
-                    starting_cash, cash_balance, equity, tracked_symbols,
-                    total_trades, wins, losses, last_signal, last_run_at, run_interval_ms
-                ) VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, NULL, 25000.0, 25000.0, 25000.0, ?14, 0, 0, 0, ?15, ?16, ?17)",
-                params![
-                    id,
-                    name,
-                    kind.as_str(),
-                    execution_mode_to_str(ExecutionMode::LocalPaper),
-                    asset_class_target_to_str(AssetClassTarget::Equity),
-                    option_entry_style_to_str(OptionEntryStyle::LongCall),
-                    option_structure_preset_to_str(OptionStructurePreset::Single),
-                    5.0_f64,
-                    0.30_f64,
-                    21_u32,
-                    45_u32,
-                    0.12_f64,
-                    0.05_f64,
-                    serde_json::to_string(&symbols)?,
-                    "Seeded strategy",
-                    now,
-                    30000_u64,
-                ],
+            // Only insert if missing
+            let exists: bool = self.conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM strategies WHERE id = ?1 OR kind = ?2)",
+                params![id, kind.as_str()],
+                |row| row.get(0),
             )?;
+
+            if !exists {
+                self.conn.execute(
+                    "INSERT INTO strategies (
+                        id, name, kind, enabled, execution_mode, asset_class_target, option_entry_style,
+                        option_structure_preset, option_spread_width, option_target_delta,
+                        option_dte_min, option_dte_max, option_max_spread_pct, option_limit_buffer_pct, credential_id,
+                        starting_cash, cash_balance, equity, tracked_symbols,
+                        total_trades, wins, losses, last_signal, last_run_at, run_interval_ms
+                    ) VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, NULL, 50000.0, 50000.0, 50000.0, ?14, 0, 0, 0, ?15, ?16, ?17)",
+                    params![
+                        id,
+                        name,
+                        kind.as_str(),
+                        execution_mode_to_str(ExecutionMode::LocalPaper),
+                        asset_class_target_to_str(AssetClassTarget::Options),
+                        option_entry_style_to_str(OptionEntryStyle::LongCall),
+                        option_structure_preset_to_str(OptionStructurePreset::Single),
+                        5.0_f64,
+                        0.30_f64,
+                        0_u32, // Min DTE
+                        14_u32, // Max DTE
+                        0.15_f64,
+                        0.05_f64,
+                        serde_json::to_string(&symbols)?,
+                        "Provisioned strategy",
+                        now,
+                        10000_u64,
+                    ],
+                )?;
+            }
         }
 
         Ok(())
@@ -2601,6 +2614,8 @@ fn strategy_kind_from_str(value: &str) -> Result<StrategyKind, rusqlite::Error> 
         "vwap_reflexive" => Ok(StrategyKind::VwapReflexive),
         "rsi_mean_reversion" => Ok(StrategyKind::RsiMeanReversion),
         "sma_trend" => Ok(StrategyKind::SmaTrend),
+        "listing_arbitrage" => Ok(StrategyKind::ListingArbitrage),
+        "put_call_parity" => Ok(StrategyKind::PutCallParity),
         other => Err(rusqlite::Error::FromSqlConversionFailure(
             0,
             rusqlite::types::Type::Text,

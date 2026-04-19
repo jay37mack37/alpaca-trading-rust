@@ -21,9 +21,9 @@
   <div class="panel-header">
     <div>
       <p>System Events</p>
-      <h2>Strategy Live Log</h2>
+      <h2>Intelligence Feed</h2>
     </div>
-    <button type="button" class="btn-ghost" on:click={() => (logs = [])}>🗑 Clear View</button>
+    <button type="button" class="btn-ghost" on:click={() => (logs = [])}>🗑 Clear Feed</button>
   </div>
 
   <div class="log-container">
@@ -31,31 +31,32 @@
       <thead>
         <tr>
           <th>Time</th>
+          <th>Type</th>
           <th>Symbol</th>
-          <th>Math/Edge</th>
+          <th>Math Edge %</th>
           <th>Kronos Score</th>
-          <th>Decision</th>
-          <th>Reasoning</th>
+          <th>Decision / Reasoning</th>
         </tr>
       </thead>
       <tbody>
         {#if logs.length === 0}
           <tr>
-            <td colspan="6" class="empty-state">No log entries yet. Active strategies will report here.</td>
+            <td colspan="6" class="empty-state">Waiting for engine cycles...</td>
           </tr>
         {:else}
           {#each logs as log}
-            <tr>
+            <tr class="log-row" class:row-buy={log.decision.toLowerCase() === 'buy'} class:row-exit={log.decision.toLowerCase() === 'exit' || log.decision.toLowerCase() === 'skip'} class:row-heartbeat={log.decision.toLowerCase() === 'heartbeat' || log.decision.toLowerCase() === 'hold'}>
               <td class="timestamp">{log.time.split(" ")[1]}</td>
-              <td><strong>{log.symbol}</strong></td>
-              <td>{log.math_edge}</td>
-              <td>{log.kronos_score}</td>
-              <td>
-                <span class="tag" class:tag--positive={getDecisionTone(log.decision) === "positive"} class:tag--negative={getDecisionTone(log.decision) === "negative"}>
-                  {log.decision}
-                </span>
+              <td class="type-cell">{(log as any).type ?? 'DRIFT'}</td>
+              <td class="symbol-cell"><strong>{log.symbol}</strong></td>
+              <td class="edge-cell">{log.math_edge}</td>
+              <td class="kronos-cell">{log.kronos_score}</td>
+              <td class="decision-cell">
+                <div class="decision-wrap">
+                  <span class="decision-text">{log.decision}:</span>
+                  <span class="reasoning-text">{log.reasoning}</span>
+                </div>
               </td>
-              <td class="reasoning">{log.reasoning}</td>
             </tr>
           {/each}
         {/if}
@@ -65,6 +66,17 @@
 </div>
 
 <style>
+  .log-row.row-buy { background: rgba(34, 197, 94, 0.15); border-left: 4px solid #4ade80; }
+  .log-row.row-exit { background: rgba(239, 68, 68, 0.1); border-left: 4px solid #f87171; }
+  .log-row.row-heartbeat { background: rgba(59, 130, 246, 0.1); border-left: 4px solid #60a5fa; }
+
+  .decision-wrap { display: flex; gap: 8px; align-items: baseline; }
+  .decision-text { font-weight: 700; text-transform: uppercase; font-size: 0.75rem; min-width: 60px; }
+  .reasoning-text { opacity: 0.8; font-style: italic; }
+
+  .type-cell { font-weight: 600; color: rgba(255,255,255,0.7); font-size: 0.7rem; }
+  .edge-cell, .kronos-cell { font-family: var(--font-mono); }
+
   .log-panel {
     background: rgba(13, 17, 23, 0.4);
     border: 1px solid rgba(255, 255, 255, 0.08);
