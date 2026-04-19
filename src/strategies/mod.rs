@@ -15,6 +15,7 @@ pub async fn evaluate_strategy(
         StrategyKind::RsiMeanReversion => evaluate_rsi_mean_reversion(candles, quote, position).await,
         StrategyKind::SmaTrend => evaluate_sma_trend(candles, quote, position).await,
         StrategyKind::ListingArbitrage => listing_arb::evaluate_listing_arbitrage_wrapper(strategy, candles, quote, position).await,
+        StrategyKind::PutCallParity => evaluate_put_call_parity(candles, quote, position).await,
     }
 }
 
@@ -38,11 +39,25 @@ async fn evaluate_vwap_reflexive(
             action: SignalAction::Buy,
             allocation_fraction: 0.18,
             reason: format!("Price is {:.2}% above session VWAP", d * 100.0),
+            limit_price: None,
+            stop_loss: None,
+            take_profit: None,
+            trailing_stop: None,
+            walk_to_mid: None,
+            split_exit: None,
+            log_type: None,
         },
         (Some(_), d) if d < -0.001 => StrategySignal {
             action: SignalAction::Sell,
             allocation_fraction: 1.0,
             reason: format!("Price fell {:.2}% below session VWAP", d * 100.0),
+            limit_price: None,
+            stop_loss: None,
+            take_profit: None,
+            trailing_stop: None,
+            walk_to_mid: None,
+            split_exit: None,
+            log_type: None,
         },
         _ => hold("Waiting for VWAP displacement"),
     }
@@ -63,11 +78,25 @@ async fn evaluate_rsi_mean_reversion(
             action: SignalAction::Buy,
             allocation_fraction: 0.12,
             reason: format!("RSI mean reversion entry at {:.1}", value),
+            limit_price: None,
+            stop_loss: None,
+            take_profit: None,
+            trailing_stop: None,
+            walk_to_mid: None,
+            split_exit: None,
+            log_type: None,
         },
         (Some(_), value) if value > 62.0 => StrategySignal {
             action: SignalAction::Sell,
             allocation_fraction: 1.0,
             reason: format!("RSI exit at {:.1}", value),
+            limit_price: None,
+            stop_loss: None,
+            take_profit: None,
+            trailing_stop: None,
+            walk_to_mid: None,
+            split_exit: None,
+            log_type: None,
         },
         _ => hold("RSI within neutral zone"),
     }
@@ -91,11 +120,25 @@ async fn evaluate_sma_trend(
             action: SignalAction::Buy,
             allocation_fraction: 0.15,
             reason: format!("Fast SMA {:.2} crossed above slow SMA {:.2}", fast, slow),
+            limit_price: None,
+            stop_loss: None,
+            take_profit: None,
+            trailing_stop: None,
+            walk_to_mid: None,
+            split_exit: None,
+            log_type: None,
         },
         (Some(_), false) => StrategySignal {
             action: SignalAction::Sell,
             allocation_fraction: 1.0,
             reason: format!("Fast SMA {:.2} dropped below slow SMA {:.2}", fast, slow),
+            limit_price: None,
+            stop_loss: None,
+            take_profit: None,
+            trailing_stop: None,
+            walk_to_mid: None,
+            split_exit: None,
+            log_type: None,
         },
         _ => hold("Trend regime unchanged"),
     }
@@ -106,6 +149,13 @@ pub(crate) fn hold(reason: impl Into<String>) -> StrategySignal {
         action: SignalAction::Hold,
         allocation_fraction: 0.0,
         reason: reason.into(),
+        limit_price: None,
+        stop_loss: None,
+        take_profit: None,
+        trailing_stop: None,
+        walk_to_mid: None,
+        split_exit: None,
+        log_type: None,
     }
 }
 
@@ -308,5 +358,23 @@ mod tests {
         let signal = tokio_test::block_on(evaluate_vwap_reflexive(&[], &quote, None));
         assert_eq!(signal.action, SignalAction::Hold);
         assert_eq!(signal.reason, "VWAP unavailable");
+    }
+}
+async fn evaluate_put_call_parity(
+    _candles: &[Candle],
+    _quote: &Quote,
+    _position: Option<&PositionRecord>,
+) -> StrategySignal {
+    StrategySignal {
+        action: SignalAction::Hold,
+        allocation_fraction: 0.0,
+        reason: "Put-Call Parity implementation pending".to_string(),
+        limit_price: None,
+        stop_loss: None,
+        take_profit: None,
+        trailing_stop: None,
+        walk_to_mid: None,
+        split_exit: None,
+        log_type: Some("HEARTBEAT".to_string()),
     }
 }

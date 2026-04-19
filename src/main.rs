@@ -357,6 +357,7 @@ pub async fn run_strategy_once(
             state,
             strategy_id,
             &symbol,
+            signal.log_type.as_deref().unwrap_or("HEARTBEAT"),
             &format!("Price: ${:.2}", quote.quote.price),
             "N/A", // Score could be added later
             signal.action.as_str(),
@@ -531,6 +532,7 @@ pub fn broadcast_strategy_log(
     state: &AppState,
     strategy_id: &str,
     symbol: &str,
+    log_type: &str,
     math_edge: &str,
     kronos_score: &str,
     decision: &str,
@@ -539,6 +541,7 @@ pub fn broadcast_strategy_log(
     let _ = state.streams.send_event(RealtimeEvent::Log {
         strategy_id: strategy_id.to_string(),
         symbol: symbol.to_string(),
+        log_type: log_type.to_string(),
         math_edge: math_edge.to_string(),
         kronos_score: kronos_score.to_string(),
         decision: decision.to_string(),

@@ -124,6 +124,7 @@ pub enum StrategyKind {
     RsiMeanReversion,
     SmaTrend,
     ListingArbitrage,
+    PutCallParity,
 }
 
 impl StrategyKind {
@@ -133,6 +134,7 @@ impl StrategyKind {
             Self::RsiMeanReversion => "rsi_mean_reversion",
             Self::SmaTrend => "sma_trend",
             Self::ListingArbitrage => "listing_arbitrage",
+            Self::PutCallParity => "put_call_parity",
         }
     }
 }
@@ -504,6 +506,7 @@ pub enum RealtimeEvent {
     Log {
         strategy_id: String,
         symbol: String,
+        log_type: String, // NEW/DRIFT/HEARTBEAT
         math_edge: String,
         kronos_score: String,
         decision: String,
@@ -586,11 +589,18 @@ impl SignalAction {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StrategySignal {
     pub action: SignalAction,
     pub allocation_fraction: f64,
     pub reason: String,
+    pub limit_price: Option<f64>,
+    pub stop_loss: Option<f64>,
+    pub take_profit: Option<f64>,
+    pub trailing_stop: Option<f64>,
+    pub walk_to_mid: Option<bool>,
+    pub split_exit: Option<bool>, // for 50/50 scalp/runner
+    pub log_type: Option<String>, // NEW/DRIFT/HEARTBEAT
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

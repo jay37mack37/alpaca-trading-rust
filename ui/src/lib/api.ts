@@ -37,11 +37,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
 
+  const text = await response.text();
   let body: ApiResponse<T>;
   try {
-    body = (await response.json()) as ApiResponse<T>;
+    body = JSON.parse(text) as ApiResponse<T>;
   } catch (err) {
-    const text = await response.text();
     throw new Error(text || `Request failed with ${response.status}`);
   }
 
