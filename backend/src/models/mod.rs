@@ -117,7 +117,7 @@ impl Default for OptionStructurePreset {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum StrategyKind {
     VwapReflexive,
@@ -513,6 +513,12 @@ pub enum RealtimeEvent {
         reasoning: String,
         time: String,
     },
+    Notification {
+        strategy_id: Option<String>,
+        level: String, // info, warning, error
+        title: String,
+        message: String,
+    },
 }
 
 impl RealtimeEvent {
@@ -522,7 +528,23 @@ impl RealtimeEvent {
             Self::BrokerSync { .. } => "broker_sync",
             Self::Status { .. } => "status",
             Self::Log { .. } => "log",
+            Self::Notification { .. } => "notification",
         }
+    }
+
+    pub fn broadcast_notification(
+        streams: &crate::services::streaming::StreamHub,
+        strategy_id: Option<&str>,
+        level: &str,
+        title: &str,
+        message: &str,
+    ) {
+        let _ = streams.send_event(Self::Notification {
+            strategy_id: strategy_id.map(|s| s.to_string()),
+            level: level.to_string(),
+            title: title.to_string(),
+            message: message.to_string(),
+        });
     }
 }
 
