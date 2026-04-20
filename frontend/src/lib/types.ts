@@ -306,6 +306,7 @@ export interface CreateStrategyRequest {
   tracked_symbols: string[];
   credential_id?: string | null;
   enabled?: boolean;
+  live_confirmation?: string;
   risk_parameters?: RiskParameters | null;
   run_interval_ms?: number;
 }

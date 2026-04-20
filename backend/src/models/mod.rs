@@ -445,6 +445,7 @@ pub struct CreateStrategyRequest {
     pub tracked_symbols: Vec<String>,
     pub credential_id: Option<String>,
     pub enabled: Option<bool>,
+    pub live_confirmation: Option<String>,
     pub run_interval_ms: Option<u64>,
 }
 
