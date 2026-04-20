@@ -4,7 +4,8 @@ use crate::models::{
     StrategySignal,
 };
 use crate::options::parse_expiration_from_occ;
-use crate::strategies::hold;
+use crate::strategies::{hold, TradingStrategy};
+use async_trait::async_trait;
 use chrono::{Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 
@@ -161,6 +162,21 @@ fn days_until_expiration(exp: &str) -> Option<i64> {
     let today = Local::now().date_naive();
     let exp_date = NaiveDate::parse_from_str(exp, "%Y-%m-%d").ok()?;
     Some(exp_date.signed_duration_since(today).num_days())
+}
+
+pub struct ListingArbitrageStrategy;
+
+#[async_trait]
+impl TradingStrategy for ListingArbitrageStrategy {
+    async fn evaluate(
+        &self,
+        strategy: &StrategyRecord,
+        candles: &[Candle],
+        quote: &Quote,
+        position: Option<&PositionRecord>,
+    ) -> StrategySignal {
+        evaluate_listing_arbitrage_wrapper(strategy, candles, quote, position).await
+    }
 }
 
 // Wrapper for the engine
