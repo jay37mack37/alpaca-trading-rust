@@ -21,6 +21,8 @@
     save: { strategyId: string; payload: UpdateStrategyRequest };
     run: { strategyId: string };
     inspect: { strategyId: string };
+    start: { strategyId: string };
+    stop: { strategyId: string };
   }>();
 
   let runningStrategies: Set<string> = new Set();
@@ -69,6 +71,7 @@
         await api.stopStrategy(strategyId);
         runningStrategies.delete(strategyId);
         runningStrategies = runningStrategies;
+        dispatch("stop", { strategyId });
       } catch (error) {
         console.error("Failed to stop strategy:", error);
       } finally {
@@ -83,6 +86,7 @@
         await api.startStrategy(strategyId);
         runningStrategies.add(strategyId);
         runningStrategies = runningStrategies;
+        dispatch("start", { strategyId });
       } catch (error) {
         console.error("Failed to start strategy:", error);
       } finally {

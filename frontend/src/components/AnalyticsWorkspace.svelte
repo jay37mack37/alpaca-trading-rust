@@ -1,33 +1,19 @@
 <script lang="ts">
   import { api } from "../lib/api";
-  import type { DataProvider } from "../lib/types";
+  import type { DataProvider, PatternAnalysisResponse } from "../lib/types";
 
   let symbols = "";
   let providers: DataProvider[] = ["yahoo", "alpaca"];
   let selectedProvider: DataProvider = "yahoo";
   let loading = false;
-  let results: any = null;
+  let results: PatternAnalysisResponse | null = null;
   let error = "";
 
   async function runAnalysis() {
     loading = true;
     error = "";
     try {
-      // In a real implementation, this would call a backend endpoint
-      // that triggers the Python scripts we restored.
-      // For now, we simulate the results based on the symbols provided.
-      await new Promise(r => setTimeout(r, 1500));
-      
-      const symbolList = symbols.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
-      results = {
-        timestamp: new Date().toISOString(),
-        symbols: symbolList.length > 0 ? symbolList : ["SPY", "AAPL", "MSFT"],
-        patterns: [
-          { symbol: "SPY", pattern: "Double Bottom", confidence: 0.85, direction: "bullish" },
-          { symbol: "AAPL", pattern: "Head and Shoulders", confidence: 0.72, direction: "bearish" },
-          { symbol: "MSFT", pattern: "Bull Flag", confidence: 0.65, direction: "bullish" }
-        ]
-      };
+      results = await api.runPatternAnalysis(symbols, selectedProvider, 0.3);
     } catch (err) {
       error = err instanceof Error ? err.message : "Analysis failed";
     } finally {
@@ -73,18 +59,22 @@
 
   {#if results}
     <section class="results-grid">
-      {#each results.patterns as pattern}
-        <article class="pattern-card">
-          <header>
-            <span class="symbol">{pattern.symbol}</span>
-            <span class="confidence">{(pattern.confidence * 100).toFixed(0)}% Conf.</span>
-          </header>
-          <div class="pattern-name">{pattern.pattern}</div>
-          <footer class:bullish={pattern.direction === "bullish"} class:bearish={pattern.direction === "bearish"}>
-            {pattern.direction.toUpperCase()}
-          </footer>
-        </article>
-      {/each}
+      {#if results.signals.length === 0}
+        <div class="banner">No significant patterns detected for the selected symbols.</div>
+      {:else}
+        {#each results.signals as signal}
+          <article class="pattern-card">
+            <header>
+              <span class="symbol">{signal.symbol}</span>
+              <span class="confidence">{(signal.confidence * 100).toFixed(0)}% Conf.</span>
+            </header>
+            <div class="pattern-name">{signal.pattern.replaceAll("_", " ")}</div>
+            <footer class:bullish={signal.direction === "bullish"} class:bearish={signal.direction === "bearish"}>
+              {signal.direction.toUpperCase()}
+            </footer>
+          </article>
+        {/each}
+      {/if}
     </section>
   {/if}
 </div>

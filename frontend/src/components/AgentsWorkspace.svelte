@@ -33,6 +33,8 @@
     run: { strategyId: string };
     inspect: { strategyId: string };
     sync: { strategyId: string };
+    start: { strategyId: string };
+    stop: { strategyId: string };
   }>();
 
   let drafts: Record<string, StrategyDraft> = {};
@@ -192,7 +194,7 @@
   async function toggleAgent(strategy: StrategySummary) {
     const nextEnabled = !strategy.enabled;
     const strategyId = strategy.id;
-    
+
     // Optimistic Update
     pendingStatus[strategyId] = nextEnabled;
     pendingStatus = pendingStatus;
@@ -200,8 +202,10 @@
     try {
       if (nextEnabled) {
         await api.startStrategy(strategyId);
+        dispatch("start", { strategyId });
       } else {
         await api.stopStrategy(strategyId);
+        dispatch("stop", { strategyId });
       }
     } catch (err) {
       console.error("Failed to toggle agent:", err);

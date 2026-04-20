@@ -510,6 +510,8 @@
           on:run={runStrategy}
           on:inspect={inspectStrategy}
           on:sync={syncStrategy}
+          on:start={async () => { await loadDashboard(true); }}
+          on:stop={async () => { await loadDashboard(true); }}
         />
         <div class="workstation-feed">
           <StrategyLogTable logs={strategyLogs} />

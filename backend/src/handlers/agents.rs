@@ -106,11 +106,7 @@ pub async fn start_strategy(
 ) -> AppResult<ApiResponse<StrategySummary>> {
     let updated = {
         let db = state.db.lock().await;
-        db.update_strategy(&strategy_id, crate::models::UpdateStrategyRequest {
-            enabled: Some(true),
-            ..Default::default()
-        })
-            .map_err(|_| AppError::NotFound(format!("strategy {strategy_id}")))?
+        db.set_strategy_enabled(&strategy_id, true)?
     };
     spawn_agent_loop(state, strategy_id).await;
     Ok(ApiResponse { success: true, data: Some(updated), error: None })
@@ -123,11 +119,7 @@ pub async fn stop_strategy(
     abort_agent_loop(&state, &strategy_id).await;
     let updated = {
         let db = state.db.lock().await;
-        db.update_strategy(&strategy_id, crate::models::UpdateStrategyRequest {
-            enabled: Some(false),
-            ..Default::default()
-        })
-            .map_err(|_| AppError::NotFound(format!("strategy {strategy_id}")))?
+        db.set_strategy_enabled(&strategy_id, false)?
     };
     Ok(ApiResponse { success: true, data: Some(updated), error: None })
 }
@@ -147,10 +139,7 @@ pub async fn panic_all(
         let db = state.db.lock().await;
         if let Ok(strategies) = db.list_strategy_records() {
             for s in strategies.into_iter().filter(|s| s.enabled) {
-                let _ = db.update_strategy(&s.id, crate::models::UpdateStrategyRequest {
-                    enabled: Some(false),
-                    ..Default::default()
-                });
+                let _ = db.set_strategy_enabled(&s.id, false);
             }
         }
     }
