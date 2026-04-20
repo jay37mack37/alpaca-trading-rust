@@ -74,7 +74,9 @@ pub async fn evaluate_listing_arbitrage_v2(
                 take_profit: None,
                 trailing_stop: None,
                 split_exit: Some(true), // 50/50 Scalp/Runner
-                log_type: Some("NEW".to_string()),
+                source: Some("PARITY_SNIPER".to_string()),
+                math_edge: Some(format!("{:.1}%", edge * 100.0)),
+                ai_score: Some(format!("{:.2}", kronos.score)),
             };
         }
 
@@ -90,7 +92,9 @@ pub async fn evaluate_listing_arbitrage_v2(
                 take_profit: None,
                 trailing_stop: None,
                 split_exit: Some(true),
-                log_type: Some("DRIFT".to_string()),
+                source: Some("PARITY_SNIPER".to_string()),
+                math_edge: Some(format!("{:.1}%", edge * 100.0)),
+                ai_score: Some(format!("{:.2}", kronos.score)),
             };
         }
     }
@@ -143,7 +147,9 @@ fn default_signal() -> StrategySignal {
         trailing_stop: None,
         walk_to_mid: None,
         split_exit: None,
-        log_type: None,
+        source: None,
+        math_edge: None,
+        ai_score: None,
     }
 }
 

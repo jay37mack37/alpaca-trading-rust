@@ -2,10 +2,11 @@
   export let logs: Array<{
     time: string;
     symbol: string;
+    source: string;
     math_edge: string;
-    kronos_score: string;
+    ai_score: string;
     decision: string;
-    reasoning: string;
+    narrative: string;
   }> = [];
 
   function getDecisionTone(decision: string) {
@@ -31,11 +32,11 @@
       <thead>
         <tr>
           <th>Time</th>
-          <th>Type</th>
+          <th>Source</th>
           <th>Symbol</th>
-          <th>Math Edge %</th>
-          <th>Kronos Score</th>
-          <th>Decision / Reasoning</th>
+          <th>Math Edge</th>
+          <th>AI Score</th>
+          <th>Narrative</th>
         </tr>
       </thead>
       <tbody>
@@ -46,15 +47,15 @@
         {:else}
           {#each logs as log}
             <tr class="log-row" class:row-buy={log.decision.toLowerCase() === 'buy'} class:row-exit={log.decision.toLowerCase() === 'exit' || log.decision.toLowerCase() === 'skip'} class:row-heartbeat={log.decision.toLowerCase() === 'heartbeat' || log.decision.toLowerCase() === 'hold'}>
-              <td class="timestamp">{log.time.split(" ")[1]}</td>
-              <td class="type-cell">{(log as any).type ?? 'DRIFT'}</td>
+              <td class="timestamp">{log.time}</td>
+              <td class="type-cell" class:type-parity={log.source.includes('PARITY')} class:type-vwap={log.source.includes('VWAP')} class:type-system={log.source.includes('SYSTEM')}>{log.source}</td>
               <td class="symbol-cell"><strong>{log.symbol}</strong></td>
               <td class="edge-cell">{log.math_edge}</td>
-              <td class="kronos-cell">{log.kronos_score}</td>
+              <td class="kronos-cell">{log.ai_score}</td>
               <td class="decision-cell">
                 <div class="decision-wrap">
                   <span class="decision-text">{log.decision}:</span>
-                  <span class="reasoning-text">{log.reasoning}</span>
+                  <span class="reasoning-text">{log.narrative}</span>
                 </div>
               </td>
             </tr>
@@ -131,43 +132,68 @@
   }
 
   .log-table td {
-    padding: 10px 20px;
+    padding: 8px 20px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    font-size: 0.8rem;
+  }
+
+  .log-table tr:nth-child(even) td {
+    background: rgba(255, 255, 255, 0.01);
   }
 
   .timestamp {
     color: var(--color-text-dim);
     font-family: var(--font-mono);
+    white-space: nowrap;
+    width: 100px;
   }
 
-  .reasoning {
-    color: var(--color-text-dim);
-    font-style: italic;
+  .type-cell {
+    font-weight: 700;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    width: 120px;
+    text-transform: uppercase;
   }
+
+  .type-parity { color: #c084fc; }
+  .type-vwap { color: #22d3ee; }
+  .type-system { color: rgba(255, 255, 255, 0.5); }
+
+  .symbol-cell {
+    width: 100px;
+  }
+
+  .edge-cell, .kronos-cell {
+    font-family: var(--font-mono);
+    width: 80px;
+  }
+
+  .decision-wrap {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+  }
+
+  .decision-text {
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+  }
+
+  .reasoning-text {
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.4;
+  }
+
+  .row-buy .decision-text { color: #4ade80; }
+  .row-exit .decision-text { color: #f87171; }
+  .row-heartbeat .decision-text { color: var(--color-text-dim); }
 
   .empty-state {
     text-align: center;
     padding: 40px !important;
     color: var(--color-text-dim);
-  }
-
-  .tag {
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    background: rgba(255, 255, 255, 0.05);
-  }
-
-  .tag--positive {
-    background: rgba(34, 197, 94, 0.1);
-    color: #4ade80;
-  }
-
-  .tag--negative {
-    background: rgba(239, 68, 68, 0.1);
-    color: #f87171;
   }
 
   .btn-ghost {

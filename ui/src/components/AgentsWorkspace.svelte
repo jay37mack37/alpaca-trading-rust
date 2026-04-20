@@ -24,6 +24,7 @@
   export let selectedStrategyDetail: StrategyDetailResponse | null = null;
   export let detailLoading = false;
   export let collectorIntervalSeconds = 0;
+  export let viewMode: "active" | "remodeling" = "active";
 
   const dispatch = createEventDispatcher<{
     create: CreateStrategyRequest;
@@ -208,6 +209,8 @@
   function labelForKind(kind: StrategyKind) {
     switch (kind) {
       case "listing_arbitrage": return "Listing Arbitrage";
+      case "parity_sniper": return "Parity Sniper";
+      case "vwap_reversion": return "VWAP Reversion";
       case "vwap_reflexive": return "VWAP Mean Reversion";
       case "rsi_mean_reversion": return "Gamma Scalping";
       case "sma_trend": return "0DTE Delta-Neutral";
@@ -303,9 +306,10 @@
 <section class="workspace">
   <div class="workspace-header">
     <p>AutoStonks Command Center</p>
-    <h2>Multi-Strategy Workstation</h2>
+    <h2>{viewMode === "active" ? "Multi-Strategy Workstation" : "Remodeling & Setup"}</h2>
   </div>
 
+  {#if viewMode === "remodeling"}
   <section class="create-agent">
     <div class="create-copy">
       <p>New Agent</p>
@@ -416,6 +420,7 @@
     </div>
     <button type="button" class="create-button" on:click={createAgent}>Create and run</button>
   </section>
+  {/if}
 
   <section class="agents-layout">
     <div class="workstation-grid">

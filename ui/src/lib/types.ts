@@ -4,7 +4,7 @@ export type ExecutionMode = "local_paper" | "alpaca_paper" | "alpaca_live";
 export type AssetClassTarget = "equity" | "options";
 export type OptionEntryStyle = "long_call" | "long_put";
 export type OptionStructurePreset = "single" | "bull_call_spread" | "bear_put_spread";
-export type StrategyKind = "vwap_reflexive" | "rsi_mean_reversion" | "sma_trend" | "listing_arbitrage" | "put_call_parity";
+export type StrategyKind = "vwap_reflexive" | "rsi_mean_reversion" | "sma_trend" | "listing_arbitrage" | "put_call_parity" | "parity_sniper" | "vwap_reversion";
 export type TradeSide = "buy" | "sell";
 
 export interface Quote {
@@ -348,18 +348,26 @@ export interface LogRealtimeEvent {
   type: "log";
   strategy_id: string;
   symbol: string;
+  source: string;
   math_edge: string;
-  kronos_score: string;
+  ai_score: string;
   decision: string;
-  reasoning: string;
+  narrative: string;
   time: string;
+}
+
+export interface HeartbeatRealtimeEvent {
+  type: "heartbeat";
+  timestamp: number;
+  buying_power: number;
 }
 
 export type RealtimeEvent =
   | MarketRealtimeEvent
   | BrokerSyncRealtimeEvent
   | StatusRealtimeEvent
-  | LogRealtimeEvent;
+  | LogRealtimeEvent
+  | HeartbeatRealtimeEvent;
 
 export interface Watchlist {
   id: string;

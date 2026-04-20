@@ -2,6 +2,8 @@ mod auth;
 mod error;
 mod models;
 mod strategies;
+use strategies::parity_sniper::{evaluate_parity_sniper};
+use strategies::vwap_reversion::{evaluate_vwap_reversion, VwapTracker};
 mod services;
 mod handlers;
 mod config;
@@ -145,6 +147,9 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(collector_loop(state.clone()));
     }
 
+    tokio::spawn(heartbeat_loop(state.clone()));
+    tokio::spawn(simulation_loop(state.clone()));
+
     let app = Router::new()
         .route("/api/health", get(handlers::misc::health))
         .route("/api/dashboard", get(handlers::market::dashboard))
@@ -198,6 +203,87 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(address).await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+async fn heartbeat_loop(state: AppState) {
+    let interval = Duration::from_secs(1);
+    loop {
+        tokio::time::sleep(interval).await;
+        
+        let mut buying_power = 0.0;
+        
+        // Fetch buying power from the primary Alpaca credential if possible
+        let cred_res = {
+            let db = state.db.lock().await;
+            db.list_credentials().ok().and_then(|creds| {
+                creds.into_iter().find(|c| c.provider == DataProvider::Alpaca && c.use_for_trading)
+            })
+        };
+
+        if let Some(cred) = cred_res {
+            let stored_res = {
+                let db = state.db.lock().await;
+                db.get_credential(&cred.id).ok()
+            };
+
+            if let Some(stored) = stored_res {
+                if let Ok(sync) = fetch_alpaca_broker_sync(&state.http, &stored.key_id, &stored.secret_key, stored.environment).await {
+                    if let Some(account) = sync.account {
+                        buying_power = account.buying_power.unwrap_or(0.0);
+                    }
+                }
+            }
+        }
+
+        let event = RealtimeEvent::Heartbeat {
+            timestamp: Utc::now().timestamp_millis() as u64,
+            buying_power,
+        };
+        
+        state.streams.broadcast(event).await;
+    }
+}
+
+async fn simulation_loop(state: AppState) {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let mut spy_price = 510.0;
+    let mut vwap_tracker = VwapTracker::new();
+    let interval = Duration::from_secs(5);
+
+    loop {
+        tokio::time::sleep(interval).await;
+        
+        // Simulate SPY price movement
+        let drift = rng.gen_range(-0.5..0.55); // Slight upward bias
+        spy_price += drift;
+        let volume = rng.gen_range(1000.0..5000.0);
+        vwap_tracker.update(spy_price, volume);
+
+        // 1. Evaluate Parity Sniper (Simulated Options)
+        let strike = 510.0;
+        let call_price = rng.gen_range(2.0..3.0);
+        let put_price = call_price + (strike - spy_price) + rng.gen_range(-1.0..1.0); // Arbitrage opportunity simulator
+        
+        evaluate_parity_sniper(
+            &state,
+            "parity_sniper_sim",
+            "SPY 510C",
+            spy_price,
+            call_price,
+            put_price,
+            strike
+        );
+
+        // 2. Evaluate VWAP Reversion
+        evaluate_vwap_reversion(
+            &state,
+            "vwap_reversion_sim",
+            "SPY",
+            spy_price,
+            &vwap_tracker
+        );
+    }
 }
 
 async fn collector_loop(state: AppState) {
@@ -357,9 +443,9 @@ pub async fn run_strategy_once(
             state,
             strategy_id,
             &symbol,
-            signal.log_type.as_deref().unwrap_or("HEARTBEAT"),
-            &format!("Price: ${:.2}", quote.quote.price),
-            "N/A", // Score could be added later
+            signal.source.as_deref().unwrap_or("SYSTEM"),
+            signal.math_edge.as_deref().unwrap_or(&format!("Price: ${:.2}", quote.quote.price)),
+            signal.ai_score.as_deref().unwrap_or("N/A"),
             signal.action.as_str(),
             &signal.reason,
         );
@@ -522,21 +608,21 @@ pub fn broadcast_strategy_log(
     state: &AppState,
     strategy_id: &str,
     symbol: &str,
-    log_type: &str,
+    source: &str,
     math_edge: &str,
-    kronos_score: &str,
+    ai_score: &str,
     decision: &str,
-    reasoning: &str,
+    narrative: &str,
 ) {
     let _ = state.streams.send_event(RealtimeEvent::Log {
         strategy_id: strategy_id.to_string(),
         symbol: symbol.to_string(),
-        log_type: log_type.to_string(),
+        source: source.to_string(),
         math_edge: math_edge.to_string(),
-        kronos_score: kronos_score.to_string(),
+        ai_score: ai_score.to_string(),
         decision: decision.to_string(),
-        reasoning: reasoning.to_string(),
-        time: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        narrative: narrative.to_string(),
+        time: Utc::now().format("%H:%M:%S%.3f").to_string(),
     });
 }
 

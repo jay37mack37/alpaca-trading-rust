@@ -124,6 +124,8 @@ pub enum StrategyKind {
     SmaTrend,
     ListingArbitrage,
     PutCallParity,
+    ParitySniper,
+    VwapReversion,
 }
 
 impl StrategyKind {
@@ -505,12 +507,16 @@ pub enum RealtimeEvent {
     Log {
         strategy_id: String,
         symbol: String,
-        log_type: String, // NEW/DRIFT/HEARTBEAT
+        source: String, // PARITY_SNIPER, VWAP_REVERSION, SYSTEM
         math_edge: String,
-        kronos_score: String,
+        ai_score: String,
         decision: String,
-        reasoning: String,
+        narrative: String,
         time: String,
+    },
+    Heartbeat {
+        timestamp: u64,
+        buying_power: f64,
     },
 }
 
@@ -521,6 +527,7 @@ impl RealtimeEvent {
             Self::BrokerSync { .. } => "broker_sync",
             Self::Status { .. } => "status",
             Self::Log { .. } => "log",
+            Self::Heartbeat { .. } => "heartbeat",
         }
     }
 }
@@ -599,7 +606,9 @@ pub struct StrategySignal {
     pub trailing_stop: Option<f64>,
     pub walk_to_mid: Option<bool>,
     pub split_exit: Option<bool>, // for 50/50 scalp/runner
-    pub log_type: Option<String>, // NEW/DRIFT/HEARTBEAT
+    pub source: Option<String>,
+    pub math_edge: Option<String>,
+    pub ai_score: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
