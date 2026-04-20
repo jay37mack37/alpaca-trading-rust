@@ -6,9 +6,11 @@ use crate::models::{
     StrategySummary, CreateStrategyRequest, UpdateStrategyRequest,
     StrategyDetailResponse, TradeRecord, ExecutionMode,
 };
-use crate::error::{AppResult, AppError, ApiResponse};
+use crate::error::{AppResult, ApiResponse};
 use crate::AppState;
 use crate::agents::{spawn_agent_loop, abort_agent_loop, run_strategy_once};
+use crate::services::broker::resolve_alpaca_credential;
+use crate::services::providers::cancel_all_alpaca_orders;
 use crate::services::db::Database;
 
 pub async fn list_strategies(
@@ -142,6 +144,10 @@ pub async fn panic_all(
                 let _ = db.set_strategy_enabled(&s.id, false);
             }
         }
+    }
+    // cancel all open orders on Alpaca
+    if let Ok(Some(credential)) = resolve_alpaca_credential(&state, None, true).await {
+        let _ = cancel_all_alpaca_orders(&state.http, &credential).await;
     }
     ApiResponse { success: true, data: Some(()), error: None }
 }
