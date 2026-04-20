@@ -34,7 +34,7 @@ echo.
 echo [1/2] Starting backend (port 8080)...
 set AUTO_STONKS_HOST=127.0.0.1
 set AUTO_STONKS_PORT=8080
-set AUTO_STONKS_ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
+set AUTO_STONKS_ALLOWED_ORIGINS=http://127.0.0.1:3000,http://localhost:3000
 
 start "AutoStonks Backend" powershell -NoExit -Command "cd backend; cargo run 2>&1 | Tee-Object -FilePath ..\data\backend.log"
 
