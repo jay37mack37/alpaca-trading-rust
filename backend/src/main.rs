@@ -154,6 +154,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/watchlist/:symbol", delete(handlers::watchlist::remove_watchlist_symbol))
         .route("/api/collect", post(handlers::misc::collect_now))
         .route("/api/robinhood/ingest", post(handlers::misc::ingest_robinhood_data))
+        .route("/api/analytics/patterns", get(handlers::analytics::run_pattern_analysis))
         .layer(middleware::from_fn_with_state(
             api_token.clone(),
             require_token,

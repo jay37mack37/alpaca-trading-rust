@@ -4,6 +4,7 @@ import type {
   CreateCredentialRequest,
   CreateStrategyRequest,
   DashboardResponse,
+  PatternAnalysisResponse,
   StrategyDetailResponse,
   StrategySummary,
   TradeRecord,
@@ -118,5 +119,12 @@ export const api = {
     return request<void>("/api/panic", {
       method: "POST",
     });
+  },
+  runPatternAnalysis(symbols: string, provider?: string, minConfidence?: number) {
+    const params = new URLSearchParams();
+    if (symbols) params.set("symbols", symbols);
+    if (provider) params.set("provider", provider);
+    if (minConfidence != null) params.set("min_confidence", String(minConfidence));
+    return request<PatternAnalysisResponse>(`/api/analytics/patterns?${params.toString()}`);
   },
 };

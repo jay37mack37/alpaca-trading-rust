@@ -768,6 +768,20 @@ impl Database {
         })
     }
 
+    pub fn set_strategy_enabled(&self, strategy_id: &str, enabled: bool) -> AppResult<StrategySummary> {
+        let changes = self.conn.execute(
+            "UPDATE strategies SET enabled = ? WHERE id = ?",
+            rusqlite::params![enabled as i64, strategy_id],
+        )?;
+        if changes == 0 {
+            return Err(crate::error::AppError::NotFound(format!("strategy {strategy_id}")));
+        }
+        self.list_strategies()?
+            .into_iter()
+            .find(|s| s.id == strategy_id)
+            .ok_or_else(|| crate::error::AppError::NotFound(format!("strategy {strategy_id}")))
+    }
+
     pub fn update_strategy(
         &self,
         strategy_id: &str,

@@ -376,3 +376,17 @@ export interface UpdateWatchlistRequest {
   name?: string;
   symbols?: string[];
 }
+
+export interface PatternSignal {
+  symbol: string;
+  pattern: string;
+  direction: string;
+  confidence: number;
+  details: Record<string, unknown>;
+}
+
+export interface PatternAnalysisResponse {
+  timestamp: string;
+  symbols: string[];
+  signals: PatternSignal[];
+}

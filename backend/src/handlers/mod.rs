@@ -4,3 +4,4 @@ pub mod watchlist;
 pub mod credentials;
 pub mod misc;
 pub mod stream;
+pub mod analytics;
