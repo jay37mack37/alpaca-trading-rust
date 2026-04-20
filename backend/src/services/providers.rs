@@ -760,6 +760,32 @@ async fn alpaca_quote(
     })
 }
 
+pub async fn cancel_all_alpaca_orders(
+    client: &Client,
+    credential: &StoredCredential,
+) -> AppResult<()> {
+    let response = client
+        .delete(format!(
+            "{}{}",
+            credential.environment.base_trading_url(),
+            "/v2/orders"
+        ))
+        .header("APCA-API-KEY-ID", credential.key_id.as_str())
+        .header("APCA-API-SECRET-KEY", credential.secret_key.as_str())
+        .query(&[("status", "open")])
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::External(format!(
+            "Alpaca cancel-all orders failed: {body}"
+        )));
+    }
+
+    Ok(())
+}
+
 async fn alpaca_get(
     client: &Client,
     credential: &StoredCredential,

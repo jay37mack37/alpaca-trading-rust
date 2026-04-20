@@ -303,14 +303,12 @@
   }
 
   async function globalPanic() {
-    if (confirm("⚠️ GLOBAL PANIC: This will stop all running strategies. Are you sure?")) {
-      try {
-        await api.panic();
-        status = "Global panic executed. All strategies stopped.";
-        error = "";
-      } catch (err) {
-        error = err instanceof Error ? err.message : "Failed to execute global panic";
-      }
+    try {
+      await api.panic();
+      status = "Global panic executed. All strategies stopped and orders cancelled.";
+      error = "";
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Failed to execute global panic";
     }
   }
 
