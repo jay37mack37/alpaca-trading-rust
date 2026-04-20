@@ -9,6 +9,7 @@
   import StrategyLogTable from "./components/StrategyLogTable.svelte";
   import AnalyticsWorkspace from "./components/AnalyticsWorkspace.svelte";
   import { api, apiTokenConfigured } from "./lib/api";
+  import { prettyMoney, prettyPct, quantityDigits, structureLabel, contractLabel, legLabel } from "./lib/format";
   import type {
     CreateCredentialRequest,
     CreateStrategyRequest,
@@ -44,49 +45,6 @@
     decision: string;
     reasoning: string;
   }> = [];
-
-  function prettyMoney(value: number | null | undefined) {
-    return value == null ? "—" : `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-  }
-
-  function prettyPct(value: number | null | undefined) {
-    return value == null ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
-  }
-
-  function quantityDigits(assetType: string) {
-    return assetType === "equity" ? 3 : 0;
-  }
-
-  function structureLabel(value: TradeRecord["option_structure_preset"]) {
-    return (value ?? "single").replaceAll("_", " ");
-  }
-
-  function contractLabel(trade: TradeRecord) {
-    if (trade.asset_type === "option_spread") {
-      return [trade.underlying_symbol, structureLabel(trade.option_structure_preset)].join(" · ");
-    }
-    if (trade.asset_type !== "option") {
-      return trade.instrument_symbol;
-    }
-    return [
-      trade.instrument_symbol,
-      trade.option_type?.replace("_", " "),
-      trade.strike != null ? `$${trade.strike}` : null,
-      trade.expiration ? new Date(trade.expiration).toLocaleDateString() : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  }
-
-  function legLabel(leg: TradeRecord["legs"][number]) {
-    return [
-      leg.option_type?.replace("_", " "),
-      leg.strike != null ? `$${leg.strike}` : null,
-      leg.expiration ? new Date(leg.expiration).toLocaleDateString() : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  }
 
   function computeIntradayVwapGap() {
     if (!dashboard) return null;

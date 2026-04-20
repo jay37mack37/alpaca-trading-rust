@@ -14,17 +14,18 @@ The **AutoStonks Algo Suite** is a high-performance, multi-strategy algorithmic 
 
 ```text
 .
-├── src/                # Backend (Rust/Axum)
-│   ├── handlers/       # REST API endpoint handlers
-│   ├── services/       # Core business logic (DB, Streaming, Providers)
-│   ├── models/         # Shared data structures and schemas
-│   ├── strategies/     # Strategy evaluation logic
-│   └── config/         # Environment and application configuration
-├── ui/                 # Frontend (Svelte/Vite/TypeScript)
-│   ├── src/
-│   │   ├── components/ # Reusable UI components
-│   │   ├── lib/        # API client and shared utilities
-│   │   └── App.svelte  # Main dashboard entry point
+├── backend/            # Backend (Rust/Axum)
+│   └── src/
+│       ├── handlers/   # REST API endpoint handlers
+│       ├── services/   # Core business logic (DB, Streaming, Providers)
+│       ├── models/     # Shared data structures and schemas
+│       ├── strategies/ # Strategy evaluation logic
+│       └── config/     # Environment and application configuration
+├── frontend/           # Frontend (Svelte/Vite/TypeScript)
+│   └── src/
+│       ├── components/ # Reusable UI components
+│       ├── lib/        # API client and shared utilities
+│       └── App.svelte  # Main dashboard entry point
 └── data/               # Persistent storage (SQLite)
 ```
 
@@ -42,17 +43,17 @@ The **AutoStonks Algo Suite** is a high-performance, multi-strategy algorithmic 
 2. Configure your `AUTO_STONKS_MASTER_KEY` and other environment variables.
 3. Run the backend:
    ```bash
-   cargo run --release
+   cd backend && cargo run --release
    ```
 
 ### Frontend Setup
 
-1. Navigate to the `ui/` directory.
+1. Navigate to the `frontend/` directory.
 2. Install dependencies:
    ```bash
    npm install
    ```
-3. Set your `VITE_API_TOKEN` (printed by the backend on first start) in `ui/.env`.
+3. Set your `VITE_API_TOKEN` (printed by the backend on first start) in `frontend/.env`.
 4. Run in development mode:
    ```bash
    npm run dev

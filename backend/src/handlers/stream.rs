@@ -4,7 +4,8 @@ use axum::{
 };
 use crate::models::{RealtimeStreamQuery, DataProvider, normalize_symbol};
 use crate::error::{AppResult, AppError};
-use crate::{AppState, resolve_alpaca_credential, stream_matches};
+use crate::AppState;
+use crate::services::broker::{resolve_alpaca_credential, stream_matches};
 use crate::services::db::Database;
 use std::convert::Infallible;
 use std::time::Duration;

@@ -16,6 +16,8 @@
   import InteractiveTicker from "./InteractiveTicker.svelte";
   import AgentCardTicker from "./AgentCardTicker.svelte";
   import { api } from "../lib/api";
+  import { prettyMoney, quantityDigits, structureLabel, contractLabel, legLabel, parseSymbols } from "../lib/format";
+  import { type StrategyDraft, runIntervalToDraft, draftToRunIntervalMs } from "../lib/drafts";
   import type { DashboardResponse } from "../lib/types";
 
   export let strategies: StrategySummary[] = [];
@@ -33,32 +35,7 @@
     sync: { strategyId: string };
   }>();
 
-  type Draft = {
-    name: string;
-    enabled: boolean;
-    execution_mode: ExecutionMode;
-    asset_class_target: AssetClassTarget;
-    option_entry_style: OptionEntryStyle;
-    option_structure_preset: OptionStructurePreset;
-    option_spread_width: string;
-    option_target_delta: string;
-    option_dte_min: string;
-    option_dte_max: string;
-    option_max_spread_pct: string;
-    option_limit_buffer_pct: string;
-    starting_cash: string;
-    tracked_symbols: string;
-    credential_id: string;
-    live_confirmation: string;
-    reset_portfolio: boolean;
-    max_position_size: string;
-    max_daily_loss: string;
-    blacklisted_symbols: string;
-    run_interval: string;
-    run_interval_unit: "seconds" | "milliseconds";
-  };
-
-  let drafts: Record<string, Draft> = {};
+  let drafts: Record<string, StrategyDraft> = {};
   let flipped: Record<string, boolean> = {};
 
   let createName = "";
@@ -82,8 +59,9 @@
 
 
   $: {
-    const next: Record<string, Draft> = {};
+    const next: Record<string, StrategyDraft> = {};
     for (const strategy of strategies) {
+      const interval = runIntervalToDraft(strategy.run_interval_ms);
       next[strategy.id] = drafts[strategy.id] ?? {
         name: strategy.name,
         enabled: strategy.enabled,
@@ -105,18 +83,11 @@
         max_position_size: strategy.risk_parameters?.max_position_size != null ? String(strategy.risk_parameters.max_position_size) : "5000",
         max_daily_loss: strategy.risk_parameters?.max_daily_loss != null ? String(strategy.risk_parameters.max_daily_loss) : "500",
         blacklisted_symbols: strategy.risk_parameters?.blacklisted_symbols?.join(", ") || "",
-        run_interval: String(strategy.run_interval_ms % 1000 === 0 && strategy.run_interval_ms !== 0 ? strategy.run_interval_ms / 1000 : strategy.run_interval_ms),
-        run_interval_unit: strategy.run_interval_ms % 1000 === 0 && strategy.run_interval_ms !== 0 ? "seconds" : "milliseconds",
+        run_interval: interval.value,
+        run_interval_unit: interval.unit,
       };
     }
     drafts = next;
-  }
-
-  function parseSymbols(value: string) {
-    return value
-      .split(",")
-      .map((item) => item.trim().toUpperCase())
-      .filter(Boolean);
   }
 
   function createAgent() {
@@ -137,7 +108,7 @@
       tracked_symbols: parseSymbols(createSymbols),
       credential_id: createCredentialId || null,
       enabled: true,
-      run_interval_ms: createRunIntervalUnit === "seconds" ? Number(createRunInterval) * 1000 : Number(createRunInterval),
+      run_interval_ms: draftToRunIntervalMs(createRunInterval, createRunIntervalUnit),
     });
     createName = "";
     createSymbols = "AAPL, SPY";
@@ -187,7 +158,7 @@
         reset_portfolio: draft.reset_portfolio,
         live_confirmation: draft.live_confirmation,
         risk_parameters,
-        run_interval_ms: draft.run_interval_unit === "seconds" ? Number(draft.run_interval) * 1000 : Number(draft.run_interval),
+        run_interval_ms: draftToRunIntervalMs(draft.run_interval, draft.run_interval_unit),
       },
     });
     flipped[strategyId] = false;
@@ -214,57 +185,6 @@
       case "put_call_parity": return "Put-Call Parity";
       default: return (kind as string).replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
     }
-  }
-
-  function money(value: number | null | undefined) {
-    return value == null ? "—" : `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-  }
-
-  function quantityDigits(assetType: string) {
-    return assetType === "equity" ? 3 : 0;
-  }
-
-  function legLabel(leg: {
-    instrument_symbol: string;
-    option_type?: string | null;
-    strike?: number | null;
-    expiration?: string | null;
-  }) {
-    const bits = [
-      leg.option_type?.replace("_", " "),
-      leg.strike != null ? `$${leg.strike}` : null,
-      leg.expiration ? new Date(leg.expiration).toLocaleDateString() : null,
-    ].filter(Boolean);
-    return bits.length > 0 ? bits.join(" · ") : leg.instrument_symbol;
-  }
-
-  function contractLabel(tradeOrPosition: {
-    asset_type: string;
-    instrument_symbol: string;
-    option_structure_preset?: OptionStructurePreset | null;
-    option_type?: string | null;
-    expiration?: string | null;
-    strike?: number | null;
-    underlying_symbol?: string | null;
-  }) {
-    if (tradeOrPosition.asset_type === "option_spread") {
-      return [
-        tradeOrPosition.underlying_symbol ?? tradeOrPosition.instrument_symbol,
-        structureLabel(tradeOrPosition.option_structure_preset),
-      ].join(" · ");
-    }
-    if (tradeOrPosition.asset_type !== "option") return tradeOrPosition.instrument_symbol;
-    const bits = [
-      tradeOrPosition.instrument_symbol,
-      tradeOrPosition.option_type?.replace("_", " "),
-      tradeOrPosition.strike != null ? `$${tradeOrPosition.strike}` : null,
-      tradeOrPosition.expiration ? new Date(tradeOrPosition.expiration).toLocaleDateString() : null,
-    ].filter(Boolean);
-    return bits.join(" · ");
-  }
-
-  function structureLabel(value: OptionStructurePreset | null | undefined) {
-    return (value ?? "single").replaceAll("_", " ");
   }
 
   let pendingStatus: Record<string, boolean> = {};
@@ -507,8 +427,8 @@
                     <strong>{contractLabel(position)}</strong>
                     <span>{position.asset_type}</span>
                   </header>
-                  <p>{position.quantity.toFixed(quantityDigits(position.asset_type))} @ ${position.average_price.toFixed(2)} · value {money(position.market_value)}</p>
-                  <small>UPL {money(position.unrealized_pnl)}{position.stale_quote ? " · stale quote" : ""}</small>
+                  <p>{position.quantity.toFixed(quantityDigits(position.asset_type))} @ ${position.average_price.toFixed(2)} · value {prettyMoney(position.market_value)}</p>
+                  <small>UPL {prettyMoney(position.unrealized_pnl)}{position.stale_quote ? " · stale quote" : ""}</small>
                   {#if position.legs.length > 0}
                     <small>{position.legs.map((leg) => `${leg.position_side} ${legLabel(leg)}`).join(" | ")}</small>
                   {/if}

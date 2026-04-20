@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 use reqwest::Client;
 use serde_json::{json, Value};
 use tokio::time::sleep;
@@ -935,44 +935,7 @@ fn parse_alpaca_contracts(
         .collect()
 }
 
-struct ParsedOptionContractSymbol {
-    underlying_symbol: String,
-    option_type: String,
-    expiration: String,
-    strike: f64,
-}
-
-fn parse_option_contract_symbol(contract_symbol: &str) -> Option<ParsedOptionContractSymbol> {
-    if contract_symbol.len() < 16 {
-        return None;
-    }
-
-    let root_end = contract_symbol.len().checked_sub(15)?;
-    let underlying_symbol = contract_symbol.get(..root_end)?.to_uppercase();
-    let expiration_part = contract_symbol.get(root_end..root_end + 6)?;
-    let option_flag = contract_symbol.get(root_end + 6..root_end + 7)?;
-    let strike_part = contract_symbol.get(root_end + 7..)?;
-
-    let expiration = NaiveDate::parse_from_str(expiration_part, "%y%m%d")
-        .ok()?
-        .and_hms_opt(0, 0, 0)?
-        .and_utc()
-        .to_rfc3339();
-    let option_type = match option_flag {
-        "C" => "call",
-        "P" => "put",
-        _ => return None,
-    }
-    .to_string();
-    let strike = strike_part.parse::<u64>().ok()? as f64 / 1000.0;
-
-    Some(ParsedOptionContractSymbol {
-        underlying_symbol,
-        option_type,
-        expiration,
-        strike,
-    })
-}
+use crate::options::parse_option_contract_symbol;
 
 fn last_numeric(values: &[Value]) -> Option<f64> {
     values.iter().rev().find_map(Value::as_f64)
@@ -996,7 +959,8 @@ fn numberish(value: &Value) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_option_contract_symbol, AlpacaOrderLeg, AlpacaOrderRequest, AlpacaOrderType};
+    use super::{AlpacaOrderLeg, AlpacaOrderRequest, AlpacaOrderType};
+    use crate::options::parse_option_contract_symbol;
     use crate::models::TradeSide;
 
     #[test]

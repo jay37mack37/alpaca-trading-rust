@@ -22,13 +22,18 @@ pub fn black_scholes(spot: f64, strike: f64, time: f64, rate: f64, volatility: f
     }
 }
 
+/// Convenience wrapper for call options only
+pub fn black_scholes_call(s: f64, k: f64, t: f64, v: f64, r: f64) -> f64 {
+    black_scholes(s, k, t, r, v, true)
+}
+
 /// Cumulative normal distribution function
-fn norm_cdf(x: f64) -> f64 {
+pub fn norm_cdf(x: f64) -> f64 {
     0.5 * (1.0 + erf(x / std::f64::consts::SQRT_2))
 }
 
 /// Error function approximation
-fn erf(x: f64) -> f64 {
+pub fn erf(x: f64) -> f64 {
     let a1 = 0.254829592;
     let a2 = -0.284496736;
     let a3 = 1.421413741;

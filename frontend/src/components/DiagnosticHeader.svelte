@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { prettyMoneyStrict } from "../lib/format";
+
   export let alpacaStatus: "idle" | "connecting" | "live" | "reconnecting" = "idle";
   export let kronosStatus: "active" | "standby" | "off" = "active";
   export let kronosLatency: number = 0;
@@ -8,10 +10,6 @@
     if (status === "live" || status === "active") return "#4ade80";
     if (status === "connecting" || status === "reconnecting" || status === "standby") return "#fbbf24";
     return "#f87171";
-  }
-
-  function prettyMoney(value: number) {
-    return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
 </script>
 
@@ -37,7 +35,7 @@
 
   <div class="stat-item">
     <span class="label">Buying Power</span>
-    <span class="value money">{prettyMoney(buyingPower)}</span>
+    <span class="value money">{prettyMoneyStrict(buyingPower)}</span>
   </div>
 </div>
 

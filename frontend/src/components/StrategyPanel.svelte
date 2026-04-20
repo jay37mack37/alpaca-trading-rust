@@ -1,6 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
   import { api } from "../lib/api";
+  import { structureLabel, parseSymbols } from "../lib/format";
+  import { type StrategyDraft, runIntervalToDraft, draftToRunIntervalMs } from "../lib/drafts";
   import type {
     AssetClassTarget,
     CredentialSummary,
@@ -24,33 +26,14 @@
   let runningStrategies: Set<string> = new Set();
   let loadingStrategies: Set<string> = new Set();
 
-  type Draft = {
-    enabled: boolean;
-    execution_mode: ExecutionMode;
-    asset_class_target: AssetClassTarget;
-    option_entry_style: OptionEntryStyle;
-    option_structure_preset: OptionStructurePreset;
-    option_spread_width: string;
-    option_target_delta: string;
-    option_dte_min: string;
-    option_dte_max: string;
-    option_max_spread_pct: string;
-    option_limit_buffer_pct: string;
-    starting_cash: string;
-    tracked_symbols: string;
-    credential_id: string;
-    live_confirmation: string;
-    reset_portfolio: boolean;
-    run_interval: string;
-    run_interval_unit: "seconds" | "milliseconds";
-  };
-
-  let drafts: Record<string, Draft> = {};
+  let drafts: Record<string, StrategyDraft> = {};
 
   $: {
-    const next: Record<string, Draft> = {};
+    const next: Record<string, StrategyDraft> = {};
     for (const strategy of strategies) {
+      const interval = runIntervalToDraft(strategy.run_interval_ms);
       next[strategy.id] = drafts[strategy.id] ?? {
+        name: strategy.name,
         enabled: strategy.enabled,
         execution_mode: strategy.execution_mode,
         asset_class_target: strategy.asset_class_target,
@@ -67,30 +50,14 @@
         credential_id: strategy.credential_id ?? "",
         live_confirmation: "",
         reset_portfolio: false,
-        run_interval:
-          String(
-            strategy.run_interval_ms % 1000 === 0 && strategy.run_interval_ms !== 0
-              ? strategy.run_interval_ms / 1000
-              : strategy.run_interval_ms,
-          ),
-        run_interval_unit:
-          strategy.run_interval_ms % 1000 === 0 && strategy.run_interval_ms !== 0
-            ? "seconds"
-            : "milliseconds",
+        max_position_size: strategy.risk_parameters?.max_position_size != null ? String(strategy.risk_parameters.max_position_size) : "5000",
+        max_daily_loss: strategy.risk_parameters?.max_daily_loss != null ? String(strategy.risk_parameters.max_daily_loss) : "500",
+        blacklisted_symbols: strategy.risk_parameters?.blacklisted_symbols?.join(", ") || "",
+        run_interval: interval.value,
+        run_interval_unit: interval.unit,
       };
     }
     drafts = next;
-  }
-
-  function parseSymbols(value: string) {
-    return value
-      .split(",")
-      .map((item) => item.trim().toUpperCase())
-      .filter(Boolean);
-  }
-
-  function structureLabel(value: OptionStructurePreset) {
-    return value.replaceAll("_", " ");
   }
 
   async function toggleStrategy(strategyId: string) {
@@ -147,10 +114,7 @@
         clear_credential: !draft.credential_id,
         reset_portfolio: draft.reset_portfolio,
         live_confirmation: draft.live_confirmation,
-        run_interval_ms:
-          draft.run_interval_unit === "seconds"
-            ? Number(draft.run_interval) * 1000
-            : Number(draft.run_interval),
+        run_interval_ms: draftToRunIntervalMs(draft.run_interval, draft.run_interval_unit),
       },
     });
     draft.reset_portfolio = false;

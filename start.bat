@@ -36,7 +36,7 @@ set AUTO_STONKS_HOST=127.0.0.1
 set AUTO_STONKS_PORT=8080
 set AUTO_STONKS_ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
 
-start "AutoStonks Backend" powershell -NoExit -Command "cargo run 2>&1 | Tee-Object -FilePath data\backend.log"
+start "AutoStonks Backend" powershell -NoExit -Command "cd backend; cargo run 2>&1 | Tee-Object -FilePath ..\data\backend.log"
 
 echo Waiting for backend to initialize...
 set "retries=0"
@@ -61,18 +61,18 @@ exit /b 1
 :backend_ready
 echo Backend is ready!
 
-if exist "ui\.env" goto frontend_env_ok
-copy "ui\.env.example" "ui\.env" >nul
+if exist "frontend\.env" goto frontend_env_ok
+copy "frontend\.env.example" "frontend\.env" >nul
 :frontend_env_ok
 
 echo [2/2] Starting frontend (port 5173)...
-if exist "ui\node_modules" goto npm_ok
+if exist "frontend\node_modules" goto npm_ok
 echo [!] node_modules missing. Running npm install...
-start "AutoStonks Frontend Install" cmd /c "cd ui && npm install"
+start "AutoStonks Frontend Install" cmd /c "cd frontend && npm install"
 pause
 :npm_ok
 
-start "AutoStonks Frontend" cmd /c "cd ui && npm run dev"
+start "AutoStonks Frontend" cmd /c "cd frontend && npm run dev"
 
 echo.
 echo =============================================

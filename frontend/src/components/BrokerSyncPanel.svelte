@@ -1,15 +1,12 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
+  import { prettyMoney } from "../lib/format";
   import type { StrategyDetailResponse } from "../lib/types";
 
   export let detail: StrategyDetailResponse | null = null;
   export let loading = false;
 
   const dispatch = createEventDispatcher<{ sync: { strategyId: string } }>();
-
-  function money(value: number | null | undefined) {
-    return value == null ? "—" : `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-  }
 </script>
 
 <section class="panel">
@@ -41,11 +38,11 @@
       </article>
       <article>
         <span>Equity</span>
-        <strong>{money(detail.broker_sync.account?.equity)}</strong>
+        <strong>{prettyMoney(detail.broker_sync.account?.equity)}</strong>
       </article>
       <article>
         <span>Buying power</span>
-        <strong>{money(detail.broker_sync.account?.buying_power)}</strong>
+        <strong>{prettyMoney(detail.broker_sync.account?.buying_power)}</strong>
       </article>
       <article>
         <span>Status</span>
@@ -74,8 +71,8 @@
               <tr>
                 <td>{position.symbol}</td>
                 <td>{position.quantity.toFixed(3)}</td>
-                <td>{money(position.market_value)}</td>
-                <td>{money(position.unrealized_pl)}</td>
+                <td>{prettyMoney(position.market_value)}</td>
+                <td>{prettyMoney(position.unrealized_pl)}</td>
               </tr>
             {/each}
           </tbody>

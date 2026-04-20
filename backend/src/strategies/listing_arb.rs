@@ -1,11 +1,12 @@
+use crate::math::black_scholes_call;
 use crate::models::{
     Candle, OptionContractSnapshot, PositionRecord, Quote, SignalAction, StrategyRecord,
     StrategySignal,
 };
+use crate::options::parse_expiration_from_occ;
 use crate::strategies::hold;
 use chrono::{Local, NaiveDate};
 use serde::{Deserialize, Serialize};
-// use tracing::{info, warn};
 
 const KRONOS_URL: &str = "http://localhost:8000";
 const SPY_SYMBOL: &str = "SPY";
@@ -20,7 +21,7 @@ pub struct KronosSentiment {
 /// 
 /// Phase 1: Selective Sniper & Drift Hunter
 pub async fn evaluate_listing_arbitrage_v2(
-    strategy: &StrategyRecord,
+    _strategy: &StrategyRecord,
     option: &OptionContractSnapshot,
     underlying_quote: &Quote,
     position: Option<&PositionRecord>,
@@ -156,60 +157,6 @@ async fn get_kronos_sentiment(symbol: &str) -> Option<KronosSentiment> {
     })
 }
 
-/// Black-Scholes formula for Call
-fn black_scholes_call(s: f64, k: f64, t: f64, v: f64, r: f64) -> f64 {
-    if t <= 0.0 { return (s - k).max(0.0); }
-    let d1 = ((s / k).ln() + (r + 0.5 * v * v) * t) / (v * t.sqrt());
-    let d2 = d1 - v * t.sqrt();
-    s * norm_cdf(d1) - k * (-r * t).exp() * norm_cdf(d2)
-}
-
-fn norm_cdf(x: f64) -> f64 {
-    0.5 * (1.0 + erf(x / std::f64::consts::SQRT_2))
-}
-
-fn erf(x: f64) -> f64 {
-    let a1 = 0.254829592; let a2 = -0.284496736; let a3 = 1.421413741;
-    let a4 = -1.453152027; let a5 = 1.061405429; let p = 0.3275911;
-    let sign = if x < 0.0 { -1.0 } else { 1.0 };
-    let x = x.abs();
-    let t = 1.0 / (1.0 + p * x);
-    let y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * (-x * x).exp();
-    sign * y
-}
-
-/// Parse OCC option symbol to extract expiration date
-/// Format: [Underlying][YY][MM][DD][C/P][Strike]
-/// Example: AAPL250419C00150000 -> Some("2025-04-19")
-fn parse_expiration_from_occ(symbol: &str) -> Option<String> {
-    // OCC format: [Root][YY][MM][DD][C/P][Strike]
-    // The tail (YYMMDDTXXXXXXXX) is always 15 characters.
-    if symbol.len() < 15 {
-        return None;
-    }
-
-    let option_type_pos = symbol.len() - 9;
-    let option_type = symbol.as_bytes()[option_type_pos] as char;
-    if option_type != 'C' && option_type != 'P' {
-        return None;
-    }
-
-    let exp_start = option_type_pos - 6;
-    let exp_str = &symbol[exp_start..option_type_pos];
-
-    let yy: u32 = exp_str[0..2].parse().ok()?;
-    let mm: u32 = exp_str[2..4].parse().ok()?;
-    let dd: u32 = exp_str[4..6].parse().ok()?;
-
-    let year = if yy <= 30 { 2000 + yy } else { 1900 + yy };
-
-    if mm < 1 || mm > 12 || dd < 1 || dd > 31 {
-        return None;
-    }
-
-    Some(format!("{:04}-{:02}-{:02}", year, mm, dd))
-}
-
 fn days_until_expiration(exp: &str) -> Option<i64> {
     let today = Local::now().date_naive();
     let exp_date = NaiveDate::parse_from_str(exp, "%Y-%m-%d").ok()?;
@@ -218,10 +165,10 @@ fn days_until_expiration(exp: &str) -> Option<i64> {
 
 // Wrapper for the engine
 pub async fn evaluate_listing_arbitrage_wrapper(
-    strategy: &StrategyRecord,
+    _strategy: &StrategyRecord,
     _candles: &[Candle],
-    quote: &Quote,
-    position: Option<&PositionRecord>,
+    _quote: &Quote,
+    _position: Option<&PositionRecord>,
 ) -> StrategySignal {
     // Top 20 active options sweep logic would normally go here, 
     // but the engine calls this per-symbol in its current loop.
