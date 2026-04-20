@@ -76,6 +76,13 @@ impl StreamHub {
                         state: "reconnecting".to_string(),
                         message: err.to_string(),
                     });
+                    RealtimeEvent::broadcast_notification(
+                        &state.streams,
+                        None,
+                        "warning",
+                        "Market Stream Error",
+                        &format!("Market stream for {symbol} ({:?}) failed: {err}. Retrying...", provider),
+                    );
                 } else {
                     break;
                 }
@@ -113,6 +120,13 @@ impl StreamHub {
                         state: "reconnecting".to_string(),
                         message: err.to_string(),
                     });
+                    RealtimeEvent::broadcast_notification(
+                        &state.streams,
+                        None,
+                        "warning",
+                        "Broker Stream Error",
+                        &format!("Broker stream for {} failed: {err}. Retrying...", credential.id),
+                    );
                 } else {
                     break;
                 }
