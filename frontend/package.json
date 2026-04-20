@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@humanspeak/svelte-virtual-list": "^0.4.6",
     "lightweight-charts": "^5.0.8",
     "svelte": "^5.0.0"
   },
