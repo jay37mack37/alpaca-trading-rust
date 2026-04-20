@@ -37,7 +37,7 @@ pub async fn sync_strategy_broker_state(
     let fetched = fetch_alpaca_broker_sync(&state.http, &credential, state.config.mock_alpaca).await?;
 
     {
-        let db = state.db.lock().await;
+        let mut db = state.db.lock().await;
         db.store_broker_sync(
             &credential.id,
             credential.environment,

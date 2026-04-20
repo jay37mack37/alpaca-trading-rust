@@ -104,7 +104,7 @@ pub async fn run_strategy_once(
                     {
                         Ok(fetched) => {
                             option_contracts = fetched.contracts;
-                            let db = state.db.lock().await;
+                            let mut db = state.db.lock().await;
                             db.store_option_snapshots(&option_contracts, &fetched.raw_json)?;
                             db.refresh_option_position_quotes(
                                 &strategy_id,
@@ -252,7 +252,7 @@ pub async fn run_strategy_once(
                             reconciled_trade.price = fill.filled_avg_price;
 
                             let trade = {
-                                let db = state.db.lock().await;
+                                let mut db = state.db.lock().await;
                                 db.store_market_snapshot(&quote.quote, &quote.raw_json)?;
                                 db.execute_local_trade(
                                     &strategy_id,
@@ -274,7 +274,7 @@ pub async fn run_strategy_once(
                 }
 
                 let trade = {
-                    let db = state.db.lock().await;
+                    let mut db = state.db.lock().await;
                     db.store_market_snapshot(&quote.quote, &quote.raw_json)?;
                     if let Some(prepared_trade) = prepared_trade.as_ref() {
                         db.execute_local_trade(
