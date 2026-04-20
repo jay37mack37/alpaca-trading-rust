@@ -93,5 +93,12 @@ pub fn stream_matches(
         RealtimeEvent::Log { strategy_id: event_strategy_id, .. } => {
             strategy_ids.contains(event_strategy_id)
         }
+        RealtimeEvent::Notification { strategy_id: event_strategy_id, .. } => {
+            if let Some(sid) = event_strategy_id {
+                strategy_ids.contains(sid)
+            } else {
+                true
+            }
+        }
     }
 }

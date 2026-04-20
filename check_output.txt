@@ -1,0 +1,96 @@
+    Checking autostonks-backend v0.1.0 (/app/backend)
+warning: unused imports: `AssetClassTarget`, `DataProvider`, `ExecutionMode`, `OptionEntryStyle`, and `OptionStructurePreset`
+ --> src/strategies/mod.rs:4:5
+  |
+4 |     AssetClassTarget, Candle, DataProvider, ExecutionMode, OptionEntryStyle, OptionStructurePreset,
+  |     ^^^^^^^^^^^^^^^^          ^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `source` and `timestamp` are never read
+  --> src/handlers/misc.rs:28:9
+   |
+27 | pub struct RobinhoodIngestPayload {
+   |            ---------------------- fields in this struct
+28 |     pub source: Option<String>,
+   |         ^^^^^^
+...
+31 |     pub timestamp: Option<u64>,
+   |         ^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `black_scholes` is never used
+ --> src/math.rs:2:8
+  |
+2 | pub fn black_scholes(spot: f64, strike: f64, time: f64, rate: f64, volati...
+  |        ^^^^^^^^^^^^^
+
+warning: function `black_scholes_call` is never used
+  --> src/math.rs:26:8
+   |
+26 | pub fn black_scholes_call(s: f64, k: f64, t: f64, v: f64, r: f64) -> f64 {
+   |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `norm_cdf` is never used
+  --> src/math.rs:31:8
+   |
+31 | pub fn norm_cdf(x: f64) -> f64 {
+   |        ^^^^^^^^
+
+warning: function `erf` is never used
+  --> src/math.rs:36:8
+   |
+36 | pub fn erf(x: f64) -> f64 {
+   |        ^^^
+
+warning: function `parse_expiration_from_occ` is never used
+  --> src/options.rs:43:8
+   |
+43 | pub fn parse_expiration_from_occ(symbol: &str) -> Option<String> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `KRONOS_URL` is never used
+  --> src/strategies/listing_arb.rs:12:7
+   |
+12 | const KRONOS_URL: &str = "http://localhost:8000";
+   |       ^^^^^^^^^^
+
+warning: constant `SPY_SYMBOL` is never used
+  --> src/strategies/listing_arb.rs:13:7
+   |
+13 | const SPY_SYMBOL: &str = "SPY";
+   |       ^^^^^^^^^^
+
+warning: struct `KronosSentiment` is never constructed
+  --> src/strategies/listing_arb.rs:16:12
+   |
+16 | pub struct KronosSentiment {
+   |            ^^^^^^^^^^^^^^^
+
+warning: function `evaluate_listing_arbitrage_v2` is never used
+  --> src/strategies/listing_arb.rs:24:14
+   |
+24 | pub async fn evaluate_listing_arbitrage_v2(
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `default_signal` is never used
+   --> src/strategies/listing_arb.rs:137:4
+    |
+137 | fn default_signal() -> StrategySignal {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `get_kronos_sentiment` is never used
+   --> src/strategies/listing_arb.rs:152:10
+    |
+152 | async fn get_kronos_sentiment(symbol: &str) -> Option<KronosSentiment> {
+    |          ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `days_until_expiration` is never used
+   --> src/strategies/listing_arb.rs:161:4
+    |
+161 | fn days_until_expiration(exp: &str) -> Option<i64> {
+    |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `autostonks-backend` (bin "autostonks-backend") generated 14 warnings (run `cargo fix --bin "autostonks-backend" -p autostonks-backend` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.64s

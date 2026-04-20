@@ -151,6 +151,13 @@ pub async fn run_strategy_once(
                     let Some(credential) = trading_credential.as_ref() else {
                         let db = state.db.lock().await;
                         db.mark_strategy_run(&strategy_id, "Missing Alpaca trading credential")?;
+                        RealtimeEvent::broadcast_notification(
+                            &state.streams,
+                            Some(strategy_id.as_str()),
+                            "error",
+                            "Missing Trading Credential",
+                            "Alpaca trading credential is required for this execution mode.",
+                        );
                         return Ok(None);
                     };
 
@@ -162,6 +169,13 @@ pub async fn run_strategy_once(
                             &strategy_id,
                             "Live mode selected but credential is not live",
                         )?;
+                        RealtimeEvent::broadcast_notification(
+                            &state.streams,
+                            Some(strategy_id.as_str()),
+                            "error",
+                            "Invalid Credential",
+                            "Live mode selected but credential is not live.",
+                        );
                         return Ok(None);
                     }
 
@@ -221,6 +235,13 @@ pub async fn run_strategy_once(
                                         &strategy_id,
                                         &format!("Alpaca order submission failed: {err}"),
                                     )?;
+                                    RealtimeEvent::broadcast_notification(
+                                        &state.streams,
+                                        Some(strategy_id.as_str()),
+                                        "error",
+                                        "Order Submission Failed",
+                                        &format!("Alpaca order submission failed for {symbol}: {err}"),
+                                    );
                                     return Ok(None);
                                 }
                             };
@@ -243,6 +264,13 @@ pub async fn run_strategy_once(
                                         &strategy_id,
                                         &format!("Alpaca fill reconciliation failed: {err}"),
                                     )?;
+                                    RealtimeEvent::broadcast_notification(
+                                        &state.streams,
+                                        Some(strategy_id.as_str()),
+                                        "error",
+                                        "Fill Reconciliation Failed",
+                                        &format!("Alpaca fill reconciliation failed for {symbol}: {err}"),
+                                    );
                                     return Ok(None);
                                 }
                             };
@@ -338,6 +366,7 @@ pub fn broadcast_strategy_log(
     });
 }
 
+
 pub async fn spawn_agent_loop(state: AppState, strategy_id: String) {
     let mut tasks = state.agent_tasks.lock().await;
     if let Some(handle) = tasks.remove(&strategy_id) {
@@ -367,6 +396,13 @@ pub async fn spawn_agent_loop(state: AppState, strategy_id: String) {
 
             if let Err(err) = run_strategy_once(&state_clone, &strategy_id_clone, None).await {
                 tracing::error!("Agent {strategy_id_clone} failed its task run: {err}");
+                RealtimeEvent::broadcast_notification(
+                    &state_clone.streams,
+                    Some(strategy_id_clone.as_str()),
+                    "error",
+                    "Agent Task Failed",
+                    &format!("Strategy run failed: {err}"),
+                );
             }
 
             tokio::time::sleep(Duration::from_millis(interval_ms)).await;
