@@ -1,11 +1,11 @@
 # Environment variables (contains secrets!)
 .env
+frontend/.env
 
 # User config (contains API keys and credentials)
 config.json
 
 # Rust build artifacts
-/target/
 backend/target/
 frontend/node_modules/
 **/*.rs.bk
