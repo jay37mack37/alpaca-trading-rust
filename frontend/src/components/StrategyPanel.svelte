@@ -3,6 +3,7 @@
   import { api } from "../lib/api";
   import { structureLabel, parseSymbols } from "../lib/format";
   import { type StrategyDraft, runIntervalToDraft, draftToRunIntervalMs } from "../lib/drafts";
+  import { validateStrategyDraft, type StrategyErrors } from "../lib/validation";
   import type {
     AssetClassTarget,
     CredentialSummary,
@@ -29,6 +30,7 @@
   let loadingStrategies: Set<string> = new Set();
 
   let drafts: Record<string, StrategyDraft> = {};
+  let errors: Record<string, StrategyErrors> = {};
 
   $: {
     const next: Record<string, StrategyDraft> = {};
@@ -60,6 +62,14 @@
       };
     }
     drafts = next;
+  }
+
+  $: {
+    const nextErrors: Record<string, StrategyErrors> = {};
+    for (const strategyId in drafts) {
+      nextErrors[strategyId] = validateStrategyDraft(drafts[strategyId]);
+    }
+    errors = nextErrors;
   }
 
   async function toggleStrategy(strategyId: string) {
@@ -253,6 +263,9 @@
             step="500"
             bind:value={drafts[strategy.id].starting_cash}
           />
+          {#if errors[strategy.id]?.starting_cash}
+            <span class="error-text">{errors[strategy.id].starting_cash}</span>
+          {/if}
         </label>
 
         <label>
@@ -263,6 +276,9 @@
             type="text"
             bind:value={drafts[strategy.id].tracked_symbols}
           />
+          {#if errors[strategy.id]?.tracked_symbols}
+            <span class="error-text">{errors[strategy.id].tracked_symbols}</span>
+          {/if}
         </label>
 
         <label>
@@ -287,6 +303,9 @@
             step="1"
             bind:value={drafts[strategy.id].run_interval}
           />
+          {#if errors[strategy.id]?.run_interval}
+            <span class="error-text">{errors[strategy.id].run_interval}</span>
+          {/if}
         </label>
 
         <label>
@@ -344,6 +363,9 @@
                 step="0.5"
                 bind:value={drafts[strategy.id].option_spread_width}
               />
+              {#if errors[strategy.id]?.option_spread_width}
+                <span class="error-text">{errors[strategy.id].option_spread_width}</span>
+              {/if}
             </label>
           {/if}
 
@@ -358,6 +380,9 @@
               step="0.01"
               bind:value={drafts[strategy.id].option_target_delta}
             />
+            {#if errors[strategy.id]?.option_target_delta}
+              <span class="error-text">{errors[strategy.id].option_target_delta}</span>
+            {/if}
           </label>
 
           <label>
@@ -370,6 +395,9 @@
               step="1"
               bind:value={drafts[strategy.id].option_dte_min}
             />
+            {#if errors[strategy.id]?.option_dte_min}
+              <span class="error-text">{errors[strategy.id].option_dte_min}</span>
+            {/if}
           </label>
 
           <label>
@@ -382,6 +410,9 @@
               step="1"
               bind:value={drafts[strategy.id].option_dte_max}
             />
+            {#if errors[strategy.id]?.option_dte_max}
+              <span class="error-text">{errors[strategy.id].option_dte_max}</span>
+            {/if}
           </label>
 
           <label>
@@ -395,6 +426,9 @@
               step="0.01"
               bind:value={drafts[strategy.id].option_max_spread_pct}
             />
+            {#if errors[strategy.id]?.option_max_spread_pct}
+              <span class="error-text">{errors[strategy.id].option_max_spread_pct}</span>
+            {/if}
           </label>
 
           <label>
@@ -408,6 +442,9 @@
               step="0.01"
               bind:value={drafts[strategy.id].option_limit_buffer_pct}
             />
+            {#if errors[strategy.id]?.option_limit_buffer_pct}
+              <span class="error-text">{errors[strategy.id].option_limit_buffer_pct}</span>
+            {/if}
           </label>
         {/if}
 
@@ -421,6 +458,9 @@
               placeholder="TRADE REAL MONEY"
               bind:value={drafts[strategy.id].live_confirmation}
             />
+            {#if errors[strategy.id]?.live_confirmation}
+              <span class="error-text">{errors[strategy.id].live_confirmation}</span>
+            {/if}
           </label>
         {/if}
 
@@ -436,7 +476,13 @@
 
         <footer>
           <p>{strategy.last_signal ?? "No signal yet"}</p>
-          <button type="button" on:click={() => save(strategy.id)}>Save strategy</button>
+          <button
+            type="button"
+            disabled={Object.keys(errors[strategy.id] || {}).length > 0}
+            on:click={() => save(strategy.id)}
+          >
+            Save strategy
+          </button>
         </footer>
       </article>
     {/each}
@@ -614,6 +660,12 @@
 
   .danger input {
     border-color: rgba(255, 117, 117, 0.35);
+  }
+
+  .error-text {
+    color: #ff8a8a;
+    font-size: 0.75rem;
+    margin-top: 0.2rem;
   }
 
   button.running {
