@@ -7,6 +7,7 @@ use crate::models::{
     AssetClassTarget, DataProvider, ExecutionMode, RealtimeEvent, SignalAction,
 };
 use crate::services::broker::{resolve_alpaca_credential, sync_strategy_broker_state};
+use crate::services::kronos::fetch_kronos_score;
 use crate::services::providers::{
     fetch_candles, fetch_options, fetch_quote, poll_alpaca_order_until_filled,
     submit_alpaca_order,
@@ -108,11 +109,15 @@ pub async fn run_strategy_once(
             )?
         };
 
+        let kronos_result = fetch_kronos_score(&state.http, &symbol).await;
+        let kronos_score = kronos_result.as_ref().map(|s| s.confidence).ok();
+
         let signal = crate::strategies::evaluate_strategy(
             &latest_strategy,
             &candles.candles,
             &quote.quote,
             current_position.as_ref(),
+            kronos_score,
         ).await;
 
         broadcast_strategy_log(
@@ -121,7 +126,7 @@ pub async fn run_strategy_once(
             &symbol,
             signal.log_type.as_deref().unwrap_or("HEARTBEAT"),
             &format!("Price: ${:.2}", quote.quote.price),
-            "N/A",
+            &kronos_score.map(|s| format!("{:.2}", s)).unwrap_or_else(|| "N/A".to_string()),
             signal.action.as_str(),
             &signal.reason,
         );

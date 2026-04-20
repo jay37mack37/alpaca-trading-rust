@@ -9,13 +9,14 @@ pub async fn evaluate_strategy(
     candles: &[Candle],
     quote: &Quote,
     position: Option<&PositionRecord>,
+    kronos_score: Option<f64>,
 ) -> StrategySignal {
     match strategy.kind {
-        StrategyKind::VwapReflexive => evaluate_vwap_reflexive(candles, quote, position).await,
-        StrategyKind::RsiMeanReversion => evaluate_rsi_mean_reversion(candles, quote, position).await,
-        StrategyKind::SmaTrend => evaluate_sma_trend(candles, quote, position).await,
-        StrategyKind::ListingArbitrage => listing_arb::evaluate_listing_arbitrage_wrapper(strategy, candles, quote, position).await,
-        StrategyKind::PutCallParity => evaluate_put_call_parity(candles, quote, position).await,
+        StrategyKind::VwapReflexive => evaluate_vwap_reflexive(candles, quote, position, kronos_score).await,
+        StrategyKind::RsiMeanReversion => evaluate_rsi_mean_reversion(candles, quote, position, kronos_score).await,
+        StrategyKind::SmaTrend => evaluate_sma_trend(candles, quote, position, kronos_score).await,
+        StrategyKind::ListingArbitrage => listing_arb::evaluate_listing_arbitrage_wrapper(strategy, candles, quote, position, kronos_score).await,
+        StrategyKind::PutCallParity => evaluate_put_call_parity(candles, quote, position, kronos_score).await,
     }
 }
 
@@ -23,6 +24,7 @@ async fn evaluate_vwap_reflexive(
     candles: &[Candle],
     quote: &Quote,
     position: Option<&PositionRecord>,
+    _kronos_score: Option<f64>,
 ) -> StrategySignal {
     let session_vwap = quote.vwap.or_else(|| intraday_vwap(candles));
     let Some(vwap) = session_vwap else {
@@ -67,6 +69,7 @@ async fn evaluate_rsi_mean_reversion(
     candles: &[Candle],
     _quote: &Quote,
     position: Option<&PositionRecord>,
+    _kronos_score: Option<f64>,
 ) -> StrategySignal {
     let closes = closes(candles);
     let Some(rsi) = rsi(&closes, 14) else {
@@ -106,6 +109,7 @@ async fn evaluate_sma_trend(
     candles: &[Candle],
     _quote: &Quote,
     position: Option<&PositionRecord>,
+    _kronos_score: Option<f64>,
 ) -> StrategySignal {
     let closes = closes(candles);
     let Some(fast) = sma(&closes, 20) else {
@@ -299,7 +303,7 @@ mod tests {
     fn test_evaluate_vwap_reflexive_basic() {
         let candles = vec![];
         let quote = make_quote(100.5, Some(100.0));
-        let signal = tokio_test::block_on(evaluate_vwap_reflexive(&candles, &quote, None));
+        let signal = tokio_test::block_on(evaluate_vwap_reflexive(&candles, &quote, None, None));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
@@ -310,7 +314,7 @@ mod tests {
             candles.push(make_candle(100.0 - i as f64));
         }
         let quote = make_quote(100.0, None);
-        let signal = tokio_test::block_on(evaluate_rsi_mean_reversion(&candles, &quote, None));
+        let signal = tokio_test::block_on(evaluate_rsi_mean_reversion(&candles, &quote, None, None));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
@@ -321,7 +325,7 @@ mod tests {
             candles.push(make_candle(100.0 + i as f64));
         }
         let quote = make_quote(100.0, None);
-        let signal = tokio_test::block_on(evaluate_sma_trend(&candles, &quote, None));
+        let signal = tokio_test::block_on(evaluate_sma_trend(&candles, &quote, None, None));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
@@ -355,7 +359,7 @@ mod tests {
     #[test]
     fn test_evaluate_vwap_reflexive_unavailable() {
         let quote = make_quote(150.0, None);
-        let signal = tokio_test::block_on(evaluate_vwap_reflexive(&[], &quote, None));
+        let signal = tokio_test::block_on(evaluate_vwap_reflexive(&[], &quote, None, None));
         assert_eq!(signal.action, SignalAction::Hold);
         assert_eq!(signal.reason, "VWAP unavailable");
     }
@@ -364,6 +368,7 @@ async fn evaluate_put_call_parity(
     _candles: &[Candle],
     _quote: &Quote,
     _position: Option<&PositionRecord>,
+    _kronos_score: Option<f64>,
 ) -> StrategySignal {
     StrategySignal {
         action: SignalAction::Hold,
