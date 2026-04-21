@@ -1,4 +1,6 @@
 pub mod listing_arb;
+pub mod parity_sniper;
+pub mod vwap_reversion;
 
 use crate::models::{
     AssetClassTarget, Candle, DataProvider, ExecutionMode, OptionEntryStyle, OptionStructurePreset,
@@ -97,7 +99,9 @@ async fn evaluate_vwap_reflexive(
             trailing_stop: None,
             walk_to_mid: None,
             split_exit: None,
-            log_type: None,
+            source: None,
+            math_edge: None,
+            ai_score: None,
         },
         (Some(_), d) if d < -0.001 => StrategySignal {
             action: SignalAction::Sell,
@@ -109,7 +113,9 @@ async fn evaluate_vwap_reflexive(
             trailing_stop: None,
             walk_to_mid: None,
             split_exit: None,
-            log_type: None,
+            source: None,
+            math_edge: None,
+            ai_score: None,
         },
         _ => hold("Waiting for VWAP displacement"),
     }
@@ -151,7 +157,9 @@ async fn evaluate_rsi_mean_reversion(
             trailing_stop: None,
             walk_to_mid: None,
             split_exit: None,
-            log_type: None,
+            source: None,
+            math_edge: None,
+            ai_score: None,
         },
         (Some(_), value) if value > 62.0 => StrategySignal {
             action: SignalAction::Sell,
@@ -163,7 +171,9 @@ async fn evaluate_rsi_mean_reversion(
             trailing_stop: None,
             walk_to_mid: None,
             split_exit: None,
-            log_type: None,
+            source: None,
+            math_edge: None,
+            ai_score: None,
         },
         _ => hold("RSI within neutral zone"),
     }
@@ -208,7 +218,9 @@ async fn evaluate_sma_trend(
             trailing_stop: None,
             walk_to_mid: None,
             split_exit: None,
-            log_type: None,
+            source: None,
+            math_edge: None,
+            ai_score: None,
         },
         (Some(_), false) => StrategySignal {
             action: SignalAction::Sell,
@@ -220,7 +232,9 @@ async fn evaluate_sma_trend(
             trailing_stop: None,
             walk_to_mid: None,
             split_exit: None,
-            log_type: None,
+            source: None,
+            math_edge: None,
+            ai_score: None,
         },
         _ => hold("Trend regime unchanged"),
     }
@@ -237,7 +251,9 @@ pub(crate) fn hold(reason: impl Into<String>) -> StrategySignal {
         trailing_stop: None,
         walk_to_mid: None,
         split_exit: None,
-        log_type: None,
+        source: None,
+        math_edge: None,
+        ai_score: None,
     }
 }
 
@@ -502,6 +518,8 @@ async fn evaluate_put_call_parity(
         trailing_stop: None,
         walk_to_mid: None,
         split_exit: None,
-        log_type: Some("HEARTBEAT".to_string()),
+        source: Some("SYSTEM".to_string()),
+        math_edge: None,
+        ai_score: None,
     }
 }
