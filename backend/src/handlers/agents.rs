@@ -6,7 +6,7 @@ use crate::models::{
     StrategySummary, CreateStrategyRequest, UpdateStrategyRequest,
     StrategyDetailResponse, TradeRecord, ExecutionMode,
 };
-use crate::error::{AppResult, ApiResponse};
+use crate::error::{AppResult, ApiResponse, AppError};
 use crate::AppState;
 use crate::agents::{spawn_agent_loop, abort_agent_loop, run_strategy_once};
 use crate::services::broker::resolve_alpaca_credential;
@@ -29,6 +29,18 @@ pub async fn create_strategy(
     State(state): State<AppState>,
     Json(request): Json<CreateStrategyRequest>,
 ) -> AppResult<ApiResponse<StrategySummary>> {
+    // If execution mode is AlpacaLive, require confirmation phrase
+    if let Some(mode) = request.execution_mode {
+        if mode == ExecutionMode::AlpacaLive {
+            let confirmed = request.live_confirmation.as_deref().unwrap_or("");
+            if confirmed != "TRADE REAL MONEY" {
+                return Err(AppError::Validation(
+                    "Live confirmation phrase must be 'TRADE REAL MONEY'".to_string(),
+                ));
+            }
+        }
+    }
+
     let created = {
         let db = state.db.lock().await;
         let db: &Database = &*db;

@@ -17,6 +17,7 @@
   import AgentCardTicker from "./AgentCardTicker.svelte";
   import { api } from "../lib/api";
   import { prettyMoney, quantityDigits, structureLabel, contractLabel, legLabel, parseSymbols } from "../lib/format";
+  import { validateStrategyDraft, type ValidationErrors } from "../lib/validation";
   import { type StrategyDraft, runIntervalToDraft, draftToRunIntervalMs } from "../lib/drafts";
   import type { DashboardResponse } from "../lib/types";
 
@@ -26,6 +27,7 @@
   export let selectedStrategyDetail: StrategyDetailResponse | null = null;
   export let detailLoading = false;
   export let collectorIntervalSeconds = 0;
+  export let viewMode: "active" | "remodeling" = "active";
 
   const dispatch = createEventDispatcher<{
     create: CreateStrategyRequest;
@@ -38,33 +40,44 @@
   }>();
 
   let drafts: Record<string, StrategyDraft> = {};
+  let draftErrors: Record<string, ValidationErrors> = {};
   let flipped: Record<string, boolean> = {};
 
-  let createName = "";
+  let createDraft: StrategyDraft = {
+    name: "",
+    enabled: true,
+    execution_mode: "local_paper",
+    asset_class_target: "equity",
+    option_entry_style: "long_call",
+    option_structure_preset: "single",
+    option_spread_width: "5",
+    option_target_delta: "0.30",
+    option_dte_min: "21",
+    option_dte_max: "45",
+    option_max_spread_pct: "0.12",
+    option_limit_buffer_pct: "0.05",
+    starting_cash: "25000",
+    tracked_symbols: "AAPL, SPY",
+    credential_id: "",
+    live_confirmation: "",
+    reset_portfolio: false,
+    max_position_size: "5000",
+    max_daily_loss: "500",
+    blacklisted_symbols: "",
+    run_interval: "30",
+    run_interval_unit: "seconds",
+  };
   let createKind: StrategyKind = "vwap_reflexive";
-  let createSymbols = "AAPL, SPY";
-  let createStartingCash = "25000";
-  let createExecutionMode: ExecutionMode = "local_paper";
-  let createAssetClassTarget: AssetClassTarget = "equity";
-  let createOptionEntryStyle: OptionEntryStyle = "long_call";
-  let createOptionStructurePreset: OptionStructurePreset = "single";
-  let createOptionSpreadWidth = "5";
-  let createOptionTargetDelta = "0.30";
-  let createOptionDteMin = "21";
-  let createOptionDteMax = "45";
-  let createOptionMaxSpreadPct = "0.12";
-  let createOptionLimitBufferPct = "0.05";
-  let createCredentialId = "";
-  let createRunInterval = "30";
-  let createRunIntervalUnit: "seconds" | "milliseconds" = "seconds";
+  let createErrors: ValidationErrors = {};
 
-
+  $: createErrors = validateStrategyDraft(createDraft);
 
   $: {
     const next: Record<string, StrategyDraft> = {};
+    const nextErrors: Record<string, ValidationErrors> = {};
     for (const strategy of strategies) {
       const interval = runIntervalToDraft(strategy.run_interval_ms);
-      next[strategy.id] = drafts[strategy.id] ?? {
+      const draft = drafts[strategy.id] ?? {
         name: strategy.name,
         enabled: strategy.enabled,
         execution_mode: strategy.execution_mode,
@@ -88,46 +101,58 @@
         run_interval: interval.value,
         run_interval_unit: interval.unit,
       };
+      next[strategy.id] = draft;
+      nextErrors[strategy.id] = validateStrategyDraft(draft);
     }
     drafts = next;
+    draftErrors = nextErrors;
   }
 
   function createAgent() {
     dispatch("create", {
-      name: createName.trim() || `${labelForKind(createKind)} Agent`,
+      name: createDraft.name.trim() || `${labelForKind(createKind)} Agent`,
       kind: createKind,
-      execution_mode: createExecutionMode,
-      asset_class_target: createAssetClassTarget,
-      option_entry_style: createOptionEntryStyle,
-      option_structure_preset: createOptionStructurePreset,
-      option_spread_width: Number(createOptionSpreadWidth),
-      option_target_delta: Number(createOptionTargetDelta),
-      option_dte_min: Number(createOptionDteMin),
-      option_dte_max: Number(createOptionDteMax),
-      option_max_spread_pct: Number(createOptionMaxSpreadPct),
-      option_limit_buffer_pct: Number(createOptionLimitBufferPct),
-      starting_cash: Number(createStartingCash),
-      tracked_symbols: parseSymbols(createSymbols),
-      credential_id: createCredentialId || null,
+      execution_mode: createDraft.execution_mode,
+      asset_class_target: createDraft.asset_class_target,
+      option_entry_style: createDraft.option_entry_style,
+      option_structure_preset: createDraft.option_structure_preset,
+      option_spread_width: Number(createDraft.option_spread_width),
+      option_target_delta: Number(createDraft.option_target_delta),
+      option_dte_min: Number(createDraft.option_dte_min),
+      option_dte_max: Number(createDraft.option_dte_max),
+      option_max_spread_pct: Number(createDraft.option_max_spread_pct),
+      option_limit_buffer_pct: Number(createDraft.option_limit_buffer_pct),
+      starting_cash: Number(createDraft.starting_cash),
+      tracked_symbols: parseSymbols(createDraft.tracked_symbols),
+      credential_id: createDraft.credential_id || null,
       enabled: true,
-      run_interval_ms: draftToRunIntervalMs(createRunInterval, createRunIntervalUnit),
+      run_interval_ms: draftToRunIntervalMs(createDraft.run_interval, createDraft.run_interval_unit),
+      live_confirmation: createDraft.live_confirmation,
     });
-    createName = "";
-    createSymbols = "AAPL, SPY";
-    createStartingCash = "25000";
-    createExecutionMode = "local_paper";
-    createAssetClassTarget = "equity";
-    createOptionEntryStyle = "long_call";
-    createOptionStructurePreset = "single";
-    createOptionSpreadWidth = "5";
-    createOptionTargetDelta = "0.30";
-    createOptionDteMin = "21";
-    createOptionDteMax = "45";
-    createOptionMaxSpreadPct = "0.12";
-    createOptionLimitBufferPct = "0.05";
-    createCredentialId = "";
-    createRunInterval = "30";
-    createRunIntervalUnit = "seconds";
+    createDraft = {
+      name: "",
+      enabled: true,
+      execution_mode: "local_paper",
+      asset_class_target: "equity",
+      option_entry_style: "long_call",
+      option_structure_preset: "single",
+      option_spread_width: "5",
+      option_target_delta: "0.30",
+      option_dte_min: "21",
+      option_dte_max: "45",
+      option_max_spread_pct: "0.12",
+      option_limit_buffer_pct: "0.05",
+      starting_cash: "25000",
+      tracked_symbols: "AAPL, SPY",
+      credential_id: "",
+      live_confirmation: "",
+      reset_portfolio: false,
+      max_position_size: "5000",
+      max_daily_loss: "500",
+      blacklisted_symbols: "",
+      run_interval: "30",
+      run_interval_unit: "seconds",
+    };
   }
 
   function save(strategyId: string) {
@@ -181,6 +206,8 @@
   function labelForKind(kind: StrategyKind) {
     switch (kind) {
       case "listing_arbitrage": return "Listing Arbitrage";
+      case "parity_sniper": return "Parity Sniper";
+      case "vwap_reversion": return "VWAP Reversion";
       case "vwap_reflexive": return "VWAP Mean Reversion";
       case "rsi_mean_reversion": return "Gamma Scalping";
       case "sma_trend": return "0DTE Delta-Neutral";
@@ -227,9 +254,10 @@
 <section class="workspace">
   <div class="workspace-header">
     <p>AutoStonks Command Center</p>
-    <h2>Multi-Strategy Workstation</h2>
+    <h2>{viewMode === "active" ? "Multi-Strategy Workstation" : "Remodeling & Setup"}</h2>
   </div>
 
+  {#if viewMode === "remodeling"}
   <section class="create-agent">
     <div class="create-copy">
       <p>New Agent</p>
@@ -239,7 +267,8 @@
     <div class="create-grid">
       <label>
         <span>Name</span>
-        <input id="agent-create-name" name="agent_create_name" bind:value={createName} placeholder="Opening Range NVDA" />
+        <input id="agent-create-name" name="agent_create_name" class:invalid={createErrors.name} bind:value={createDraft.name} placeholder="Opening Range NVDA" />
+        {#if createErrors.name}<span class="error-msg">{createErrors.name}</span>{/if}
       </label>
       <label>
         <span>Template</span>
@@ -251,15 +280,17 @@
       </label>
       <label>
         <span>Tracked symbols</span>
-        <input id="agent-create-symbols" name="agent_create_symbols" bind:value={createSymbols} placeholder="AAPL, SPY" />
+        <input id="agent-create-symbols" name="agent_create_symbols" class:invalid={createErrors.tracked_symbols} bind:value={createDraft.tracked_symbols} placeholder="AAPL, SPY" />
+        {#if createErrors.tracked_symbols}<span class="error-msg">{createErrors.tracked_symbols}</span>{/if}
       </label>
       <label>
         <span>Starting cash</span>
-        <input id="agent-create-cash" name="agent_create_cash" type="number" min="1000" step="500" bind:value={createStartingCash} />
+        <input id="agent-create-cash" name="agent_create_cash" type="number" min="1000" step="500" class:invalid={createErrors.starting_cash} bind:value={createDraft.starting_cash} />
+        {#if createErrors.starting_cash}<span class="error-msg">{createErrors.starting_cash}</span>{/if}
       </label>
       <label>
         <span>Execution mode</span>
-        <select id="agent-create-mode" name="agent_create_mode" bind:value={createExecutionMode}>
+        <select id="agent-create-mode" name="agent_create_mode" bind:value={createDraft.execution_mode}>
           <option value="local_paper">Local paper</option>
           <option value="alpaca_paper">Alpaca paper</option>
           <option value="alpaca_live">Alpaca live</option>
@@ -267,14 +298,14 @@
       </label>
       <label>
         <span>Asset class</span>
-        <select id="agent-create-asset-class" name="agent_create_asset_class" bind:value={createAssetClassTarget}>
+        <select id="agent-create-asset-class" name="agent_create_asset_class" bind:value={createDraft.asset_class_target}>
           <option value="equity">Equity</option>
           <option value="options">Options</option>
         </select>
       </label>
       <label>
         <span>Credential</span>
-        <select id="agent-create-credential" name="agent_create_credential" bind:value={createCredentialId}>
+        <select id="agent-create-credential" name="agent_create_credential" bind:value={createDraft.credential_id}>
           <option value="">No broker credential</option>
           {#each credentials as credential}
             <option value={credential.id}>{credential.label} · {credential.environment}</option>
@@ -283,106 +314,244 @@
       </label>
       <label>
         <span>Run Interval Mode</span>
-        <select id="agent-create-interval-unit" name="agent_create_interval_unit" bind:value={createRunIntervalUnit}>
+        <select id="agent-create-interval-unit" name="agent_create_interval_unit" bind:value={createDraft.run_interval_unit}>
           <option value="seconds">Seconds</option>
           <option value="milliseconds">Milliseconds</option>
         </select>
       </label>
       <label>
         <span>Run Interval</span>
-        <input id="agent-create-interval" name="agent_create_interval" type="number" min="1" step="1" bind:value={createRunInterval} />
+        <input id="agent-create-interval" name="agent_create_interval" type="number" min="1" step="1" class:invalid={createErrors.run_interval} bind:value={createDraft.run_interval} />
+        {#if createErrors.run_interval}<span class="error-msg">{createErrors.run_interval}</span>{/if}
       </label>
-      {#if createAssetClassTarget === "options"}
+      {#if createDraft.asset_class_target === "options"}
         <label>
           <span>Options structure</span>
-          <select id="agent-create-option-structure" name="agent_create_option_structure" bind:value={createOptionStructurePreset}>
+          <select id="agent-create-option-structure" name="agent_create_option_structure" bind:value={createDraft.option_structure_preset}>
             <option value="single">Single contract</option>
             <option value="bull_call_spread">Bull call spread</option>
             <option value="bear_put_spread">Bear put spread</option>
           </select>
         </label>
-        {#if createOptionStructurePreset === "single"}
+        {#if createDraft.option_structure_preset === "single"}
           <label>
             <span>Option entry style</span>
-            <select id="agent-create-option-style" name="agent_create_option_style" bind:value={createOptionEntryStyle}>
+            <select id="agent-create-option-style" name="agent_create_option_style" bind:value={createDraft.option_entry_style}>
               <option value="long_call">Long call</option>
               <option value="long_put">Long put</option>
             </select>
           </label>
         {/if}
-        {#if createOptionStructurePreset !== "single"}
+        {#if createDraft.option_structure_preset !== "single"}
           <label>
             <span>Spread width</span>
-            <input id="agent-create-option-width" name="agent_create_option_width" type="number" min="0.5" step="0.5" bind:value={createOptionSpreadWidth} />
+            <input id="agent-create-option-width" name="agent_create_option_width" type="number" min="0.5" step="0.5" class:invalid={createErrors.option_spread_width} bind:value={createDraft.option_spread_width} />
+            {#if createErrors.option_spread_width}<span class="error-msg">{createErrors.option_spread_width}</span>{/if}
           </label>
         {/if}
         <label>
           <span>Target delta</span>
-          <input id="agent-create-option-delta" name="agent_create_option_delta" type="number" min="0" max="1" step="0.01" bind:value={createOptionTargetDelta} />
+          <input id="agent-create-option-delta" name="agent_create_option_delta" type="number" min="0" max="1" step="0.01" class:invalid={createErrors.option_target_delta} bind:value={createDraft.option_target_delta} />
+          {#if createErrors.option_target_delta}<span class="error-msg">{createErrors.option_target_delta}</span>{/if}
         </label>
         <label>
           <span>Min DTE</span>
-          <input id="agent-create-option-dte-min" name="agent_create_option_dte_min" type="number" min="1" step="1" bind:value={createOptionDteMin} />
+          <input id="agent-create-option-dte-min" name="agent_create_option_dte_min" type="number" min="1" step="1" class:invalid={createErrors.option_dte_min} bind:value={createDraft.option_dte_min} />
+          {#if createErrors.option_dte_min}<span class="error-msg">{createErrors.option_dte_min}</span>{/if}
         </label>
         <label>
           <span>Max DTE</span>
-          <input id="agent-create-option-dte-max" name="agent_create_option_dte_max" type="number" min="1" step="1" bind:value={createOptionDteMax} />
+          <input id="agent-create-option-dte-max" name="agent_create_option_dte_max" type="number" min="1" step="1" class:invalid={createErrors.option_dte_max} bind:value={createDraft.option_dte_max} />
+          {#if createErrors.option_dte_max}<span class="error-msg">{createErrors.option_dte_max}</span>{/if}
         </label>
         <label>
           <span>Max spread pct</span>
-          <input id="agent-create-option-spread" name="agent_create_option_spread" type="number" min="0" max="1" step="0.01" bind:value={createOptionMaxSpreadPct} />
+          <input id="agent-create-option-spread" name="agent_create_option_spread" type="number" min="0" max="1" step="0.01" class:invalid={createErrors.option_max_spread_pct} bind:value={createDraft.option_max_spread_pct} />
+          {#if createErrors.option_max_spread_pct}<span class="error-msg">{createErrors.option_max_spread_pct}</span>{/if}
         </label>
         <label>
           <span>Limit buffer pct</span>
-          <input id="agent-create-option-buffer" name="agent_create_option_buffer" type="number" min="0" max="1" step="0.01" bind:value={createOptionLimitBufferPct} />
+          <input id="agent-create-option-buffer" name="agent_create_option_buffer" type="number" min="0" max="1" step="0.01" class:invalid={createErrors.option_limit_buffer_pct} bind:value={createDraft.option_limit_buffer_pct} />
+          {#if createErrors.option_limit_buffer_pct}<span class="error-msg">{createErrors.option_limit_buffer_pct}</span>{/if}
+        </label>
+      {/if}
+      {#if createDraft.execution_mode === "alpaca_live"}
+        <label class="danger">
+          <span>Live confirmation phrase</span>
+          <input id="agent-create-confirmation" name="agent_create_confirmation" class:invalid={createErrors.live_confirmation} bind:value={createDraft.live_confirmation} placeholder="TRADE REAL MONEY" />
+          {#if createErrors.live_confirmation}<span class="error-msg">{createErrors.live_confirmation}</span>{/if}
         </label>
       {/if}
     </div>
-    <button type="button" class="create-button" on:click={createAgent}>Create and run</button>
+    <button type="button" class="create-button" disabled={Object.keys(createErrors).length > 0} on:click={createAgent}>Create and run</button>
   </section>
+  {/if}
 
   <section class="agents-layout">
     <div class="workstation-grid">
       {#each strategies as strategy}
         <article class="strat-card" class:active={getEffectiveEnabled(strategy)}>
-          <div class="strat-header">
-            <div class="strat-title">
-              <h3>{labelForKind(strategy.kind)}</h3>
-              <p class="strat-desc">{getDescriptionForKind(strategy.kind)}</p>
-            </div>
-            <div class="strat-status">
-              <span class="status-dot" class:live={getEffectiveEnabled(strategy)}></span>
-              <span class="status-label">{getEffectiveEnabled(strategy) ? "Live" : "Idle"}</span>
-            </div>
-          </div>
+          {#if flipped[strategy.id]}
+            <div class="config-form">
+              <label>
+                <span>Name</span>
+                <input type="text" class:invalid={draftErrors[strategy.id]?.name} bind:value={drafts[strategy.id].name} />
+                {#if draftErrors[strategy.id]?.name}<span class="error-msg">{draftErrors[strategy.id].name}</span>{/if}
+              </label>
 
-          <div class="strat-actions">
-            <button 
-              type="button" 
-              class="btn-execute" 
-              class:dim={getEffectiveEnabled(strategy)}
-              on:click={() => !getEffectiveEnabled(strategy) && toggleAgent(strategy)}
-            >
-              Execute
-            </button>
-            <button 
-              type="button" 
-              class="btn-stop" 
-              class:dim={!getEffectiveEnabled(strategy)}
-              on:click={() => getEffectiveEnabled(strategy) && toggleAgent(strategy)}
-            >
-              Stop
-            </button>
-          </div>
-          
-          <div class="strat-footer">
-            <button class="ghost-link" on:click={() => dispatch("inspect", { strategyId: strategy.id })}>
-              Activity
-            </button>
-            <button class="ghost-link" on:click={() => { flipped[strategy.id] = true; dispatch("inspect", { strategyId: strategy.id }); }}>
-              Config
-            </button>
-          </div>
+              <label>
+                <span>Execution mode</span>
+                <select bind:value={drafts[strategy.id].execution_mode}>
+                  <option value="local_paper">Local paper</option>
+                  <option value="alpaca_paper">Alpaca paper</option>
+                  <option value="alpaca_live">Alpaca live</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Asset class</span>
+                <select bind:value={drafts[strategy.id].asset_class_target}>
+                  <option value="equity">Equity</option>
+                  <option value="options">Options</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Starting cash</span>
+                <input type="number" class:invalid={draftErrors[strategy.id]?.starting_cash} bind:value={drafts[strategy.id].starting_cash} />
+                {#if draftErrors[strategy.id]?.starting_cash}<span class="error-msg">{draftErrors[strategy.id].starting_cash}</span>{/if}
+              </label>
+
+              <label>
+                <span>Tracked symbols</span>
+                <input type="text" class:invalid={draftErrors[strategy.id]?.tracked_symbols} bind:value={drafts[strategy.id].tracked_symbols} />
+                {#if draftErrors[strategy.id]?.tracked_symbols}<span class="error-msg">{draftErrors[strategy.id].tracked_symbols}</span>{/if}
+              </label>
+
+              <label>
+                <span>Run interval</span>
+                <div style="display: flex; gap: 4px;">
+                  <input type="number" style="flex: 1" class:invalid={draftErrors[strategy.id]?.run_interval} bind:value={drafts[strategy.id].run_interval} />
+                  <select bind:value={drafts[strategy.id].run_interval_unit}>
+                    <option value="seconds">s</option>
+                    <option value="milliseconds">ms</option>
+                  </select>
+                </div>
+                {#if draftErrors[strategy.id]?.run_interval}<span class="error-msg">{draftErrors[strategy.id].run_interval}</span>{/if}
+              </label>
+
+              <label>
+                <span>Credential</span>
+                <select bind:value={drafts[strategy.id].credential_id}>
+                  <option value="">No broker credential</option>
+                  {#each credentials as credential}
+                    <option value={credential.id}>{credential.label} · {credential.environment}</option>
+                  {/each}
+                </select>
+              </label>
+
+              {#if drafts[strategy.id].asset_class_target === "options"}
+                <label>
+                  <span>Options structure</span>
+                  <select bind:value={drafts[strategy.id].option_structure_preset}>
+                    <option value="single">Single contract</option>
+                    <option value="bull_call_spread">Bull call spread</option>
+                    <option value="bear_put_spread">Bear put spread</option>
+                  </select>
+                </label>
+                {#if drafts[strategy.id].option_structure_preset === "single"}
+                  <label>
+                    <span>Option style</span>
+                    <select bind:value={drafts[strategy.id].option_entry_style}>
+                      <option value="long_call">Long call</option>
+                      <option value="long_put">Long put</option>
+                    </select>
+                  </label>
+                {/if}
+                {#if drafts[strategy.id].option_structure_preset !== "single"}
+                  <label>
+                    <span>Spread width</span>
+                    <input type="number" class:invalid={draftErrors[strategy.id]?.option_spread_width} bind:value={drafts[strategy.id].option_spread_width} />
+                    {#if draftErrors[strategy.id]?.option_spread_width}<span class="error-msg">{draftErrors[strategy.id].option_spread_width}</span>{/if}
+                  </label>
+                {/if}
+                <label>
+                  <span>Target delta</span>
+                  <input type="number" step="0.01" class:invalid={draftErrors[strategy.id]?.option_target_delta} bind:value={drafts[strategy.id].option_target_delta} />
+                  {#if draftErrors[strategy.id]?.option_target_delta}<span class="error-msg">{draftErrors[strategy.id].option_target_delta}</span>{/if}
+                </label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                  <label>
+                    <span>Min DTE</span>
+                    <input type="number" class:invalid={draftErrors[strategy.id]?.option_dte_min} bind:value={drafts[strategy.id].option_dte_min} />
+                    {#if draftErrors[strategy.id]?.option_dte_min}<span class="error-msg">{draftErrors[strategy.id].option_dte_min}</span>{/if}
+                  </label>
+                  <label>
+                    <span>Max DTE</span>
+                    <input type="number" class:invalid={draftErrors[strategy.id]?.option_dte_max} bind:value={drafts[strategy.id].option_dte_max} />
+                    {#if draftErrors[strategy.id]?.option_dte_max}<span class="error-msg">{draftErrors[strategy.id].option_dte_max}</span>{/if}
+                  </label>
+                </div>
+              {/if}
+
+              {#if drafts[strategy.id].execution_mode === "alpaca_live"}
+                <label class="danger">
+                  <span>Live confirmation</span>
+                  <input type="text" class:invalid={draftErrors[strategy.id]?.live_confirmation} bind:value={drafts[strategy.id].live_confirmation} placeholder="TRADE REAL MONEY" />
+                  {#if draftErrors[strategy.id]?.live_confirmation}<span class="error-msg">{draftErrors[strategy.id].live_confirmation}</span>{/if}
+                </label>
+              {/if}
+
+              <label class="inline-checkbox">
+                <input type="checkbox" bind:checked={drafts[strategy.id].reset_portfolio} />
+                <span>Reset the strategy ledger when saving</span>
+              </label>
+
+              <div class="strat-footer" style="justify-content: flex-end;">
+                <button class="ghost-link" on:click={() => flipped[strategy.id] = false}>Cancel</button>
+                <button class="btn-save" disabled={Object.keys(draftErrors[strategy.id] || {}).length > 0} on:click={() => save(strategy.id)}>Save</button>
+              </div>
+            </div>
+          {:else}
+            <div class="strat-header">
+              <div class="strat-title">
+                <h3>{labelForKind(strategy.kind)}</h3>
+                <p class="strat-desc">{getDescriptionForKind(strategy.kind)}</p>
+              </div>
+              <div class="strat-status">
+                <span class="status-dot" class:live={getEffectiveEnabled(strategy)}></span>
+                <span class="status-label">{getEffectiveEnabled(strategy) ? "Live" : "Idle"}</span>
+              </div>
+            </div>
+
+            <div class="strat-actions">
+              <button
+                type="button"
+                class="btn-execute"
+                class:dim={getEffectiveEnabled(strategy)}
+                on:click={() => !getEffectiveEnabled(strategy) && toggleAgent(strategy)}
+              >
+                Execute
+              </button>
+              <button
+                type="button"
+                class="btn-stop"
+                class:dim={!getEffectiveEnabled(strategy)}
+                on:click={() => getEffectiveEnabled(strategy) && toggleAgent(strategy)}
+              >
+                Stop
+              </button>
+            </div>
+
+            <div class="strat-footer">
+              <button class="ghost-link" on:click={() => dispatch("inspect", { strategyId: strategy.id })}>
+                Activity
+              </button>
+              <button class="ghost-link" on:click={() => { flipped[strategy.id] = true; dispatch("inspect", { strategyId: strategy.id }); }}>
+                Config
+              </button>
+            </div>
+          {/if}
         </article>
       {/each}
     </div>
@@ -550,6 +719,62 @@
     background: linear-gradient(135deg, #f0b450, #f7dc72);
     color: #180e00;
     font-weight: 700;
+  }
+
+  .create-button:disabled,
+  .btn-save:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-save {
+    background: linear-gradient(135deg, #3a7bfd, #63d7ff);
+    color: #07101d;
+    font-weight: 700;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+  }
+
+  .config-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .config-form label {
+    display: grid;
+    gap: 4px;
+  }
+
+  .config-form input,
+  .config-form select {
+    padding: 8px;
+    font-size: 0.85rem;
+  }
+
+  .inline-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: rgba(221, 233, 255, 0.8);
+  }
+
+  .inline-checkbox input {
+    width: auto;
+    margin: 0;
+  }
+
+  input.invalid,
+  select.invalid {
+    border-color: #ff8a8a !important;
+  }
+
+  .error-msg {
+    color: #ff8a8a;
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
   }
 
   .workstation-grid {

@@ -76,6 +76,13 @@ impl StreamHub {
                         state: "reconnecting".to_string(),
                         message: err.to_string(),
                     });
+                    RealtimeEvent::broadcast_notification(
+                        &state.streams,
+                        None,
+                        "warning",
+                        "Market Stream Error",
+                        &format!("Market stream for {symbol} ({:?}) failed: {err}. Retrying...", provider),
+                    );
                 } else {
                     break;
                 }
@@ -113,6 +120,13 @@ impl StreamHub {
                         state: "reconnecting".to_string(),
                         message: err.to_string(),
                     });
+                    RealtimeEvent::broadcast_notification(
+                        &state.streams,
+                        None,
+                        "warning",
+                        "Broker Stream Error",
+                        &format!("Broker stream for {} failed: {err}. Retrying...", credential.id),
+                    );
                 } else {
                     break;
                 }
@@ -338,8 +352,7 @@ async fn alpaca_broker_loop(
                 let fetched = fetch_alpaca_broker_sync(&state.http, credential, state.config.mock_alpaca).await?;
 
                 let (strategies, strategy_ids) = {
-                    let db = state.db.lock().await;
-                    let db: &crate::services::db::Database = &*db;
+                    let mut db = state.db.lock().await;
                     db.store_broker_sync(
                         &credential.id,
                         credential.environment,

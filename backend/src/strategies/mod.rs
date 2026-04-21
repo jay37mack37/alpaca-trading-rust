@@ -1,21 +1,78 @@
 pub mod listing_arb;
+pub mod parity_sniper;
+pub mod vwap_reversion;
 
 use crate::models::{
-    Candle, PositionRecord, Quote, SignalAction, StrategyKind, StrategyRecord, StrategySignal,
+    AssetClassTarget, Candle, DataProvider, ExecutionMode, OptionEntryStyle, OptionStructurePreset,
+    PositionRecord, Quote, SignalAction, StrategyKind, StrategyRecord, StrategySignal,
 };
+use async_trait::async_trait;
+use std::collections::HashMap;
+use std::sync::OnceLock;
+
+#[async_trait]
+pub trait TradingStrategy: Send + Sync {
+    async fn evaluate(
+        &self,
+        strategy: &StrategyRecord,
+        candles: &[Candle],
+        quote: &Quote,
+        position: Option<&PositionRecord>,
+        kronos_score: Option<f64>,
+    ) -> StrategySignal;
+}
+
+static STRATEGY_REGISTRY: OnceLock<HashMap<StrategyKind, Box<dyn TradingStrategy + Send + Sync>>> =
+    OnceLock::new();
+
+fn get_strategy_registry() -> &'static HashMap<StrategyKind, Box<dyn TradingStrategy + Send + Sync>> {
+    STRATEGY_REGISTRY.get_or_init(|| {
+        let mut m: HashMap<StrategyKind, Box<dyn TradingStrategy + Send + Sync>> = HashMap::new();
+        m.insert(StrategyKind::VwapReflexive, Box::new(VwapReflexiveStrategy));
+        m.insert(
+            StrategyKind::RsiMeanReversion,
+            Box::new(RsiMeanReversionStrategy),
+        );
+        m.insert(StrategyKind::SmaTrend, Box::new(SmaTrendStrategy));
+        m.insert(
+            StrategyKind::ListingArbitrage,
+            Box::new(listing_arb::ListingArbitrageStrategy),
+        );
+        m.insert(StrategyKind::PutCallParity, Box::new(PutCallParityStrategy));
+        m
+    })
+}
 
 pub async fn evaluate_strategy(
     strategy: &StrategyRecord,
     candles: &[Candle],
     quote: &Quote,
     position: Option<&PositionRecord>,
-) -> StrategySignal {
-    match strategy.kind {
-        StrategyKind::VwapReflexive => evaluate_vwap_reflexive(candles, quote, position).await,
-        StrategyKind::RsiMeanReversion => evaluate_rsi_mean_reversion(candles, quote, position).await,
-        StrategyKind::SmaTrend => evaluate_sma_trend(candles, quote, position).await,
-        StrategyKind::ListingArbitrage => listing_arb::evaluate_listing_arbitrage_wrapper(strategy, candles, quote, position).await,
-        StrategyKind::PutCallParity => evaluate_put_call_parity(candles, quote, position).await,
+        kronos_score: Option<f64>,
+    ) -> StrategySignal {
+    let registry = get_strategy_registry();
+    if let Some(trading_strategy) = registry.get(&strategy.kind) {
+        trading_strategy
+            .evaluate(strategy, candles, quote, position, kronos_score)
+            .await
+    } else {
+        hold(format!("Strategy implementation for {:?} not found", strategy.kind))
+    }
+}
+
+pub struct VwapReflexiveStrategy;
+
+#[async_trait]
+impl TradingStrategy for VwapReflexiveStrategy {
+    async fn evaluate(
+        &self,
+        _strategy: &StrategyRecord,
+        candles: &[Candle],
+        quote: &Quote,
+        position: Option<&PositionRecord>,
+        kronos_score: Option<f64>,
+    ) -> StrategySignal {
+        evaluate_vwap_reflexive(candles, quote, position, kronos_score).await
     }
 }
 
@@ -23,7 +80,8 @@ async fn evaluate_vwap_reflexive(
     candles: &[Candle],
     quote: &Quote,
     position: Option<&PositionRecord>,
-) -> StrategySignal {
+        _kronos_score: Option<f64>,
+    ) -> StrategySignal {
     let session_vwap = quote.vwap.or_else(|| intraday_vwap(candles));
     let Some(vwap) = session_vwap else {
         return hold("VWAP unavailable");
@@ -45,7 +103,9 @@ async fn evaluate_vwap_reflexive(
             trailing_stop: None,
             walk_to_mid: None,
             split_exit: None,
-            log_type: None,
+            source: None,
+            math_edge: None,
+            ai_score: None,
         },
         (Some(_), d) if d < -0.001 => StrategySignal {
             action: SignalAction::Sell,
@@ -57,9 +117,27 @@ async fn evaluate_vwap_reflexive(
             trailing_stop: None,
             walk_to_mid: None,
             split_exit: None,
-            log_type: None,
+            source: None,
+            math_edge: None,
+            ai_score: None,
         },
         _ => hold("Waiting for VWAP displacement"),
+    }
+}
+
+pub struct RsiMeanReversionStrategy;
+
+#[async_trait]
+impl TradingStrategy for RsiMeanReversionStrategy {
+    async fn evaluate(
+        &self,
+        _strategy: &StrategyRecord,
+        candles: &[Candle],
+        quote: &Quote,
+        position: Option<&PositionRecord>,
+        kronos_score: Option<f64>,
+    ) -> StrategySignal {
+        evaluate_rsi_mean_reversion(candles, quote, position, kronos_score).await
     }
 }
 
@@ -67,7 +145,8 @@ async fn evaluate_rsi_mean_reversion(
     candles: &[Candle],
     _quote: &Quote,
     position: Option<&PositionRecord>,
-) -> StrategySignal {
+        _kronos_score: Option<f64>,
+    ) -> StrategySignal {
     let closes = closes(candles);
     let Some(rsi) = rsi(&closes, 14) else {
         return hold("RSI unavailable");
@@ -84,7 +163,9 @@ async fn evaluate_rsi_mean_reversion(
             trailing_stop: None,
             walk_to_mid: None,
             split_exit: None,
-            log_type: None,
+            source: None,
+            math_edge: None,
+            ai_score: None,
         },
         (Some(_), value) if value > 62.0 => StrategySignal {
             action: SignalAction::Sell,
@@ -96,9 +177,27 @@ async fn evaluate_rsi_mean_reversion(
             trailing_stop: None,
             walk_to_mid: None,
             split_exit: None,
-            log_type: None,
+            source: None,
+            math_edge: None,
+            ai_score: None,
         },
         _ => hold("RSI within neutral zone"),
+    }
+}
+
+pub struct SmaTrendStrategy;
+
+#[async_trait]
+impl TradingStrategy for SmaTrendStrategy {
+    async fn evaluate(
+        &self,
+        _strategy: &StrategyRecord,
+        candles: &[Candle],
+        quote: &Quote,
+        position: Option<&PositionRecord>,
+        kronos_score: Option<f64>,
+    ) -> StrategySignal {
+        evaluate_sma_trend(candles, quote, position, kronos_score).await
     }
 }
 
@@ -106,7 +205,8 @@ async fn evaluate_sma_trend(
     candles: &[Candle],
     _quote: &Quote,
     position: Option<&PositionRecord>,
-) -> StrategySignal {
+        _kronos_score: Option<f64>,
+    ) -> StrategySignal {
     let closes = closes(candles);
     let Some(fast) = sma(&closes, 20) else {
         return hold("20 period SMA unavailable");
@@ -126,7 +226,9 @@ async fn evaluate_sma_trend(
             trailing_stop: None,
             walk_to_mid: None,
             split_exit: None,
-            log_type: None,
+            source: None,
+            math_edge: None,
+            ai_score: None,
         },
         (Some(_), false) => StrategySignal {
             action: SignalAction::Sell,
@@ -138,7 +240,9 @@ async fn evaluate_sma_trend(
             trailing_stop: None,
             walk_to_mid: None,
             split_exit: None,
-            log_type: None,
+            source: None,
+            math_edge: None,
+            ai_score: None,
         },
         _ => hold("Trend regime unchanged"),
     }
@@ -155,7 +259,9 @@ pub(crate) fn hold(reason: impl Into<String>) -> StrategySignal {
         trailing_stop: None,
         walk_to_mid: None,
         split_exit: None,
-        log_type: None,
+        source: None,
+        math_edge: None,
+        ai_score: None,
     }
 }
 
@@ -219,10 +325,6 @@ fn rsi(values: &[f64], period: usize) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
-    use crate::models::{
-        AssetClassTarget, Candle, DataProvider, ExecutionMode, OptionEntryStyle,
-        OptionStructurePreset, PositionRecord, Quote, SignalAction, StrategyKind, StrategyRecord,
-    };
     use super::*;
 
     fn make_quote(price: f64, vwap: Option<f64>) -> Quote {
@@ -295,11 +397,42 @@ mod tests {
         assert_eq!(rsi(&[13.0, 12.0, 11.0, 10.0], 3), Some(0.0));
     }
 
+    fn make_test_strategy(kind: StrategyKind) -> StrategyRecord {
+        StrategyRecord {
+            id: "test".into(),
+            name: "test".into(),
+            kind,
+            enabled: true,
+            execution_mode: ExecutionMode::LocalPaper,
+            asset_class_target: AssetClassTarget::Equity,
+            option_entry_style: OptionEntryStyle::LongCall,
+            option_structure_preset: OptionStructurePreset::Single,
+            option_spread_width: 0.0,
+            option_target_delta: 0.0,
+            option_dte_min: 0,
+            option_dte_max: 0,
+            option_max_spread_pct: 0.0,
+            option_limit_buffer_pct: 0.0,
+            credential_id: None,
+            starting_cash: 0.0,
+            cash_balance: 0.0,
+            equity: 0.0,
+            tracked_symbols: vec![],
+            total_trades: 0,
+            wins: 0,
+            losses: 0,
+            last_signal: None,
+            last_run_at: None,
+            run_interval_ms: 0,
+        }
+    }
+
     #[test]
     fn test_evaluate_vwap_reflexive_basic() {
         let candles = vec![];
         let quote = make_quote(100.5, Some(100.0));
-        let signal = tokio_test::block_on(evaluate_vwap_reflexive(&candles, &quote, None));
+        let strategy = make_test_strategy(StrategyKind::VwapReflexive);
+        let signal = tokio_test::block_on(evaluate_strategy(&strategy, &candles, &quote, None, None));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
@@ -310,7 +443,8 @@ mod tests {
             candles.push(make_candle(100.0 - i as f64));
         }
         let quote = make_quote(100.0, None);
-        let signal = tokio_test::block_on(evaluate_rsi_mean_reversion(&candles, &quote, None));
+        let strategy = make_test_strategy(StrategyKind::RsiMeanReversion);
+        let signal = tokio_test::block_on(evaluate_strategy(&strategy, &candles, &quote, None, None));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
@@ -321,7 +455,8 @@ mod tests {
             candles.push(make_candle(100.0 + i as f64));
         }
         let quote = make_quote(100.0, None);
-        let signal = tokio_test::block_on(evaluate_sma_trend(&candles, &quote, None));
+        let strategy = make_test_strategy(StrategyKind::SmaTrend);
+        let signal = tokio_test::block_on(evaluate_strategy(&strategy, &candles, &quote, None, None));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
@@ -355,16 +490,34 @@ mod tests {
     #[test]
     fn test_evaluate_vwap_reflexive_unavailable() {
         let quote = make_quote(150.0, None);
-        let signal = tokio_test::block_on(evaluate_vwap_reflexive(&[], &quote, None));
+        let strategy = make_test_strategy(StrategyKind::VwapReflexive);
+        let signal = tokio_test::block_on(evaluate_strategy(&strategy, &[], &quote, None, None));
         assert_eq!(signal.action, SignalAction::Hold);
         assert_eq!(signal.reason, "VWAP unavailable");
     }
 }
+pub struct PutCallParityStrategy;
+
+#[async_trait]
+impl TradingStrategy for PutCallParityStrategy {
+    async fn evaluate(
+        &self,
+        _strategy: &StrategyRecord,
+        candles: &[Candle],
+        quote: &Quote,
+        position: Option<&PositionRecord>,
+        kronos_score: Option<f64>,
+    ) -> StrategySignal {
+        evaluate_put_call_parity(candles, quote, position, kronos_score).await
+    }
+}
+
 async fn evaluate_put_call_parity(
     _candles: &[Candle],
     _quote: &Quote,
     _position: Option<&PositionRecord>,
-) -> StrategySignal {
+        _kronos_score: Option<f64>,
+    ) -> StrategySignal {
     StrategySignal {
         action: SignalAction::Hold,
         allocation_fraction: 0.0,
@@ -375,6 +528,8 @@ async fn evaluate_put_call_parity(
         trailing_stop: None,
         walk_to_mid: None,
         split_exit: None,
-        log_type: Some("HEARTBEAT".to_string()),
+        source: Some("SYSTEM".to_string()),
+        math_edge: None,
+        ai_score: None,
     }
 }

@@ -618,7 +618,11 @@ impl Database {
     }
 
     pub fn list_strategy_records(&self) -> AppResult<Vec<StrategyRecord>> {
-        let mut stmt = self.conn.prepare(
+        Self::list_strategy_records_internal(&self.conn)
+    }
+
+    fn list_strategy_records_internal(conn: &Connection) -> AppResult<Vec<StrategyRecord>> {
+        let mut stmt = conn.prepare(
             "SELECT id, name, kind, enabled, execution_mode, asset_class_target,
                     option_entry_style, option_structure_preset, option_spread_width,
                     option_target_delta, option_dte_min, option_dte_max,
@@ -953,37 +957,44 @@ impl Database {
         strategy_id: &str,
         instrument_symbol: &str,
     ) -> AppResult<Option<PositionRecord>> {
-        self.conn
-            .query_row(
-                "SELECT underlying_symbol, instrument_symbol, asset_type, quantity, average_price,
-                        market_price, multiplier, option_structure_preset, option_type, expiration,
-                        strike, stale_quote, legs_json
-                 FROM strategy_positions WHERE strategy_id = ?1 AND instrument_symbol = ?2",
-                params![strategy_id, instrument_symbol],
-                |row| {
-                    Ok(PositionRecord {
-                        underlying_symbol: row.get(0)?,
-                        instrument_symbol: row.get(1)?,
-                        asset_type: row.get(2)?,
-                        quantity: row.get(3)?,
-                        average_price: row.get(4)?,
-                        market_price: row.get(5)?,
-                        multiplier: row.get(6)?,
-                        option_structure_preset: row
-                            .get::<_, Option<String>>(7)?
-                            .as_deref()
-                            .map(option_structure_preset_from_str)
-                            .transpose()?,
-                        option_type: row.get(8)?,
-                        expiration: row.get(9)?,
-                        strike: row.get(10)?,
-                        stale_quote: row.get::<_, i64>(11)? != 0,
-                        legs: deserialize_position_legs(&row.get::<_, String>(12)?)?,
-                    })
-                },
-            )
-            .optional()
-            .map_err(AppError::from)
+        Self::get_position_record_internal(&self.conn, strategy_id, instrument_symbol)
+    }
+
+    fn get_position_record_internal(
+        conn: &Connection,
+        strategy_id: &str,
+        instrument_symbol: &str,
+    ) -> AppResult<Option<PositionRecord>> {
+        conn.query_row(
+            "SELECT underlying_symbol, instrument_symbol, asset_type, quantity, average_price,
+                    market_price, multiplier, option_structure_preset, option_type, expiration,
+                    strike, stale_quote, legs_json
+             FROM strategy_positions WHERE strategy_id = ?1 AND instrument_symbol = ?2",
+            params![strategy_id, instrument_symbol],
+            |row| {
+                Ok(PositionRecord {
+                    underlying_symbol: row.get(0)?,
+                    instrument_symbol: row.get(1)?,
+                    asset_type: row.get(2)?,
+                    quantity: row.get(3)?,
+                    average_price: row.get(4)?,
+                    market_price: row.get(5)?,
+                    multiplier: row.get(6)?,
+                    option_structure_preset: row
+                        .get::<_, Option<String>>(7)?
+                        .as_deref()
+                        .map(option_structure_preset_from_str)
+                        .transpose()?,
+                    option_type: row.get(8)?,
+                    expiration: row.get(9)?,
+                    strike: row.get(10)?,
+                    stale_quote: row.get::<_, i64>(11)? != 0,
+                    legs: deserialize_position_legs(&row.get::<_, String>(12)?)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(AppError::from)
     }
 
     pub fn get_position_for_underlying(
@@ -1089,17 +1100,17 @@ impl Database {
     }
 
     pub fn store_option_snapshots(
-        &self,
+        &mut self,
         contracts: &[OptionContractSnapshot],
         raw_json: &Value,
     ) -> AppResult<()> {
         let captured_at = now();
         let raw_json_str = serde_json::to_string(raw_json)?;
 
-        self.conn.execute("BEGIN TRANSACTION", ())?;
+        let tx = self.conn.transaction()?;
 
         for contract in contracts {
-            let res = self.conn.execute(
+            tx.execute(
                 "INSERT INTO option_snapshots (
                     id, underlying_symbol, provider, contract_symbol, option_type, expiration, strike,
                     bid, ask, last, implied_volatility, open_interest, volume, in_the_money,
@@ -1128,18 +1139,14 @@ impl Database {
                     captured_at,
                     raw_json_str,
                 ],
-            );
-            if let Err(e) = res {
-                let _ = self.conn.execute("ROLLBACK", ());
-                return Err(e.into());
-            }
+            )?;
         }
-        self.conn.execute("COMMIT", ())?;
+        tx.commit()?;
         Ok(())
     }
 
     pub fn store_broker_sync(
-        &self,
+        &mut self,
         credential_id: &str,
         environment: CredentialEnvironment,
         account: &BrokerAccountSummary,
@@ -1149,7 +1156,9 @@ impl Database {
         raw_positions: &Value,
         raw_orders: &Value,
     ) -> AppResult<()> {
-        self.conn.execute(
+        let tx = self.conn.transaction()?;
+
+        tx.execute(
             "INSERT INTO broker_accounts (
                 credential_id, environment, account_id, account_number, status, currency,
                 buying_power, cash, equity, portfolio_value, last_equity, long_market_value,
@@ -1198,18 +1207,18 @@ impl Database {
             ],
         )?;
 
-        self.conn.execute(
+        tx.execute(
             "DELETE FROM broker_positions WHERE credential_id = ?1",
             params![credential_id],
         )?;
-        self.conn.execute(
+        tx.execute(
             "DELETE FROM broker_orders WHERE credential_id = ?1",
             params![credential_id],
         )?;
 
         let positions_json = serde_json::to_string(raw_positions)?;
         for position in positions {
-            self.conn.execute(
+            tx.execute(
                 "INSERT INTO broker_positions (
                     credential_id, symbol, asset_class, side, quantity, avg_entry_price, market_value,
                     current_price, unrealized_pl, unrealized_plpc, synced_at, raw_json
@@ -1233,7 +1242,7 @@ impl Database {
 
         let orders_json = serde_json::to_string(raw_orders)?;
         for order in orders {
-            self.conn.execute(
+            tx.execute(
                 "INSERT INTO broker_orders (
                     credential_id, order_id, client_order_id, symbol, side, order_type, order_class,
                     status, quantity, filled_qty, filled_avg_price, time_in_force, submitted_at,
@@ -1260,6 +1269,7 @@ impl Database {
             )?;
         }
 
+        tx.commit()?;
         Ok(())
     }
 
@@ -1496,14 +1506,18 @@ impl Database {
     }
 
     pub fn mark_symbol_price(&self, symbol: &str, price: f64) -> AppResult<()> {
-        self.conn.execute(
+        Self::mark_symbol_price_internal(&self.conn, symbol, price)
+    }
+
+    fn mark_symbol_price_internal(conn: &Connection, symbol: &str, price: f64) -> AppResult<()> {
+        conn.execute(
             "UPDATE strategy_positions
              SET market_price = ?2, stale_quote = 0
              WHERE instrument_symbol = ?1 AND asset_type = 'equity'",
             params![symbol, price],
         )?;
 
-        self.conn.execute(
+        conn.execute(
             "UPDATE strategies
              SET equity = cash_balance + (
                  SELECT COALESCE(SUM(quantity * market_price * multiplier), 0.0)
@@ -1608,12 +1622,16 @@ impl Database {
             )?;
         }
 
-        self.recompute_strategy_equity(strategy_id)?;
+        Self::recompute_strategy_equity_internal(&self.conn, strategy_id)?;
         Ok(())
     }
 
     pub fn mark_strategy_run(&self, strategy_id: &str, signal: &str) -> AppResult<()> {
-        self.conn.execute(
+        Self::mark_strategy_run_internal(&self.conn, strategy_id, signal)
+    }
+
+    fn mark_strategy_run_internal(conn: &Connection, strategy_id: &str, signal: &str) -> AppResult<()> {
+        conn.execute(
             "UPDATE strategies SET last_signal = ?2, last_run_at = ?3 WHERE id = ?1",
             params![strategy_id, signal, now()],
         )?;
@@ -1621,7 +1639,7 @@ impl Database {
     }
 
     pub fn execute_local_trade(
-        &self,
+        &mut self,
         strategy_id: &str,
         provider: DataProvider,
         execution_mode: ExecutionMode,
@@ -1629,21 +1647,22 @@ impl Database {
         trade: &LocalTradeInput,
     ) -> AppResult<Option<TradeRecord>> {
         if matches!(signal.action, SignalAction::Hold) {
-            self.mark_strategy_run(strategy_id, &signal.reason)?;
+            Self::mark_strategy_run_internal(&self.conn, strategy_id, &signal.reason)?;
             return Ok(None);
         }
 
-        let strategy = self
-            .list_strategy_records()?
+        let tx = self.conn.transaction()?;
+
+        let strategy = Self::list_strategy_records_internal(&tx)?
             .into_iter()
             .find(|strategy| strategy.id == strategy_id)
             .ok_or_else(|| AppError::NotFound(format!("strategy {strategy_id}")))?;
 
         if trade.asset_type == "equity" {
-            self.mark_symbol_price(&trade.instrument_symbol, trade.price)?;
+            Self::mark_symbol_price_internal(&tx, &trade.instrument_symbol, trade.price)?;
         }
 
-        let existing = self.get_position_record(strategy_id, &trade.instrument_symbol)?;
+        let existing = Self::get_position_record_internal(&tx, strategy_id, &trade.instrument_symbol)?;
         let trade_id = Uuid::new_v4().to_string();
         let executed_at = now();
         let mut cash_balance = strategy.cash_balance;
@@ -1658,16 +1677,19 @@ impl Database {
         match signal.action {
             SignalAction::Buy => {
                 if quantity <= 0.0 {
-                    self.mark_strategy_run(
+                    Self::mark_strategy_run_internal(
+                        &tx,
                         strategy_id,
                         "Buy signal skipped: insufficient buying power",
                     )?;
+                    tx.commit()?;
                     return Ok(None);
                 }
 
                 let position_cost = quantity * price * multiplier;
                 if position_cost > cash_balance {
-                    self.mark_strategy_run(strategy_id, "Buy signal skipped: insufficient cash")?;
+                    Self::mark_strategy_run_internal(&tx, strategy_id, "Buy signal skipped: insufficient cash")?;
+                    tx.commit()?;
                     return Ok(None);
                 }
 
@@ -1710,16 +1732,18 @@ impl Database {
                     }
                 };
 
-                self.upsert_position(strategy_id, &updated_position)?;
+                Self::upsert_position_internal(&tx, strategy_id, &updated_position)?;
             }
             SignalAction::Sell => {
                 let Some(current) = existing else {
-                    self.mark_strategy_run(strategy_id, "Sell signal skipped: no open position")?;
+                    Self::mark_strategy_run_internal(&tx, strategy_id, "Sell signal skipped: no open position")?;
+                    tx.commit()?;
                     return Ok(None);
                 };
 
                 if quantity <= 0.0 {
-                    self.mark_strategy_run(strategy_id, "Sell signal skipped: zero quantity")?;
+                    Self::mark_strategy_run_internal(&tx, strategy_id, "Sell signal skipped: zero quantity")?;
+                    tx.commit()?;
                     return Ok(None);
                 }
 
@@ -1735,9 +1759,10 @@ impl Database {
 
                 let remaining = round_position_quantity(current.quantity - quantity, &trade.asset_type);
                 if remaining <= 0.0 {
-                    self.delete_position(strategy_id, &trade.instrument_symbol)?;
+                    Self::delete_position_internal(&tx, strategy_id, &trade.instrument_symbol)?;
                 } else {
-                    self.upsert_position(
+                    Self::upsert_position_internal(
+                        &tx,
                         strategy_id,
                         &PositionRecord {
                             underlying_symbol: current.underlying_symbol,
@@ -1760,7 +1785,7 @@ impl Database {
             SignalAction::Hold => unreachable!(),
         }
 
-        self.conn.execute(
+        tx.execute(
             "UPDATE strategies
              SET cash_balance = ?2,
                  total_trades = total_trades + 1,
@@ -1779,7 +1804,7 @@ impl Database {
             ],
         )?;
 
-        self.conn.execute(
+        tx.execute(
             "INSERT INTO trade_log (
                 id, strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type, side,
                 quantity, price, multiplier, option_structure_preset, option_type, expiration, strike,
@@ -1809,7 +1834,9 @@ impl Database {
             ],
         )?;
 
-        self.recompute_strategy_equity(strategy_id)?;
+        Self::recompute_strategy_equity_internal(&tx, strategy_id)?;
+
+        tx.commit()?;
 
         Ok(Some(TradeRecord {
             id: trade_id,
@@ -1841,7 +1868,7 @@ impl Database {
     /// the local ledger reflects what actually happened on the exchange.
     #[allow(clippy::too_many_arguments)]
     pub fn record_broker_fill(
-        &self,
+        &mut self,
         strategy_id: &str,
         symbol: &str,
         side: TradeSide,
@@ -1853,19 +1880,20 @@ impl Database {
     ) -> AppResult<Option<TradeRecord>> {
         if fill_quantity <= 0.0 {
             // Broker reported a zero-qty fill — nothing to record.
-            self.mark_strategy_run(strategy_id, reason)?;
+            Self::mark_strategy_run_internal(&self.conn, strategy_id, reason)?;
             return Ok(None);
         }
 
-        self.mark_symbol_price(symbol, fill_price)?;
+        let tx = self.conn.transaction()?;
 
-        let strategy = self
-            .list_strategy_records()?
+        Self::mark_symbol_price_internal(&tx, symbol, fill_price)?;
+
+        let strategy = Self::list_strategy_records_internal(&tx)?
             .into_iter()
             .find(|candidate| candidate.id == strategy_id)
             .ok_or_else(|| AppError::NotFound(format!("strategy {strategy_id}")))?;
 
-        let existing = self.get_position_record(strategy_id, symbol)?;
+        let existing = Self::get_position_record_internal(&tx, strategy_id, symbol)?;
         let trade_id = Uuid::new_v4().to_string();
         let executed_at = now();
         let mut cash_balance = strategy.cash_balance;
@@ -1913,14 +1941,16 @@ impl Database {
                         legs: Vec::new(),
                     }
                 };
-                self.upsert_position(strategy_id, &updated)?;
+                Self::upsert_position_internal(&tx, strategy_id, &updated)?;
             }
             TradeSide::Sell => {
                 let Some(current) = existing else {
-                    self.mark_strategy_run(
+                    Self::mark_strategy_run_internal(
+                        &tx,
                         strategy_id,
                         "Sell fill received with no open local position",
                     )?;
+                    tx.commit()?;
                     return Ok(None);
                 };
                 let proceeds = fill_quantity * fill_price;
@@ -1935,9 +1965,10 @@ impl Database {
 
                 let remaining = round_quantity(current.quantity - fill_quantity);
                 if remaining <= 0.0 {
-                    self.delete_position(strategy_id, &current.instrument_symbol)?;
+                    Self::delete_position_internal(&tx, strategy_id, &current.instrument_symbol)?;
                 } else {
-                    self.upsert_position(
+                    Self::upsert_position_internal(
+                        &tx,
                         strategy_id,
                         &PositionRecord {
                             underlying_symbol: current.underlying_symbol,
@@ -1959,7 +1990,7 @@ impl Database {
             }
         }
 
-        self.conn.execute(
+        tx.execute(
             "UPDATE strategies
              SET cash_balance = ?2,
                  total_trades = total_trades + 1,
@@ -1971,7 +2002,7 @@ impl Database {
             params![strategy_id, cash_balance, wins, losses, reason, executed_at],
         )?;
 
-        self.conn.execute(
+        tx.execute(
             "INSERT INTO trade_log (
                 id, strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type,
                 side, quantity, price, multiplier, option_structure_preset, option_type,
@@ -2002,7 +2033,9 @@ impl Database {
             ],
         )?;
 
-        self.recompute_strategy_equity(strategy_id)?;
+        Self::recompute_strategy_equity_internal(&tx, strategy_id)?;
+
+        tx.commit()?;
 
         Ok(Some(TradeRecord {
             id: trade_id,
@@ -2027,8 +2060,13 @@ impl Database {
         }))
     }
 
-    fn upsert_position(&self, strategy_id: &str, position: &PositionRecord) -> AppResult<()> {
-        self.conn.execute(
+
+    fn upsert_position_internal(
+        conn: &Connection,
+        strategy_id: &str,
+        position: &PositionRecord,
+    ) -> AppResult<()> {
+        conn.execute(
             "INSERT INTO strategy_positions (
                 strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type, quantity,
                 average_price, market_price, multiplier, option_structure_preset, option_type, expiration,
@@ -2069,29 +2107,35 @@ impl Database {
         Ok(())
     }
 
-    fn delete_position(&self, strategy_id: &str, instrument_symbol: &str) -> AppResult<()> {
-        self.conn.execute(
+
+    fn delete_position_internal(
+        conn: &Connection,
+        strategy_id: &str,
+        instrument_symbol: &str,
+    ) -> AppResult<()> {
+        conn.execute(
             "DELETE FROM strategy_positions WHERE strategy_id = ?1 AND instrument_symbol = ?2",
             params![strategy_id, instrument_symbol],
         )?;
         Ok(())
     }
 
-    fn recompute_strategy_equity(&self, strategy_id: &str) -> AppResult<()> {
-        let cash_balance: f64 = self.conn.query_row(
+
+    fn recompute_strategy_equity_internal(conn: &Connection, strategy_id: &str) -> AppResult<()> {
+        let cash_balance: f64 = conn.query_row(
             "SELECT cash_balance FROM strategies WHERE id = ?1",
             params![strategy_id],
             |row| row.get(0),
         )?;
 
-        let market_value: f64 = self.conn.query_row(
+        let market_value: f64 = conn.query_row(
             "SELECT COALESCE(SUM(quantity * market_price * multiplier), 0.0)
              FROM strategy_positions WHERE strategy_id = ?1",
             params![strategy_id],
             |row| row.get(0),
         )?;
 
-        self.conn.execute(
+        conn.execute(
             "UPDATE strategies SET equity = ?2 WHERE id = ?1",
             params![strategy_id, cash_balance + market_value],
         )?;
