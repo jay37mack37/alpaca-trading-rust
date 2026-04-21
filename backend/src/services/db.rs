@@ -144,6 +144,7 @@ impl Database {
                 last_signal TEXT,
                 last_run_at TEXT,
                 run_interval_ms INTEGER NOT NULL DEFAULT 30000,
+                state_json TEXT NOT NULL DEFAULT '{}',
                 FOREIGN KEY (credential_id) REFERENCES credentials(id)
             );
 
@@ -414,6 +415,10 @@ impl Database {
         let _ = conn.execute("ALTER TABLE option_snapshots ADD COLUMN theta REAL", []);
         let _ = conn.execute("ALTER TABLE option_snapshots ADD COLUMN vega REAL", []);
         let _ = conn.execute("ALTER TABLE option_snapshots ADD COLUMN moneyness REAL", []);
+        let _ = conn.execute(
+            "ALTER TABLE strategies ADD COLUMN state_json TEXT NOT NULL DEFAULT '{}'",
+            [],
+        );
 
         Ok(())
     }
@@ -488,8 +493,8 @@ impl Database {
                         option_structure_preset, option_spread_width, option_target_delta,
                         option_dte_min, option_dte_max, option_max_spread_pct, option_limit_buffer_pct, credential_id,
                         starting_cash, cash_balance, equity, tracked_symbols,
-                        total_trades, wins, losses, last_signal, last_run_at, run_interval_ms
-                    ) VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, NULL, 50000.0, 50000.0, 50000.0, ?14, 0, 0, 0, ?15, ?16, ?17)",
+                        total_trades, wins, losses, last_signal, last_run_at, run_interval_ms, state_json
+                    ) VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, NULL, 50000.0, 50000.0, 50000.0, ?14, 0, 0, 0, ?15, ?16, ?17, '{}')",
                     params![
                         id,
                         name,
@@ -624,7 +629,7 @@ impl Database {
                     option_target_delta, option_dte_min, option_dte_max,
                     option_max_spread_pct, option_limit_buffer_pct, credential_id, starting_cash,
                     cash_balance, equity, tracked_symbols, total_trades, wins, losses,
-                    last_signal, last_run_at, run_interval_ms
+                    last_signal, last_run_at, run_interval_ms, state_json
              FROM strategies
              ORDER BY CASE WHEN kind = 'vwap_reflexive' THEN 0 ELSE 1 END, name ASC",
         )?;
@@ -656,6 +661,8 @@ impl Database {
                 last_signal: row.get(22)?,
                 last_run_at: row.get(23)?,
                 run_interval_ms: row.get(24)?,
+                state_json: serde_json::from_str(&row.get::<_, String>(25)?)
+                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
             })
         })?;
 
@@ -711,8 +718,8 @@ impl Database {
                 option_structure_preset, option_spread_width, option_target_delta, option_dte_min,
                 option_dte_max, option_max_spread_pct, option_limit_buffer_pct, credential_id,
                 starting_cash, cash_balance, equity, tracked_symbols,
-                total_trades, wins, losses, last_signal, last_run_at, run_interval_ms
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?16, ?16, ?17, 0, 0, 0, ?18, ?19, ?20)",
+                total_trades, wins, losses, last_signal, last_run_at, run_interval_ms, state_json
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?16, ?16, ?17, 0, 0, 0, ?18, ?19, ?20, '{}')",
             params![
                 id,
                 name,
@@ -854,7 +861,8 @@ impl Database {
                  starting_cash = ?15,
                  tracked_symbols = ?16,
                  last_run_at = ?17,
-                 run_interval_ms = ?18
+                 run_interval_ms = ?18,
+                 state_json = ?19
              WHERE id = ?1",
             params![
                 strategy_id,
@@ -875,6 +883,7 @@ impl Database {
                 serde_json::to_string(&tracked_symbols)?,
                 now,
                 run_interval_ms,
+                serde_json::to_string(&current.state_json)?,
             ],
         )?;
 
@@ -1612,11 +1621,23 @@ impl Database {
         Ok(())
     }
 
-    pub fn mark_strategy_run(&self, strategy_id: &str, signal: &str) -> AppResult<()> {
-        self.conn.execute(
-            "UPDATE strategies SET last_signal = ?2, last_run_at = ?3 WHERE id = ?1",
-            params![strategy_id, signal, now()],
-        )?;
+    pub fn mark_strategy_run(
+        &self,
+        strategy_id: &str,
+        signal: &str,
+        new_state: Option<serde_json::Value>,
+    ) -> AppResult<()> {
+        if let Some(state) = new_state {
+            self.conn.execute(
+                "UPDATE strategies SET last_signal = ?2, last_run_at = ?3, state_json = ?4 WHERE id = ?1",
+                params![strategy_id, signal, now(), serde_json::to_string(&state)?],
+            )?;
+        } else {
+            self.conn.execute(
+                "UPDATE strategies SET last_signal = ?2, last_run_at = ?3 WHERE id = ?1",
+                params![strategy_id, signal, now()],
+            )?;
+        }
         Ok(())
     }
 
@@ -1629,7 +1650,7 @@ impl Database {
         trade: &LocalTradeInput,
     ) -> AppResult<Option<TradeRecord>> {
         if matches!(signal.action, SignalAction::Hold) {
-            self.mark_strategy_run(strategy_id, &signal.reason)?;
+            self.mark_strategy_run(strategy_id, &signal.reason, signal.new_state.clone())?;
             return Ok(None);
         }
 
@@ -1661,13 +1682,14 @@ impl Database {
                     self.mark_strategy_run(
                         strategy_id,
                         "Buy signal skipped: insufficient buying power",
+                        signal.new_state.clone(),
                     )?;
                     return Ok(None);
                 }
 
                 let position_cost = quantity * price * multiplier;
                 if position_cost > cash_balance {
-                    self.mark_strategy_run(strategy_id, "Buy signal skipped: insufficient cash")?;
+                    self.mark_strategy_run(strategy_id, "Buy signal skipped: insufficient cash", signal.new_state.clone())?;
                     return Ok(None);
                 }
 
@@ -1714,12 +1736,12 @@ impl Database {
             }
             SignalAction::Sell => {
                 let Some(current) = existing else {
-                    self.mark_strategy_run(strategy_id, "Sell signal skipped: no open position")?;
+                    self.mark_strategy_run(strategy_id, "Sell signal skipped: no open position", signal.new_state.clone())?;
                     return Ok(None);
                 };
 
                 if quantity <= 0.0 {
-                    self.mark_strategy_run(strategy_id, "Sell signal skipped: zero quantity")?;
+                    self.mark_strategy_run(strategy_id, "Sell signal skipped: zero quantity", signal.new_state.clone())?;
                     return Ok(None);
                 }
 
@@ -1760,24 +1782,47 @@ impl Database {
             SignalAction::Hold => unreachable!(),
         }
 
-        self.conn.execute(
-            "UPDATE strategies
-             SET cash_balance = ?2,
-                 total_trades = total_trades + 1,
-                 wins = ?3,
-                 losses = ?4,
-                 last_signal = ?5,
-                 last_run_at = ?6
-             WHERE id = ?1",
-            params![
-                strategy_id,
-                cash_balance,
-                wins,
-                losses,
-                signal.reason,
-                executed_at,
-            ],
-        )?;
+        if let Some(state) = &signal.new_state {
+            self.conn.execute(
+                "UPDATE strategies
+                 SET cash_balance = ?2,
+                     total_trades = total_trades + 1,
+                     wins = ?3,
+                     losses = ?4,
+                     last_signal = ?5,
+                     last_run_at = ?6,
+                     state_json = ?7
+                 WHERE id = ?1",
+                params![
+                    strategy_id,
+                    cash_balance,
+                    wins,
+                    losses,
+                    signal.reason,
+                    executed_at,
+                    serde_json::to_string(state)?,
+                ],
+            )?;
+        } else {
+            self.conn.execute(
+                "UPDATE strategies
+                 SET cash_balance = ?2,
+                     total_trades = total_trades + 1,
+                     wins = ?3,
+                     losses = ?4,
+                     last_signal = ?5,
+                     last_run_at = ?6
+                 WHERE id = ?1",
+                params![
+                    strategy_id,
+                    cash_balance,
+                    wins,
+                    losses,
+                    signal.reason,
+                    executed_at,
+                ],
+            )?;
+        }
 
         self.conn.execute(
             "INSERT INTO trade_log (
@@ -1850,10 +1895,11 @@ impl Database {
         provider: DataProvider,
         execution_mode: ExecutionMode,
         reason: &str,
+        new_state: Option<serde_json::Value>,
     ) -> AppResult<Option<TradeRecord>> {
         if fill_quantity <= 0.0 {
             // Broker reported a zero-qty fill — nothing to record.
-            self.mark_strategy_run(strategy_id, reason)?;
+            self.mark_strategy_run(strategy_id, reason, new_state)?;
             return Ok(None);
         }
 
@@ -1920,6 +1966,7 @@ impl Database {
                     self.mark_strategy_run(
                         strategy_id,
                         "Sell fill received with no open local position",
+                        new_state,
                     )?;
                     return Ok(None);
                 };
@@ -1959,17 +2006,40 @@ impl Database {
             }
         }
 
-        self.conn.execute(
-            "UPDATE strategies
-             SET cash_balance = ?2,
-                 total_trades = total_trades + 1,
-                 wins = ?3,
-                 losses = ?4,
-                 last_signal = ?5,
-                 last_run_at = ?6
-             WHERE id = ?1",
-            params![strategy_id, cash_balance, wins, losses, reason, executed_at],
-        )?;
+        if let Some(state) = new_state {
+            self.conn.execute(
+                "UPDATE strategies
+                 SET cash_balance = ?2,
+                     total_trades = total_trades + 1,
+                     wins = ?3,
+                     losses = ?4,
+                     last_signal = ?5,
+                     last_run_at = ?6,
+                     state_json = ?7
+                 WHERE id = ?1",
+                params![
+                    strategy_id,
+                    cash_balance,
+                    wins,
+                    losses,
+                    reason,
+                    executed_at,
+                    serde_json::to_string(&state)?,
+                ],
+            )?;
+        } else {
+            self.conn.execute(
+                "UPDATE strategies
+                 SET cash_balance = ?2,
+                     total_trades = total_trades + 1,
+                     wins = ?3,
+                     losses = ?4,
+                     last_signal = ?5,
+                     last_run_at = ?6
+                 WHERE id = ?1",
+                params![strategy_id, cash_balance, wins, losses, reason, executed_at],
+            )?;
+        }
 
         self.conn.execute(
             "INSERT INTO trade_log (
@@ -2161,6 +2231,7 @@ impl Database {
             broker_open_positions,
             broker_open_orders,
             run_interval_ms: record.run_interval_ms,
+            state_json: record.state_json,
         })
     }
 }

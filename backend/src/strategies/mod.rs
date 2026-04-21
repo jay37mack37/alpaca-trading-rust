@@ -98,6 +98,7 @@ async fn evaluate_vwap_reflexive(
             walk_to_mid: None,
             split_exit: None,
             log_type: None,
+            new_state: None,
         },
         (Some(_), d) if d < -0.001 => StrategySignal {
             action: SignalAction::Sell,
@@ -110,6 +111,7 @@ async fn evaluate_vwap_reflexive(
             walk_to_mid: None,
             split_exit: None,
             log_type: None,
+            new_state: None,
         },
         _ => hold("Waiting for VWAP displacement"),
     }
@@ -152,6 +154,7 @@ async fn evaluate_rsi_mean_reversion(
             walk_to_mid: None,
             split_exit: None,
             log_type: None,
+            new_state: None,
         },
         (Some(_), value) if value > 62.0 => StrategySignal {
             action: SignalAction::Sell,
@@ -164,6 +167,7 @@ async fn evaluate_rsi_mean_reversion(
             walk_to_mid: None,
             split_exit: None,
             log_type: None,
+            new_state: None,
         },
         _ => hold("RSI within neutral zone"),
     }
@@ -209,6 +213,7 @@ async fn evaluate_sma_trend(
             walk_to_mid: None,
             split_exit: None,
             log_type: None,
+            new_state: None,
         },
         (Some(_), false) => StrategySignal {
             action: SignalAction::Sell,
@@ -221,6 +226,7 @@ async fn evaluate_sma_trend(
             walk_to_mid: None,
             split_exit: None,
             log_type: None,
+            new_state: None,
         },
         _ => hold("Trend regime unchanged"),
     }
@@ -238,6 +244,7 @@ pub(crate) fn hold(reason: impl Into<String>) -> StrategySignal {
         walk_to_mid: None,
         split_exit: None,
         log_type: None,
+        new_state: None,
     }
 }
 
@@ -400,6 +407,7 @@ mod tests {
             last_signal: None,
             last_run_at: None,
             run_interval_ms: 0,
+            state_json: serde_json::json!({}),
         }
     }
 
@@ -503,5 +511,6 @@ async fn evaluate_put_call_parity(
         walk_to_mid: None,
         split_exit: None,
         log_type: Some("HEARTBEAT".to_string()),
+        new_state: None,
     }
 }

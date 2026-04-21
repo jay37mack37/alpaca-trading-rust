@@ -317,6 +317,7 @@ pub struct StrategySummary {
     pub broker_open_positions: Option<usize>,
     pub broker_open_orders: Option<usize>,
     pub run_interval_ms: u64,
+    pub state_json: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -553,6 +554,7 @@ pub struct StrategyRecord {
     pub last_signal: Option<String>,
     pub last_run_at: Option<String>,
     pub run_interval_ms: u64,
+    pub state_json: serde_json::Value,
 }
 
 #[derive(Debug, Clone)]
@@ -601,6 +603,7 @@ pub struct StrategySignal {
     pub walk_to_mid: Option<bool>,
     pub split_exit: Option<bool>, // for 50/50 scalp/runner
     pub log_type: Option<String>, // NEW/DRIFT/HEARTBEAT
+    pub new_state: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -644,6 +647,7 @@ pub struct CandleQuery {
     pub provider: Option<DataProvider>,
     pub range: Option<String>,
     pub interval: Option<String>,
+    pub new_state: Option<serde_json::Value>,
 }
 
 #[derive(Debug, serde::Deserialize)]
