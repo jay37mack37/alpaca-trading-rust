@@ -137,6 +137,8 @@ impl StrategyKind {
             Self::SmaTrend => "sma_trend",
             Self::ListingArbitrage => "listing_arbitrage",
             Self::PutCallParity => "put_call_parity",
+            Self::ParitySniper => "parity_sniper",
+            Self::VwapReversion => "vwap_reversion",
         }
     }
 }

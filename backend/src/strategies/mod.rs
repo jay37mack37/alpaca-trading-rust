@@ -80,7 +80,7 @@ async fn evaluate_vwap_reflexive(
     candles: &[Candle],
     quote: &Quote,
     position: Option<&PositionRecord>,
-        kronos_score: Option<f64>,
+        _kronos_score: Option<f64>,
     ) -> StrategySignal {
     let session_vwap = quote.vwap.or_else(|| intraday_vwap(candles));
     let Some(vwap) = session_vwap else {
@@ -145,7 +145,7 @@ async fn evaluate_rsi_mean_reversion(
     candles: &[Candle],
     _quote: &Quote,
     position: Option<&PositionRecord>,
-        kronos_score: Option<f64>,
+        _kronos_score: Option<f64>,
     ) -> StrategySignal {
     let closes = closes(candles);
     let Some(rsi) = rsi(&closes, 14) else {
@@ -205,7 +205,7 @@ async fn evaluate_sma_trend(
     candles: &[Candle],
     _quote: &Quote,
     position: Option<&PositionRecord>,
-        kronos_score: Option<f64>,
+        _kronos_score: Option<f64>,
     ) -> StrategySignal {
     let closes = closes(candles);
     let Some(fast) = sma(&closes, 20) else {
@@ -516,7 +516,7 @@ async fn evaluate_put_call_parity(
     _candles: &[Candle],
     _quote: &Quote,
     _position: Option<&PositionRecord>,
-        kronos_score: Option<f64>,
+        _kronos_score: Option<f64>,
     ) -> StrategySignal {
     StrategySignal {
         action: SignalAction::Hold,
