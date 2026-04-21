@@ -72,7 +72,7 @@ pub async fn evaluate_listing_arbitrage_v2(
                 split_exit: Some(true), // 50/50 Scalp/Runner
                 source: Some("PARITY_SNIPER".to_string()),
                 math_edge: Some(format!("{:.1}%", edge * 100.0)),
-                ai_score: Some(format!("{:.2}", kronos.score)),
+                ai_score: Some(format!("{:.2}", kronos_val)),
             };
         }
 
@@ -90,7 +90,7 @@ pub async fn evaluate_listing_arbitrage_v2(
                 split_exit: Some(true),
                 source: Some("PARITY_SNIPER".to_string()),
                 math_edge: Some(format!("{:.1}%", edge * 100.0)),
-                ai_score: Some(format!("{:.2}", kronos.score)),
+                ai_score: Some(format!("{:.2}", kronos_val)),
             };
         }
     }

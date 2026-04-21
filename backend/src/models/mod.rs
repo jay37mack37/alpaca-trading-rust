@@ -516,17 +516,15 @@ pub enum RealtimeEvent {
         narrative: String,
         time: String,
     },
-<<<<<<< HEAD:backend/src/models/mod.rs
     Notification {
         strategy_id: Option<String>,
         level: String, // info, warning, error
         title: String,
         message: String,
-=======
+    },
     Heartbeat {
         timestamp: u64,
         buying_power: f64,
->>>>>>> origin/feature/professionalized-listing-arb-workstation:src/models/mod.rs
     },
 }
 
@@ -537,11 +535,8 @@ impl RealtimeEvent {
             Self::BrokerSync { .. } => "broker_sync",
             Self::Status { .. } => "status",
             Self::Log { .. } => "log",
-<<<<<<< HEAD:backend/src/models/mod.rs
             Self::Notification { .. } => "notification",
-=======
             Self::Heartbeat { .. } => "heartbeat",
->>>>>>> origin/feature/professionalized-listing-arb-workstation:src/models/mod.rs
         }
     }
 
