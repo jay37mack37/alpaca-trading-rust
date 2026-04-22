@@ -1,5 +1,6 @@
 import type {
   BrokerSyncState,
+  Candle,
   CollectResponse,
   CreateCredentialRequest,
   CreateStrategyRequest,
@@ -126,5 +127,12 @@ export const api = {
     if (provider) params.set("provider", provider);
     if (minConfidence != null) params.set("min_confidence", String(minConfidence));
     return request<PatternAnalysisResponse>(`/api/analytics/patterns?${params.toString()}`);
+  },
+  marketCandles(symbol: string, provider?: string, range?: string, interval?: string) {
+    const params = new URLSearchParams();
+    if (provider) params.set("provider", provider);
+    if (range) params.set("range", range);
+    if (interval) params.set("interval", interval);
+    return request<Candle[]>(`/api/market/candles/${symbol}?${params.toString()}`);
   },
 };

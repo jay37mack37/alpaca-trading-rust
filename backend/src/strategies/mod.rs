@@ -3,9 +3,11 @@ pub mod parity_sniper;
 pub mod vwap_reversion;
 
 use crate::models::{
-    Candle, PositionRecord, Quote, SignalAction, StrategyKind, StrategyRecord, StrategySignal,
+    Candle,
+    PositionRecord, Quote, SignalAction, StrategyKind, StrategyRecord, StrategySignal,
 };
 use async_trait::async_trait;
+use crate::AppState;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -13,9 +15,11 @@ use std::sync::OnceLock;
 pub trait TradingStrategy: Send + Sync {
     async fn evaluate(
         &self,
+        state: &AppState,
         strategy: &StrategyRecord,
         candles: &[Candle],
         quote: &Quote,
+        options: &[crate::models::OptionContractSnapshot],
         position: Option<&PositionRecord>,
         kronos_score: Option<f64>,
     ) -> StrategySignal;
@@ -24,8 +28,7 @@ pub trait TradingStrategy: Send + Sync {
 static STRATEGY_REGISTRY: OnceLock<HashMap<StrategyKind, Box<dyn TradingStrategy + Send + Sync>>> =
     OnceLock::new();
 
-fn get_strategy_registry() -> &'static HashMap<StrategyKind, Box<dyn TradingStrategy + Send + Sync>>
-{
+fn get_strategy_registry() -> &'static HashMap<StrategyKind, Box<dyn TradingStrategy + Send + Sync>> {
     STRATEGY_REGISTRY.get_or_init(|| {
         let mut m: HashMap<StrategyKind, Box<dyn TradingStrategy + Send + Sync>> = HashMap::new();
         m.insert(StrategyKind::VwapReflexive, Box::new(VwapReflexiveStrategy));
@@ -38,28 +41,29 @@ fn get_strategy_registry() -> &'static HashMap<StrategyKind, Box<dyn TradingStra
             StrategyKind::ListingArbitrage,
             Box::new(listing_arb::ListingArbitrageStrategy),
         );
-        m.insert(StrategyKind::PutCallParity, Box::new(PutCallParityStrategy));
+        m.insert(StrategyKind::PutCallParity, Box::new(ParitySniperStrategy));
+        m.insert(StrategyKind::ParitySniper, Box::new(ParitySniperStrategy));
+        m.insert(StrategyKind::VwapReversion, Box::new(VwapReversionStrategy));
         m
     })
 }
 
 pub async fn evaluate_strategy(
+    state: &AppState,
     strategy: &StrategyRecord,
     candles: &[Candle],
     quote: &Quote,
+    options: &[crate::models::OptionContractSnapshot],
     position: Option<&PositionRecord>,
     kronos_score: Option<f64>,
 ) -> StrategySignal {
     let registry = get_strategy_registry();
     if let Some(trading_strategy) = registry.get(&strategy.kind) {
         trading_strategy
-            .evaluate(strategy, candles, quote, position, kronos_score)
+            .evaluate(state, strategy, candles, quote, options, position, kronos_score)
             .await
     } else {
-        hold(format!(
-            "Strategy implementation for {:?} not found",
-            strategy.kind
-        ))
+        hold(format!("Strategy implementation for {:?} not found", strategy.kind))
     }
 }
 
@@ -69,9 +73,11 @@ pub struct VwapReflexiveStrategy;
 impl TradingStrategy for VwapReflexiveStrategy {
     async fn evaluate(
         &self,
+        _state: &AppState,
         _strategy: &StrategyRecord,
         candles: &[Candle],
         quote: &Quote,
+        _options: &[crate::models::OptionContractSnapshot],
         position: Option<&PositionRecord>,
         kronos_score: Option<f64>,
     ) -> StrategySignal {
@@ -83,8 +89,8 @@ async fn evaluate_vwap_reflexive(
     candles: &[Candle],
     quote: &Quote,
     position: Option<&PositionRecord>,
-    _kronos_score: Option<f64>,
-) -> StrategySignal {
+        _kronos_score: Option<f64>,
+    ) -> StrategySignal {
     let session_vwap = quote.vwap.or_else(|| intraday_vwap(candles));
     let Some(vwap) = session_vwap else {
         return hold("VWAP unavailable");
@@ -128,15 +134,50 @@ async fn evaluate_vwap_reflexive(
     }
 }
 
+pub struct VwapReversionStrategy;
+
+#[async_trait]
+impl TradingStrategy for VwapReversionStrategy {
+    async fn evaluate(
+        &self,
+        state: &AppState,
+        strategy: &StrategyRecord,
+        _candles: &[Candle],
+        quote: &Quote,
+        _options: &[crate::models::OptionContractSnapshot],
+        _position: Option<&PositionRecord>,
+        kronos_score: Option<f64>,
+    ) -> StrategySignal {
+        // Use the brain logic from vwap_reversion module
+        let mut tracker = vwap_reversion::VwapTracker::new();
+        // Since we don't persist tracker across evaluations in this stateful way yet, 
+        // we'll bootstrap it from current candles for this run.
+        // In a production high-frequency setup, we would maintain this in AppState.
+        for candle in _candles {
+            tracker.update(candle.close, candle.volume);
+        }
+        vwap_reversion::evaluate_vwap_reversion(
+            state,
+            &strategy.id,
+            &quote.symbol,
+            quote.price,
+            &tracker,
+            kronos_score,
+        )
+    }
+}
+
 pub struct RsiMeanReversionStrategy;
 
 #[async_trait]
 impl TradingStrategy for RsiMeanReversionStrategy {
     async fn evaluate(
         &self,
+        _state: &AppState,
         _strategy: &StrategyRecord,
         candles: &[Candle],
         quote: &Quote,
+        _options: &[crate::models::OptionContractSnapshot],
         position: Option<&PositionRecord>,
         kronos_score: Option<f64>,
     ) -> StrategySignal {
@@ -148,8 +189,8 @@ async fn evaluate_rsi_mean_reversion(
     candles: &[Candle],
     _quote: &Quote,
     position: Option<&PositionRecord>,
-    _kronos_score: Option<f64>,
-) -> StrategySignal {
+        _kronos_score: Option<f64>,
+    ) -> StrategySignal {
     let closes = closes(candles);
     let Some(rsi) = rsi(&closes, 14) else {
         return hold("RSI unavailable");
@@ -194,9 +235,11 @@ pub struct SmaTrendStrategy;
 impl TradingStrategy for SmaTrendStrategy {
     async fn evaluate(
         &self,
+        _state: &AppState,
         _strategy: &StrategyRecord,
         candles: &[Candle],
         quote: &Quote,
+        _options: &[crate::models::OptionContractSnapshot],
         position: Option<&PositionRecord>,
         kronos_score: Option<f64>,
     ) -> StrategySignal {
@@ -208,8 +251,8 @@ async fn evaluate_sma_trend(
     candles: &[Candle],
     _quote: &Quote,
     position: Option<&PositionRecord>,
-    _kronos_score: Option<f64>,
-) -> StrategySignal {
+        _kronos_score: Option<f64>,
+    ) -> StrategySignal {
     let closes = closes(candles);
     let Some(fast) = sma(&closes, 20) else {
         return hold("20 period SMA unavailable");
@@ -330,6 +373,7 @@ fn rsi(values: &[f64], period: usize) -> Option<f64> {
 mod tests {
     use crate::models::{DataProvider, ExecutionMode, AssetClassTarget, OptionEntryStyle, OptionStructurePreset};
     use super::*;
+    use crate::models::{DataProvider, ExecutionMode, AssetClassTarget, OptionEntryStyle, OptionStructurePreset};
 
     fn make_quote(price: f64, vwap: Option<f64>) -> Quote {
         Quote {
@@ -436,8 +480,7 @@ mod tests {
         let candles = vec![];
         let quote = make_quote(100.5, Some(100.0));
         let strategy = make_test_strategy(StrategyKind::VwapReflexive);
-        let signal =
-            tokio_test::block_on(evaluate_strategy(&strategy, &candles, &quote, None, None));
+        let signal = tokio_test::block_on(evaluate_strategy(&strategy, &candles, &quote, None, None));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
@@ -449,8 +492,7 @@ mod tests {
         }
         let quote = make_quote(100.0, None);
         let strategy = make_test_strategy(StrategyKind::RsiMeanReversion);
-        let signal =
-            tokio_test::block_on(evaluate_strategy(&strategy, &candles, &quote, None, None));
+        let signal = tokio_test::block_on(evaluate_strategy(&strategy, &candles, &quote, None, None));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
@@ -462,32 +504,15 @@ mod tests {
         }
         let quote = make_quote(100.0, None);
         let strategy = make_test_strategy(StrategyKind::SmaTrend);
-        let signal =
-            tokio_test::block_on(evaluate_strategy(&strategy, &candles, &quote, None, None));
+        let signal = tokio_test::block_on(evaluate_strategy(&strategy, &candles, &quote, None, None));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
     #[test]
     fn test_intraday_vwap() {
         let candles = vec![
-            Candle {
-                timestamp: "".into(),
-                open: 10.0,
-                high: 12.0,
-                low: 8.0,
-                close: 10.0,
-                volume: 100.0,
-                vwap: None,
-            },
-            Candle {
-                timestamp: "".into(),
-                open: 20.0,
-                high: 22.0,
-                low: 18.0,
-                close: 20.0,
-                volume: 200.0,
-                vwap: None,
-            },
+            Candle { timestamp: "".into(), open: 10.0, high: 12.0, low: 8.0, close: 10.0, volume: 100.0, vwap: None },
+            Candle { timestamp: "".into(), open: 20.0, high: 22.0, low: 18.0, close: 20.0, volume: 200.0, vwap: None },
         ];
         let vwap = intraday_vwap(&candles).unwrap();
         assert!((vwap - 16.666666666666668).abs() < 1e-9);
@@ -519,40 +544,27 @@ mod tests {
         assert_eq!(signal.reason, "VWAP unavailable");
     }
 }
-pub struct PutCallParityStrategy;
+pub struct ParitySniperStrategy;
 
 #[async_trait]
-impl TradingStrategy for PutCallParityStrategy {
+impl TradingStrategy for ParitySniperStrategy {
     async fn evaluate(
         &self,
-        _strategy: &StrategyRecord,
-        candles: &[Candle],
+        state: &AppState,
+        strategy: &StrategyRecord,
+        _candles: &[Candle],
         quote: &Quote,
-        position: Option<&PositionRecord>,
+        options: &[crate::models::OptionContractSnapshot],
+        _position: Option<&PositionRecord>,
         kronos_score: Option<f64>,
     ) -> StrategySignal {
-        evaluate_put_call_parity(candles, quote, position, kronos_score).await
-    }
-}
-
-async fn evaluate_put_call_parity(
-    _candles: &[Candle],
-    _quote: &Quote,
-    _position: Option<&PositionRecord>,
-    _kronos_score: Option<f64>,
-) -> StrategySignal {
-    StrategySignal {
-        action: SignalAction::Hold,
-        allocation_fraction: 0.0,
-        reason: "Put-Call Parity implementation pending".to_string(),
-        limit_price: None,
-        stop_loss: None,
-        take_profit: None,
-        trailing_stop: None,
-        walk_to_mid: None,
-        split_exit: None,
-        source: Some("SYSTEM".to_string()),
-        math_edge: None,
-        ai_score: None,
+        parity_sniper::evaluate_parity_sniper(
+            state,
+            &strategy.id,
+            &quote.symbol,
+            quote.price,
+            options,
+            kronos_score,
+        )
     }
 }

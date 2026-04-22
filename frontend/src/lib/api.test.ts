@@ -15,14 +15,21 @@ describe('api.streamUrl', () => {
     vi.stubEnv('VITE_API_TOKEN', '');
     api = (await import('./api')).api;
     const url = api.streamUrl('AAPL', 'yahoo');
-    expect(url).toBe('/api/stream?symbol=AAPL&provider=yahoo');
+    const urlObj = new URL(url, 'http://localhost');
+    expect(urlObj.pathname).toBe('/api/stream');
+    expect(urlObj.searchParams.get('symbol')).toBe('AAPL');
+    expect(urlObj.searchParams.get('provider')).toBe('yahoo');
   });
 
   it('should include strategy_id when provided', async () => {
     vi.stubEnv('VITE_API_TOKEN', '');
     api = (await import('./api')).api;
     const url = api.streamUrl('AAPL', 'yahoo', 'strat-123');
-    expect(url).toBe('/api/stream?symbol=AAPL&provider=yahoo&strategy_id=strat-123');
+    const urlObj = new URL(url, 'http://localhost');
+    expect(urlObj.pathname).toBe('/api/stream');
+    expect(urlObj.searchParams.get('symbol')).toBe('AAPL');
+    expect(urlObj.searchParams.get('provider')).toBe('yahoo');
+    expect(urlObj.searchParams.get('strategy_id')).toBe('strat-123');
   });
 
   it('should URL-encode special characters in parameters', async () => {

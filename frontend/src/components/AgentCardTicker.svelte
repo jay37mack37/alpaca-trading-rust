@@ -60,18 +60,7 @@
     void (async () => {
       if (apiTokenConfigured) {
         try {
-          const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
-          const resp = await fetch(
-            `${apiBase}/api/market/candles/${symbol}?range=1d&interval=5m`,
-            {
-              headers: {
-                Authorization: `Bearer ${import.meta.env.VITE_API_TOKEN ?? ""}`,
-              },
-            },
-          );
-          if (resp.ok) {
-            candles = await resp.json();
-          }
+          candles = await api.marketCandles(symbol, undefined, "1d", "5m");
         } catch {
           // Silently fail – the card just won't show a chart.
         }
