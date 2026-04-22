@@ -451,6 +451,9 @@ impl Database {
         let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN entry_math TEXT", []);
         let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN entry_ai REAL", []);
 
+        // Risk engine columns
+        let _ = conn.execute("ALTER TABLE strategies ADD COLUMN risk_parameters_json TEXT", []);
+
         Ok(())
     }
 
