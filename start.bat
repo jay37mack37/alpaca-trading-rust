@@ -14,6 +14,9 @@ powershell -Command "Get-NetTCPConnection -LocalPort 5173 -ErrorAction SilentlyC
 echo Cleaning up port 3000...
 powershell -Command "Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
 
+echo Cleaning up port 3001...
+powershell -Command "Get-NetTCPConnection -LocalPort 3001 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
+
 
 
 timeout /t 1 /nobreak >nul
@@ -39,9 +42,9 @@ echo.
 echo [1/2] Starting backend (port 8080)...
 set AUTO_STONKS_HOST=127.0.0.1
 set AUTO_STONKS_PORT=8080
-set AUTO_STONKS_ALLOWED_ORIGINS=http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:5173,http://localhost:5173
+set AUTO_STONKS_ALLOWED_ORIGINS=http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:5173,http://localhost:5173,http://localhost:3001,http://127.0.0.1:3001
 
-start "AutoStonks Backend" powershell -NoExit -Command "$env:AUTO_STONKS_HOST='127.0.0.1'; $env:AUTO_STONKS_PORT='8080'; $env:AUTO_STONKS_ALLOWED_ORIGINS='http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:5173,http://localhost:5173'; $env:AUTO_STONKS_MASTER_KEY='%AUTO_STONKS_MASTER_KEY%'; $env:AUTO_STONKS_API_TOKEN='%AUTO_STONKS_API_TOKEN%'; cd backend; cargo run 2>&1 | Tee-Object -FilePath ..\data\backend.log"
+start "AutoStonks Backend" powershell -NoExit -Command "$env:AUTO_STONKS_HOST='127.0.0.1'; $env:AUTO_STONKS_PORT='8080'; $env:AUTO_STONKS_ALLOWED_ORIGINS='http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:5173,http://localhost:5173,http://localhost:3001,http://127.0.0.1:3001'; $env:AUTO_STONKS_MASTER_KEY='%AUTO_STONKS_MASTER_KEY%'; $env:AUTO_STONKS_API_TOKEN='%AUTO_STONKS_API_TOKEN%'; cd backend; cargo run 2>&1 | Tee-Object -FilePath ..\data\backend.log"
 
 echo Waiting for backend to initialize...
 set "retries=0"
