@@ -129,6 +129,9 @@ export interface PositionSummary {
   razor_stop?: number;
   stagnation_timestamp?: string;
   kronos_sentiment?: number;
+  take_profit?: number;
+  exit_logic?: string;
+  entry_time?: string;
 }
 
 export interface PositionLeg {

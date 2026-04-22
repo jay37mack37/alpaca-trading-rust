@@ -125,6 +125,7 @@ pub fn evaluate_vwap_reversion(
             limit_price: Some(current_price),
             stop_loss: Some(current_price * (1.0 - 0.01 * dev.signum())),
             take_profit: Some(vwap),
+            exit_logic: Some("VWAP Center".to_string()),
             ..default_signal()
         };
     }

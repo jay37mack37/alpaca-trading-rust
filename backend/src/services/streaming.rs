@@ -440,11 +440,15 @@ async fn broadcast_market_event(
     candle: Option<Candle>,
     raw_json: &Value,
 ) -> AppResult<()> {
-    let strategies = {
+    let (strategies, positions) = {
         let db = state.db.lock().await;
-        let db: &crate::services::db::Database = &db;
         db.store_market_snapshot(&quote, raw_json)?;
-        db.list_strategies()?
+        // Update the market price in strategy_positions for live calculations
+        db.mark_symbol_price(symbol, quote.price)?;
+        
+        let strategies = db.list_strategies()?;
+        let positions = db.list_all_open_positions()?;
+        (strategies, positions)
     };
 
     let _ = tx.send(RealtimeEvent::Market {
@@ -454,6 +458,9 @@ async fn broadcast_market_event(
         candle,
         strategies,
     });
+
+    // Explicitly broadcast position updates for real-time P&L in UI
+    let _ = tx.send(RealtimeEvent::Positions { positions });
 
     Ok(())
 }

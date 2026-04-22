@@ -344,6 +344,12 @@ pub struct PositionSummary {
     pub razor_stop: Option<f64>,
     pub stagnation_timestamp: Option<String>,
     pub kronos_sentiment: Option<f64>,
+    pub take_profit: Option<f64>,
+    pub exit_logic: Option<String>,
+    pub entry_time: Option<String>,
+    pub buy_logic: Option<String>,
+    pub entry_math: Option<String>,
+    pub entry_ai: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -610,6 +616,12 @@ pub struct PositionRecord {
     pub razor_stop: Option<f64>,
     pub stagnation_timestamp: Option<String>,
     pub kronos_sentiment: Option<f64>,
+    pub take_profit: Option<f64>,
+    pub exit_logic: Option<String>,
+    pub entry_time: Option<String>,
+    pub buy_logic: Option<String>,
+    pub entry_math: Option<String>,
+    pub entry_ai: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -647,6 +659,7 @@ pub struct StrategySignal {
     pub math_edge: Option<String>,
     pub ai_score: Option<String>,
     pub stagnation_timeout_ms: Option<u64>,
+    pub exit_logic: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

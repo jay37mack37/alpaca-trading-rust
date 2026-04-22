@@ -500,7 +500,7 @@ async fn yahoo_quote(client: &Client, symbol: &str) -> AppResult<FetchedQuote> {
             ("interval", "1m"),
             ("includePrePost", "true"),
         ])
-        .header("User-Agent", "AutoStonksAlgoSuite/0.1")
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         .send()
         .await?;
 
@@ -565,7 +565,7 @@ async fn yahoo_candles(
             ("interval", interval),
             ("includePrePost", "true"),
         ])
-        .header("User-Agent", "AutoStonksAlgoSuite/0.1")
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         .send()
         .await?;
 
@@ -619,7 +619,7 @@ async fn yahoo_options(client: &Client, symbol: &str) -> AppResult<FetchedOption
         .get(format!(
             "https://query2.finance.yahoo.com/v7/finance/options/{symbol}"
         ))
-        .header("User-Agent", "AutoStonksAlgoSuite/0.1")
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         .send()
         .await?;
 

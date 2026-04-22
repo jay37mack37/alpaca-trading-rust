@@ -20,7 +20,7 @@
     UpdateStrategyRequest,
   } from "./lib/types";
 
-  let page: "market" | "workstation" | "remodeling" | "analytics" = "market";
+  let page: "market" | "workstation" | "analytics" = "market";
   let symbol = "SPY";
   let symbolDraft = "SPY";
   let provider: DataProvider = "yahoo";
@@ -197,9 +197,6 @@
         }, ...strategyLogs].slice(0, 200);
         break;
       }
-      case "positions":
-        openPositions = event.positions;
-        break;
     }
   }
 
@@ -425,7 +422,6 @@
       <nav class="tab-strip" aria-label="Primary">
         <button class:active={page === "market"} type="button" on:click={() => (page = "market")}>Market</button>
         <button class:active={page === "workstation"} type="button" on:click={() => (page = "workstation")}>Workstation</button>
-        <button class:active={page === "remodeling"} type="button" on:click={() => (page = "remodeling")}>Remodeling</button>
         <button class:active={page === "analytics"} type="button" on:click={() => (page = "analytics")}>Analytics</button>
       </nav>
       <button type="button" class="panic-button" on:click={globalPanic} title="Stop all running strategies">
@@ -566,12 +562,9 @@
         <AgentsWorkspace
           strategies={dashboard.strategies}
           credentials={dashboard.credentials}
-          selectedStrategyId={selectedStrategyId}
-          selectedStrategyDetail={selectedStrategyDetail}
-          detailLoading={detailLoading}
           positions={openPositions}
+          recentTrades={dashboard.recent_trades}
           logs={strategyLogs}
-          viewMode="active"
           on:create={createStrategy}
           on:save={saveStrategy}
           on:run={runStrategy}
@@ -580,9 +573,6 @@
           on:start={async () => { await loadDashboard(true); }}
           on:stop={async () => { await loadDashboard(true); }}
         />
-        <div class="workstation-feed">
-          <StrategyLogTable logs={strategyLogs} />
-        </div>
       </section>
     {:else if page === "analytics"}
       <section class="analytics-page">

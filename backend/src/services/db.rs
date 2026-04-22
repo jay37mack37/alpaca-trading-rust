@@ -46,6 +46,11 @@ pub struct LocalTradeInput {
     pub expiration: Option<String>,
     pub strike: Option<f64>,
     pub legs: Vec<TradeLeg>,
+    pub take_profit: Option<f64>,
+    pub exit_logic: Option<String>,
+    pub buy_logic: Option<String>,
+    pub entry_math: Option<String>,
+    pub entry_ai: Option<f64>,
 }
 
 impl Database {
@@ -163,6 +168,12 @@ impl Database {
                 razor_stop REAL,
                 stagnation_timestamp TEXT,
                 kronos_sentiment REAL,
+                take_profit REAL,
+                exit_logic TEXT,
+                entry_time TEXT,
+                buy_logic TEXT,
+                entry_math TEXT,
+                entry_ai REAL,
                 PRIMARY KEY (strategy_id, symbol),
                 FOREIGN KEY (strategy_id) REFERENCES strategies(id) ON DELETE CASCADE
             );
@@ -315,6 +326,9 @@ impl Database {
             "ALTER TABLE strategies ADD COLUMN option_structure_preset TEXT NOT NULL DEFAULT 'single'",
             [],
         );
+        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN take_profit REAL", []);
+        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN exit_logic TEXT", []);
+        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN entry_time TEXT", []);
         let _ = conn.execute(
             "ALTER TABLE strategies ADD COLUMN option_spread_width REAL NOT NULL DEFAULT 5.0",
             [],
@@ -432,6 +446,9 @@ impl Database {
         let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN razor_stop REAL", []);
         let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN stagnation_timestamp TEXT", []);
         let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN kronos_sentiment REAL", []);
+        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN buy_logic TEXT", []);
+        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN entry_math TEXT", []);
+        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN entry_ai REAL", []);
 
         Ok(())
     }
@@ -1006,7 +1023,8 @@ impl Database {
         let mut stmt = self.conn.prepare(
             "SELECT underlying_symbol, instrument_symbol, asset_type, quantity, average_price,
                     market_price, multiplier, option_structure_preset, option_type, expiration, strike,
-                    stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment
+                    stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment,
+                    take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai
              FROM strategy_positions
              WHERE strategy_id = ?1
              ORDER BY instrument_symbol ASC",
@@ -1043,8 +1061,14 @@ impl Database {
                 razor_stop: row.get(13)?,
                 stagnation_timestamp: row.get(14)?,
                 kronos_sentiment: row.get(15)?,
-            })
-        })?;
+                take_profit: row.get(16)?,
+                exit_logic: row.get(17)?,
+                entry_time: row.get(18)?,
+                    buy_logic: row.get(19)?,
+                    entry_math: row.get(20)?,
+                    entry_ai: row.get(21)?,
+                })
+            })?;
 
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
     }
@@ -1065,7 +1089,8 @@ impl Database {
         conn.query_row(
             "SELECT underlying_symbol, instrument_symbol, asset_type, quantity, average_price,
                     market_price, multiplier, option_structure_preset, option_type, expiration,
-                    strike, stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment
+                    strike, stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment,
+                    take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai
              FROM strategy_positions WHERE strategy_id = ?1 AND instrument_symbol = ?2",
             params![strategy_id, instrument_symbol],
             |row| {
@@ -1090,6 +1115,12 @@ impl Database {
                     razor_stop: row.get(13)?,
                     stagnation_timestamp: row.get(14)?,
                     kronos_sentiment: row.get(15)?,
+                    take_profit: row.get(16)?,
+                    exit_logic: row.get(17)?,
+                    entry_time: row.get(18)?,
+                    buy_logic: row.get(19)?,
+                    entry_math: row.get(20)?,
+                    entry_ai: row.get(21)?,
                 })
             },
         )
@@ -1107,7 +1138,8 @@ impl Database {
             AssetClassTarget::Equity => {
                 "SELECT underlying_symbol, instrument_symbol, asset_type, quantity, average_price,
                         market_price, multiplier, option_structure_preset, option_type, expiration,
-                        strike, stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment
+                        strike, stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment,
+                        take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai
                  FROM strategy_positions
                  WHERE strategy_id = ?1 AND instrument_symbol = ?2
                  LIMIT 1"
@@ -1115,7 +1147,8 @@ impl Database {
             AssetClassTarget::Options => {
                 "SELECT underlying_symbol, instrument_symbol, asset_type, quantity, average_price,
                         market_price, multiplier, option_structure_preset, option_type, expiration,
-                        strike, stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment
+                        strike, stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment,
+                        take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai
                  FROM strategy_positions
                  WHERE strategy_id = ?1 AND underlying_symbol = ?2 AND asset_type IN ('option', 'option_spread')
                  ORDER BY expiration ASC, instrument_symbol ASC
@@ -1146,6 +1179,12 @@ impl Database {
                     razor_stop: row.get(13)?,
                     stagnation_timestamp: row.get(14)?,
                     kronos_sentiment: row.get(15)?,
+                    take_profit: row.get(16)?,
+                    exit_logic: row.get(17)?,
+                    entry_time: row.get(18)?,
+                    buy_logic: row.get(19)?,
+                    entry_math: row.get(20)?,
+                    entry_ai: row.get(21)?,
                 })
             })
             .optional()
@@ -1861,6 +1900,12 @@ impl Database {
                         razor_stop: current.razor_stop,
                         stagnation_timestamp: current.stagnation_timestamp.clone(),
                         kronos_sentiment: current.kronos_sentiment,
+                        take_profit: current.take_profit,
+                        exit_logic: current.exit_logic.clone(),
+                        entry_time: current.entry_time.clone(),
+                        buy_logic: current.buy_logic.clone(),
+                        entry_math: current.entry_math.clone(),
+                        entry_ai: current.entry_ai,
                     }
                 } else {
                     PositionRecord {
@@ -1877,6 +1922,12 @@ impl Database {
                         strike: trade.strike,
                         stale_quote: false,
                         legs: position_legs_from_trade(trade, price, false),
+                        take_profit: trade.take_profit,
+                        exit_logic: trade.exit_logic.clone(),
+                        entry_time: Some(executed_at.clone()),
+                        buy_logic: trade.buy_logic.clone(),
+                        entry_math: trade.entry_math.clone(),
+                        entry_ai: trade.entry_ai,
                         ..Default::default()
                     }
                 };
@@ -1941,6 +1992,12 @@ impl Database {
                             razor_stop: current.razor_stop,
                             stagnation_timestamp: current.stagnation_timestamp.clone(),
                             kronos_sentiment: current.kronos_sentiment,
+                            take_profit: current.take_profit,
+                            exit_logic: current.exit_logic.clone(),
+                            entry_time: current.entry_time.clone(),
+                            buy_logic: current.buy_logic.clone(),
+                            entry_math: current.entry_math.clone(),
+                            entry_ai: current.entry_ai,
                         },
                     )?;
                 }
@@ -2113,6 +2170,12 @@ impl Database {
                         razor_stop: current.razor_stop,
                         stagnation_timestamp: current.stagnation_timestamp.clone(),
                         kronos_sentiment: current.kronos_sentiment,
+                        take_profit: current.take_profit,
+                        exit_logic: current.exit_logic.clone(),
+                        entry_time: current.entry_time.clone(),
+                        buy_logic: current.buy_logic.clone(),
+                        entry_math: current.entry_math.clone(),
+                        entry_ai: current.entry_ai,
                     }
                 } else {
                     PositionRecord {
@@ -2132,6 +2195,12 @@ impl Database {
                         razor_stop: None,
                         stagnation_timestamp: None,
                         kronos_sentiment: None,
+                        take_profit: None,
+                        exit_logic: None,
+                        entry_time: None,
+                        buy_logic: None,
+                        entry_math: None,
+                        entry_ai: None,
                     }
                 };
                 Self::upsert_position_internal(&tx, strategy_id, &updated)?;
@@ -2181,6 +2250,12 @@ impl Database {
                             razor_stop: current.razor_stop,
                             stagnation_timestamp: current.stagnation_timestamp.clone(),
                             kronos_sentiment: current.kronos_sentiment,
+                            take_profit: current.take_profit,
+                            exit_logic: current.exit_logic.clone(),
+                            entry_time: current.entry_time.clone(),
+                            buy_logic: current.buy_logic.clone(),
+                            entry_math: current.entry_math.clone(),
+                            entry_ai: current.entry_ai,
                         },
                     )?;
                 }
@@ -2289,8 +2364,9 @@ impl Database {
             "INSERT INTO strategy_positions (
                 strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type, quantity,
                 average_price, market_price, multiplier, option_structure_preset, option_type, expiration,
-                strike, stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+                strike, stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment,
+                take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
              ON CONFLICT(strategy_id, symbol) DO UPDATE SET
                 underlying_symbol = excluded.underlying_symbol,
                 instrument_symbol = excluded.instrument_symbol,
@@ -2307,7 +2383,13 @@ impl Database {
                 legs_json = excluded.legs_json,
                 razor_stop = excluded.razor_stop,
                 stagnation_timestamp = excluded.stagnation_timestamp,
-                kronos_sentiment = excluded.kronos_sentiment",
+                kronos_sentiment = excluded.kronos_sentiment,
+                take_profit = excluded.take_profit,
+                exit_logic = excluded.exit_logic,
+                entry_time = excluded.entry_time,
+                buy_logic = excluded.buy_logic,
+                entry_math = excluded.entry_math,
+                entry_ai = excluded.entry_ai",
             params![
                 strategy_id,
                 position.instrument_symbol,
@@ -2327,6 +2409,12 @@ impl Database {
                 position.razor_stop,
                 position.stagnation_timestamp,
                 position.kronos_sentiment,
+                position.take_profit,
+                position.exit_logic,
+                position.entry_time,
+                position.buy_logic,
+                position.entry_math,
+                position.entry_ai,
             ],
         )?;
         Ok(())
@@ -2406,9 +2494,10 @@ impl Database {
     pub fn list_all_open_positions(&self) -> AppResult<Vec<PositionSummary>> {
         let mut stmt = self.conn.prepare(
             "SELECT strategy_id, underlying_symbol, instrument_symbol, asset_type, quantity,
-                    average_price, market_price, multiplier, option_structure_preset, 
+                    average_price, market_price, multiplier, option_structure_preset,
                     option_type, expiration, strike, stale_quote, legs_json,
-                    razor_stop, stagnation_timestamp, kronos_sentiment
+                    razor_stop, stagnation_timestamp, kronos_sentiment,
+                    take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai
              FROM strategy_positions"
         )?;
         
@@ -2441,6 +2530,12 @@ impl Database {
                 razor_stop: row.get(14)?,
                 stagnation_timestamp: row.get(15)?,
                 kronos_sentiment: row.get(16)?,
+                take_profit: row.get(17)?,
+                exit_logic: row.get(18)?,
+                entry_time: row.get(19)?,
+                buy_logic: row.get(20)?,
+                entry_math: row.get(21)?,
+                entry_ai: row.get(22)?,
              })
         })?;
 

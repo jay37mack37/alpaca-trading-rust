@@ -17,6 +17,7 @@
   import AgentCardTicker from "./AgentCardTicker.svelte";
   import StrategyLogTable from "./StrategyLogTable.svelte";
   import PositionsSection from "./PositionsSection.svelte";
+  import RecentTradesSection from "./RecentTradesSection.svelte";
   import { api } from "../lib/api";
   import { prettyMoney, quantityDigits, structureLabel, contractLabel, legLabel, parseSymbols } from "../lib/format";
   import { validateStrategyDraft, type ValidationErrors } from "../lib/validation";
@@ -26,11 +27,7 @@
   export let strategies: StrategySummary[] = [];
   export let credentials: CredentialSummary[] = [];
   export let positions: PositionSummary[] = [];
-  export let selectedStrategyId = "";
-  export let selectedStrategyDetail: StrategyDetailResponse | null = null;
-  export let detailLoading = false;
-  export let collectorIntervalSeconds = 0;
-  export let viewMode: "active" | "remodeling" = "active";
+  export let recentTrades: any[] = [];
   export let logs: any[] = [];
 
   const dispatch = createEventDispatcher<{
@@ -133,7 +130,6 @@
       starting_cash: Number(createDraft.starting_cash),
       tracked_symbols: parseSymbols(createDraft.tracked_symbols),
       credential_id: createDraft.credential_id || null,
-      enabled: createDraft.enabled,
       run_interval_ms: draftToRunIntervalMs(createDraft.run_interval, createDraft.run_interval_unit),
       live_confirmation: createDraft.live_confirmation,
       reset_portfolio: createDraft.reset_portfolio,
@@ -270,142 +266,9 @@
 <section class="workspace">
   <div class="workspace-header">
     <p>AutoStonks Command Center</p>
-    <h2>{viewMode === "active" ? "Multi-Strategy Workstation" : "Remodeling & Setup"}</h2>
+    <h2>Multi-Strategy Workstation</h2>
   </div>
 
-  {#if viewMode === "remodeling"}
-  <section class="create-agent">
-    <div class="create-copy">
-      <p>New Agent</p>
-      <h3>Spin up a strategy instance</h3>
-      <span>Create a named agent, save it once, and its threaded agent will evaluate it independently while the backend is online.</span>
-    </div>
-    <div class="create-grid">
-      <label>
-        <span>Name</span>
-        <input id="agent-create-name" name="agent_create_name" class:invalid={createErrors.name} bind:value={createDraft.name} placeholder="Opening Range NVDA" />
-        {#if createErrors.name}<span class="error-msg">{createErrors.name}</span>{/if}
-      </label>
-      <label>
-        <span>Template</span>
-        <select id="agent-create-kind" name="agent_create_kind" bind:value={createKind}>
-          <option value="vwap_reversion">VWAP Reversion</option>
-          <option value="parity_sniper">Parity Sniper</option>
-          <option value="listing_arbitrage">Listing Arbitrage</option>
-          <option value="rsi_mean_reversion">Gamma Scalping</option>
-          <option value="sma_trend">0DTE Delta-Neutral</option>
-        </select>
-      </label>
-      <label>
-        <span>Tracked symbols</span>
-        <input id="agent-create-symbols" name="agent_create_symbols" class:invalid={createErrors.tracked_symbols} bind:value={createDraft.tracked_symbols} placeholder="AAPL, SPY" />
-        {#if createErrors.tracked_symbols}<span class="error-msg">{createErrors.tracked_symbols}</span>{/if}
-      </label>
-      <label>
-        <span>Starting cash</span>
-        <input id="agent-create-cash" name="agent_create_cash" type="number" min="1000" step="500" class:invalid={createErrors.starting_cash} bind:value={createDraft.starting_cash} />
-        {#if createErrors.starting_cash}<span class="error-msg">{createErrors.starting_cash}</span>{/if}
-      </label>
-      <label>
-        <span>Execution mode</span>
-        <select id="agent-create-mode" name="agent_create_mode" bind:value={createDraft.execution_mode}>
-          <option value="local_paper">Local paper</option>
-          <option value="alpaca_paper">Alpaca paper</option>
-          <option value="alpaca_live">Alpaca live</option>
-        </select>
-      </label>
-      <label>
-        <span>Asset class</span>
-        <select id="agent-create-asset-class" name="agent_create_asset_class" bind:value={createDraft.asset_class_target}>
-          <option value="equity">Equity</option>
-          <option value="options">Options</option>
-        </select>
-      </label>
-      <label>
-        <span>Run interval</span>
-        <div style="display: flex; gap: 4px;">
-          <input id="agent-create-interval" name="agent_create_interval" style="flex: 1" type="number" min="1" class:invalid={createErrors.run_interval} bind:value={createDraft.run_interval} />
-          <select id="agent-create-unit" name="agent_create_unit" bind:value={createDraft.run_interval_unit}>
-            <option value="seconds">s</option>
-            <option value="milliseconds">ms</option>
-          </select>
-        </div>
-        {#if createErrors.run_interval}<span class="error-msg">{createErrors.run_interval}</span>{/if}
-      </label>
-      <label>
-        <span>Credential</span>
-        <select id="agent-create-credential" name="agent_create_credential" bind:value={createDraft.credential_id}>
-          <option value="">No broker credential</option>
-          {#each credentials as credential}
-            <option value={credential.id}>{credential.label} · {credential.environment}</option>
-          {/each}
-        </select>
-      </label>
-
-      {#if createDraft.asset_class_target === "options"}
-        <label>
-          <span>Options structure</span>
-          <select id="agent-create-option-preset" name="agent_create_option_preset" bind:value={createDraft.option_structure_preset}>
-            <option value="single">Single contract</option>
-            <option value="bull_call_spread">Bull call spread</option>
-            <option value="bear_put_spread">Bear put spread</option>
-          </select>
-        </label>
-        {#if createDraft.option_structure_preset === "single"}
-          <label>
-            <span>Option style</span>
-            <select id="agent-create-option-style" name="agent_create_option_style" bind:value={createDraft.option_entry_style}>
-              <option value="long_call">Long call</option>
-              <option value="long_put">Long put</option>
-            </select>
-          </label>
-        {/if}
-        {#if createDraft.option_structure_preset !== "single"}
-          <label>
-            <span>Spread width</span>
-            <input id="agent-create-option-width" name="agent_create_option_width" type="number" class:invalid={createErrors.option_spread_width} bind:value={createDraft.option_spread_width} />
-            {#if createErrors.option_spread_width}<span class="error-msg">{createErrors.option_spread_width}</span>{/if}
-          </label>
-        {/if}
-        <label>
-          <span>Target delta</span>
-          <input id="agent-create-option-delta" name="agent_create_option_delta" type="number" step="0.01" class:invalid={createErrors.option_target_delta} bind:value={createDraft.option_target_delta} />
-          {#if createErrors.option_target_delta}<span class="error-msg">{createErrors.option_target_delta}</span>{/if}
-        </label>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-          <label>
-            <span>Min DTE</span>
-            <input id="agent-create-option-dte-min" name="agent_create_option_dte_min" type="number" class:invalid={createErrors.option_dte_min} bind:value={createDraft.option_dte_min} />
-            {#if createErrors.option_dte_min}<span class="error-msg">{createErrors.option_dte_min}</span>{/if}
-          </label>
-          <label>
-            <span>Max DTE</span>
-            <input id="agent-create-option-dte-max" name="agent_create_option_dte_max" type="number" class:invalid={createErrors.option_dte_max} bind:value={createDraft.option_dte_max} />
-            {#if createErrors.option_dte_max}<span class="error-msg">{createErrors.option_dte_max}</span>{/if}
-          </label>
-        </div>
-        <label>
-          <span>Max spread %</span>
-          <input id="agent-create-option-spread" name="agent_create_option_spread" type="number" min="0" max="1" step="0.01" class:invalid={createErrors.option_max_spread_pct} bind:value={createDraft.option_max_spread_pct} />
-          {#if createErrors.option_max_spread_pct}<span class="error-msg">{createErrors.option_max_spread_pct}</span>{/if}
-        </label>
-        <label>
-          <span>Limit buffer %</span>
-          <input id="agent-create-option-buffer" name="agent_create_option_buffer" type="number" min="0" max="1" step="0.01" class:invalid={createErrors.option_limit_buffer_pct} bind:value={createDraft.option_limit_buffer_pct} />
-          {#if createErrors.option_limit_buffer_pct}<span class="error-msg">{createErrors.option_limit_buffer_pct}</span>{/if}
-        </label>
-      {/if}
-      {#if createDraft.execution_mode === "alpaca_live"}
-        <label class="danger">
-          <span>Live confirmation phrase</span>
-          <input id="agent-create-confirmation" name="agent_create_confirmation" class:invalid={createErrors.live_confirmation} bind:value={createDraft.live_confirmation} placeholder="TRADE REAL MONEY" />
-          {#if createErrors.live_confirmation}<span class="error-msg">{createErrors.live_confirmation}</span>{/if}
-        </label>
-      {/if}
-    </div>
-    <button type="button" class="create-button" disabled={Object.keys(createErrors).length > 0} on:click={createAgent}>Create and run</button>
-  </section>
-  {/if}
 
   <section class="agents-layout">
     <div class="section-header">
@@ -414,6 +277,7 @@
     </div>
 
     <PositionsSection {positions} />
+    <RecentTradesSection trades={recentTrades} />
     <div class="workstation-grid">
       {#each workingStrats as strategy}
         <article class="strat-card" class:active={getEffectiveEnabled(strategy)}>
@@ -684,10 +548,6 @@
     font-weight: 700;
   }
 
-  .create-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
 
   .config-form {
     display: flex;
@@ -719,8 +579,7 @@
     margin: 0;
   }
 
-  input.invalid,
-  select.invalid {
+  input.invalid {
     border-color: #ff8a8a !important;
   }
 
@@ -845,9 +704,4 @@
   .save-button { background: #22c55e; color: #052e16; border: none; padding: 0.4rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
   .cancel-button { background: transparent; color: white; border: none; cursor: pointer; font-size: 0.8rem; }
 
-  .create-agent { background: rgba(34, 197, 94, 0.03); border: 1px solid rgba(34, 197, 94, 0.1); border-radius: 16px; padding: 2rem; margin-bottom: 3rem; display: grid; gap: 2rem; }
-  .create-copy h3 { font-size: 1.4rem; margin: 0.25rem 0; }
-  .create-copy span { font-size: 0.85rem; color: rgba(221, 233, 255, 0.6); }
-  .create-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem; }
-  .create-button { background: linear-gradient(135deg, #22c55e, #16a34a); color: white; border: none; padding: 1rem; border-radius: 8px; font-weight: 700; cursor: pointer; }
 </style>

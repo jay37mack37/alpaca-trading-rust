@@ -286,8 +286,8 @@ button:active {
   display: grid;
   justify-items: center;
   text-align: center;
-  gap: 0.35rem;
-  padding: 2rem 1.4rem 1.6rem;
+  gap: 0.15rem;
+  padding: 0.8rem 1.4rem 0.6rem;
   border-radius: 32px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background:
@@ -297,21 +297,21 @@ button:active {
 
 .stage-kicker {
   margin: 0;
-  font-size: 0.82rem;
-  letter-spacing: 0.18em;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(221, 233, 255, 0.58);
+  color: rgba(221, 233, 255, 0.5);
 }
 
 .ticker-stage h2 {
   margin: 0;
-  font-size: clamp(3.4rem, 9vw, 6.5rem);
+  font-size: clamp(1.6rem, 4vw, 2.8rem);
   line-height: 0.9;
   color: white;
 }
 
 .stage-price {
-  font-size: clamp(2.4rem, 6vw, 4rem);
+  font-size: clamp(1.2rem, 3vw, 2rem);
   font-weight: 700;
   color: white;
 }

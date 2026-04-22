@@ -89,6 +89,7 @@ pub fn evaluate_parity_sniper(
             reason: format!("ARBITRAGE: Parity Gap of {:.1}% detected at strike {:.0}", edge_pct * 100.0, best_strike),
             source: Some("PARITY_SNIPER".to_string()),
             math_edge: Some(format!("{:.2}%", edge_pct * 100.0)),
+            exit_logic: Some("Parity Mean".to_string()),
             ..default_signal()
         };
     }
