@@ -3101,6 +3101,7 @@ fn strategy_kind_from_str(value: &str) -> Result<StrategyKind, rusqlite::Error> 
         "put_call_parity" => Ok(StrategyKind::PutCallParity),
         "parity_sniper" => Ok(StrategyKind::ParitySniper),
         "vwap_reversion" => Ok(StrategyKind::VwapReversion),
+        "jarrod_vwap" => Ok(StrategyKind::JarrodVwap),
         other => Err(rusqlite::Error::FromSqlConversionFailure(
             0,
             rusqlite::types::Type::Text,

@@ -1,6 +1,7 @@
 pub mod listing_arb;
 pub mod parity_sniper;
 pub mod vwap_reversion;
+pub mod jarrod_vwap;
 
 use crate::models::{
     Candle, PositionRecord, Quote, SignalAction, StrategyKind, StrategyRecord, StrategySignal,
@@ -43,6 +44,7 @@ fn get_strategy_registry() -> &'static HashMap<StrategyKind, Box<dyn TradingStra
         m.insert(StrategyKind::PutCallParity, Box::new(ParitySniperStrategy));
         m.insert(StrategyKind::ParitySniper, Box::new(ParitySniperStrategy));
         m.insert(StrategyKind::VwapReversion, Box::new(VwapReversionStrategy));
+        m.insert(StrategyKind::JarrodVwap, Box::new(JarrodVwapStrategy));
         m
     })
 }
@@ -147,6 +149,31 @@ impl TradingStrategy for VwapReversionStrategy {
             &quote.symbol,
             quote.price,
             &tracker,
+            kronos_score,
+        )
+    }
+}
+
+pub struct JarrodVwapStrategy;
+
+#[async_trait]
+impl TradingStrategy for JarrodVwapStrategy {
+    async fn evaluate(
+        &self,
+        state: &AppState,
+        strategy: &StrategyRecord,
+        candles: &[Candle],
+        _quote: &Quote,
+        _options: &[crate::models::OptionContractSnapshot],
+        position: Option<&PositionRecord>,
+        kronos_score: Option<f64>,
+    ) -> StrategySignal {
+        jarrod_vwap::evaluate_jarrod_vwap(
+            state,
+            &strategy.id,
+            &strategy.tracked_symbols.first().unwrap_or(&String::new()),
+            candles,
+            position,
             kronos_score,
         )
     }

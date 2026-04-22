@@ -4,7 +4,7 @@ export type ExecutionMode = "local_paper" | "alpaca_paper" | "alpaca_live";
 export type AssetClassTarget = "equity" | "options";
 export type OptionEntryStyle = "long_call" | "long_put";
 export type OptionStructurePreset = "single" | "bull_call_spread" | "bear_put_spread";
-export type StrategyKind = "vwap_reflexive" | "rsi_mean_reversion" | "sma_trend" | "listing_arbitrage" | "put_call_parity" | "parity_sniper" | "vwap_reversion";
+export type StrategyKind = "vwap_reflexive" | "rsi_mean_reversion" | "sma_trend" | "listing_arbitrage" | "put_call_parity" | "parity_sniper" | "vwap_reversion" | "jarrod_vwap";
 export type TradeSide = "buy" | "sell";
 
 export interface Quote {
