@@ -608,6 +608,10 @@ impl Database {
         Ok(())
     }
 
+    pub fn count_credentials(&self) -> AppResult<usize> {
+        Ok(self.conn.query_row("SELECT COUNT(*) FROM credentials", [], |row| row.get(0))?)
+    }
+
     pub fn list_credentials(&self) -> AppResult<Vec<CredentialSummary>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, provider, label, environment, api_key_encrypted, use_for_data, use_for_trading, created_at

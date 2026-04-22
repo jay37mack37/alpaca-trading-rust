@@ -58,7 +58,7 @@
 
   onMount(() => {
     void (async () => {
-      if (apiTokenConfigured) {
+      if (apiTokenConfigured()) {
         try {
           candles = await api.marketCandles(symbol, undefined, "1d", "5m");
         } catch {

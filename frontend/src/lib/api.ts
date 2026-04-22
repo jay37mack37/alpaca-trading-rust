@@ -6,6 +6,7 @@ import type {
   CreateStrategyRequest,
   DashboardResponse,
   PatternAnalysisResponse,
+  SetupStatusResponse,
   StrategyDetailResponse,
   StrategySummary,
   TradeRecord,
@@ -13,9 +14,45 @@ import type {
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
-const API_TOKEN = (import.meta.env.VITE_API_TOKEN ?? "").trim();
+const COMPILE_TIME_TOKEN = (import.meta.env.VITE_API_TOKEN ?? "").trim();
+const STORAGE_KEY = "autostonks_api_token";
+const PLACEHOLDER_TOKENS = ["your_api_token_here"];
 
-export const apiTokenConfigured = API_TOKEN.length > 0;
+function getRuntimeToken(): string {
+  let stored = "";
+  try {
+    stored = localStorage.getItem(STORAGE_KEY)?.trim() ?? "";
+  } catch {
+    // localStorage unavailable (e.g. test environment)
+  }
+  if (stored.length > 0 && !PLACEHOLDER_TOKENS.includes(stored)) {
+    return stored;
+  }
+  if (COMPILE_TIME_TOKEN.length > 0 && !PLACEHOLDER_TOKENS.includes(COMPILE_TIME_TOKEN)) {
+    return COMPILE_TIME_TOKEN;
+  }
+  return "";
+}
+
+export function apiTokenConfigured(): boolean {
+  return getRuntimeToken().length > 0;
+}
+
+export function setApiToken(token: string) {
+  try {
+    localStorage.setItem(STORAGE_KEY, token.trim());
+  } catch {
+    // localStorage unavailable
+  }
+}
+
+export function clearApiToken() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // localStorage unavailable
+  }
+}
 
 interface ApiResponse<T> {
   success: boolean;
@@ -24,7 +61,8 @@ interface ApiResponse<T> {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  if (!API_TOKEN) {
+  const token = getRuntimeToken();
+  if (!token) {
     throw new Error(
       "VITE_API_TOKEN is not set. Copy the token printed by the backend on first start into frontend/.env as VITE_API_TOKEN=<token>.",
     );
@@ -33,7 +71,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${API_TOKEN}`,
+      Authorization: `Bearer ${token}`,
       ...(init?.headers ?? {}),
     },
     ...init,
@@ -58,13 +96,32 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body.data;
 }
 
+export async function fetchSetupStatus(): Promise<SetupStatusResponse> {
+  const response = await fetch(`${API_BASE}/api/setup/status`);
+  const body: ApiResponse<SetupStatusResponse> = await response.json();
+  if (!body.success) throw new Error(body.error || "Failed to fetch setup status");
+  return body.data!;
+}
+
+export async function writeEnvToken(apiToken: string): Promise<{ written: boolean; message: string }> {
+  const response = await fetch(`${API_BASE}/api/setup/env`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ api_token: apiToken }),
+  });
+  const body: ApiResponse<{ written: boolean; message: string }> = await response.json();
+  if (!body.success || !response.ok) {
+    throw new Error(body.error || `Request failed with ${response.status}`);
+  }
+  return body.data!;
+}
+
 export const api = {
   streamUrl(symbol: string, provider: string, strategyId?: string) {
-    // EventSource cannot attach custom headers, so the backend also accepts a
-    // `?token=` query-string fallback on the auth middleware.
+    const token = getRuntimeToken();
     const params = new URLSearchParams({ symbol, provider });
     if (strategyId) params.set("strategy_id", strategyId);
-    if (API_TOKEN) params.set("token", API_TOKEN);
+    if (token) params.set("token", token);
     return `${API_BASE}/api/stream?${params.toString()}`;
   },
   dashboard(symbol: string, provider: string) {

@@ -28,6 +28,7 @@
   export let credentials: CredentialSummary[] = [];
   export let positions: PositionSummary[] = [];
   export let recentTrades: any[] = [];
+  export let viewMode: "active" | "remodeling" = "active";
   export let logs: any[] = [];
 
   const dispatch = createEventDispatcher<{
@@ -132,7 +133,6 @@
       credential_id: createDraft.credential_id || null,
       run_interval_ms: draftToRunIntervalMs(createDraft.run_interval, createDraft.run_interval_unit),
       live_confirmation: createDraft.live_confirmation,
-      reset_portfolio: createDraft.reset_portfolio,
       risk_parameters: {
         max_position_size: Number(createDraft.max_position_size),
         max_daily_loss: Number(createDraft.max_daily_loss),

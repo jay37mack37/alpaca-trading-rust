@@ -74,6 +74,7 @@ export interface RiskParameters {
 export interface StrategySummary {
   id: string;
   name: string;
+  description?: string;
   kind: StrategyKind;
   enabled: boolean;
   execution_mode: ExecutionMode;
@@ -106,7 +107,6 @@ export interface StrategySummary {
   broker_open_orders: number | null;
   risk_parameters: RiskParameters | null;
   run_interval_ms: number;
-  description?: string;
 }
 
 export interface PositionSummary {
@@ -443,4 +443,9 @@ export interface PatternAnalysisResponse {
   timestamp: string;
   symbols: string[];
   signals: PatternSignal[];
+}
+
+export interface SetupStatusResponse {
+  backend_ready: boolean;
+  has_credentials: boolean;
 }

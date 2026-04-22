@@ -105,6 +105,10 @@ impl ApiToken {
         // Constant-time comparison avoids timing side-channels on token lookup.
         expected.ct_eq(provided).into()
     }
+
+    pub fn token(&self) -> &Arc<String> {
+        &self.token
+    }
 }
 
 fn token_file_path(db_path: &Path) -> PathBuf {
@@ -132,7 +136,7 @@ pub async fn require_token(
     next: Next,
 ) -> Result<Response, AppError> {
     let path = request.uri().path();
-    if path == "/api/health" {
+    if path == "/api/health" || path.starts_with("/api/setup/") {
         return Ok(next.run(request).await);
     }
 

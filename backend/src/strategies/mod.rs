@@ -333,7 +333,31 @@ fn rsi(values: &[f64], period: usize) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use crate::models::{DataProvider, ExecutionMode, AssetClassTarget, OptionEntryStyle, OptionStructurePreset};
+    use crate::services::streaming::StreamHub;
     use super::*;
+
+    fn make_test_app_state() -> AppState {
+        let db = crate::services::db::Database::open(
+            std::path::Path::new(":memory:"),
+            &[],
+            "test-master-key-for-unit-tests",
+        ).unwrap();
+        AppState {
+            db: std::sync::Arc::new(tokio::sync::Mutex::new(db)),
+            http: reqwest::Client::new(),
+            config: crate::models::AppConfig {
+                host: "localhost".into(),
+                port: 0,
+                database_path: std::path::PathBuf::from(":memory:"),
+                default_watchlist: vec![],
+                polling_seconds: 60,
+                allowed_origins: vec![],
+                mock_alpaca: false,
+            },
+            streams: StreamHub::new(),
+            agent_tasks: std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        }
+    }
 
     fn make_quote(price: f64, vwap: Option<f64>) -> Quote {
         Quote {
@@ -443,8 +467,9 @@ mod tests {
     fn test_evaluate_vwap_reflexive_basic() {
         let candles = vec![];
         let quote = make_quote(100.5, Some(100.0));
+        let state = make_test_app_state();
         let strategy = make_test_strategy(StrategyKind::VwapReflexive);
-        let signal = tokio_test::block_on(evaluate_strategy(&strategy, &candles, &quote, None, None));
+        let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &candles, &quote, &[], None, None));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
@@ -455,8 +480,9 @@ mod tests {
             candles.push(make_candle(100.0 - i as f64));
         }
         let quote = make_quote(100.0, None);
+        let state = make_test_app_state();
         let strategy = make_test_strategy(StrategyKind::RsiMeanReversion);
-        let signal = tokio_test::block_on(evaluate_strategy(&strategy, &candles, &quote, None, None));
+        let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &candles, &quote, &[], None, None));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
@@ -467,8 +493,9 @@ mod tests {
             candles.push(make_candle(100.0 + i as f64));
         }
         let quote = make_quote(100.0, None);
+        let state = make_test_app_state();
         let strategy = make_test_strategy(StrategyKind::SmaTrend);
-        let signal = tokio_test::block_on(evaluate_strategy(&strategy, &candles, &quote, None, None));
+        let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &candles, &quote, &[], None, None));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
@@ -503,7 +530,8 @@ mod tests {
     fn test_evaluate_vwap_reflexive_unavailable() {
         let quote = make_quote(150.0, None);
         let strategy = make_test_strategy(StrategyKind::VwapReflexive);
-        let signal = tokio_test::block_on(evaluate_strategy(&strategy, &[], &quote, None, None));
+        let state = make_test_app_state();
+        let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &[], &quote, &[], None, None));
         assert_eq!(signal.action, SignalAction::Hold);
         assert_eq!(signal.reason, "VWAP unavailable");
     }

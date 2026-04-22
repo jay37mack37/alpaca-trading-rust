@@ -43,6 +43,7 @@ pub struct AppState {
     pub config: AppConfig,
     pub streams: StreamHub,
     pub agent_tasks: Arc<Mutex<std::collections::HashMap<String, tokio::task::JoinHandle<()>>>>,
+    pub api_token: Arc<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -105,6 +106,7 @@ async fn main() -> anyhow::Result<()> {
         config,
         streams: StreamHub::new(),
         agent_tasks: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        api_token: api_token.token().clone(),
     };
 
     let active_strategies: Vec<String> = {
@@ -229,6 +231,8 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/api/health", get(handlers::misc::health))
+        .route("/api/setup/status", get(handlers::setup::setup_status))
+        .route("/api/setup/env", post(handlers::setup::write_env))
         .route("/api/dashboard", get(handlers::market::dashboard))
         .route("/api/stream", get(handlers::stream::realtime_stream))
         .route(

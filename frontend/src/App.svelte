@@ -7,7 +7,8 @@
   import OptionsPanel from "./components/OptionsPanel.svelte";
   import StrategyLogTable from "./components/StrategyLogTable.svelte";
   import AnalyticsWorkspace from "./components/AnalyticsWorkspace.svelte";
-  import { api, apiTokenConfigured } from "./lib/api";
+  import { api, apiTokenConfigured, fetchSetupStatus } from "./lib/api";
+  import WelcomePage from "./components/WelcomePage.svelte";
   import { prettyMoney, prettyPct, quantityDigits, structureLabel, contractLabel, legLabel } from "./lib/format";
   import type {
     CreateCredentialRequest,
@@ -20,7 +21,8 @@
     UpdateStrategyRequest,
   } from "./lib/types";
 
-  let page: "market" | "workstation" | "analytics" = "market";
+  let page: "market" | "workstation" | "remodeling" | "analytics" = "market";
+  let setupMode: "checking" | "welcome" | "dashboard" = "checking";
   let symbol = "SPY";
   let symbolDraft = "SPY";
   let provider: DataProvider = "yahoo";
@@ -376,15 +378,36 @@
 
   onMount(() => {
     mounted = true;
-    void loadDashboard();
-    const interval = setInterval(() => {
+
+    let interval: ReturnType<typeof setInterval> | undefined;
+
+    void (async () => {
+      if (!apiTokenConfigured()) {
+        setupMode = "welcome";
+        return;
+      }
+
+      try {
+        const status = await fetchSetupStatus();
+        if (!status.has_credentials) {
+          setupMode = "welcome";
+          return;
+        }
+      } catch {
+        // Backend unreachable but token configured — show dashboard
+      }
+
+      setupMode = "dashboard";
       void loadDashboard();
-    }, 120000);
+      interval = setInterval(() => {
+        void loadDashboard();
+      }, 120000);
+    })();
 
     return () => {
       mounted = false;
       closeStream();
-      clearInterval(interval);
+      if (interval) clearInterval(interval);
     };
   });
 
@@ -406,7 +429,12 @@
 </svelte:head>
 
 <main class="shell">
-  <DiagnosticHeader 
+  {#if setupMode === "checking"}
+    <div class="banner status" role="status" aria-live="polite">Checking setup...</div>
+  {:else if setupMode === "welcome"}
+    <WelcomePage on:complete={() => { setupMode = "dashboard"; void loadDashboard(); }} />
+  {:else}
+  <DiagnosticHeader
     alpacaActive={alpacaActive}
     kronosActive={kronosActive}
     optionsActive={optionsActive}
@@ -430,7 +458,7 @@
     </div>
   </header>
 
-  {#if !apiTokenConfigured}
+  {#if !apiTokenConfigured()}
     <div class="banner error">
       VITE_API_TOKEN is not set. Copy the token printed by the backend on first
       start into <code>frontend/.env</code> as <code>VITE_API_TOKEN=&lt;token&gt;</code>
@@ -581,5 +609,6 @@
     {/if}
   {:else if loading}
     <div class="banner status" role="status" aria-live="polite" aria-atomic="true">Loading market board…</div>
+  {/if}
   {/if}
 </main>
