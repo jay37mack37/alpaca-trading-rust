@@ -222,8 +222,6 @@
       case "parity_sniper": return "Parity Sniper";
       case "vwap_reversion": return "VWAP Reversion";
       case "jarrod_vwap": return "Jarrod VWAP Reclaim";
-      case "jarrod_vwap": return "Jarrod VWAP";
-      case "jarrod_vwap": return "Jarrod VWAP Reclaim";
       case "vwap_reflexive": return "VWAP Mean Reversion";
       case "rsi_mean_reversion": return "Gamma Scalping";
       case "sma_trend": return "0DTE Delta-Neutral";
