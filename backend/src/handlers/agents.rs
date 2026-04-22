@@ -1,23 +1,23 @@
+use crate::agents::{abort_agent_loop, run_strategy_once, spawn_agent_loop};
+use crate::error::{ApiResponse, AppError, AppResult};
+use crate::models::{
+    CreateStrategyRequest, ExecutionMode, StrategyDetailResponse, StrategySummary, TradeRecord,
+    UpdateStrategyRequest,
+};
+use crate::services::broker::resolve_alpaca_credential;
+use crate::services::db::Database;
+use crate::services::providers::cancel_all_alpaca_orders;
+use crate::AppState;
 use axum::{
     extract::{Path, State},
     Json,
 };
-use crate::models::{
-    StrategySummary, CreateStrategyRequest, UpdateStrategyRequest,
-    StrategyDetailResponse, TradeRecord, ExecutionMode,
-};
-use crate::error::{AppResult, ApiResponse, AppError};
-use crate::AppState;
-use crate::agents::{spawn_agent_loop, abort_agent_loop, run_strategy_once};
-use crate::services::broker::resolve_alpaca_credential;
-use crate::services::providers::cancel_all_alpaca_orders;
-use crate::services::db::Database;
 
 pub async fn list_strategies(
     State(state): State<AppState>,
 ) -> AppResult<ApiResponse<Vec<StrategySummary>>> {
     let db = state.db.lock().await;
-    let db: &Database = &*db;
+    let db: &Database = &db;
     Ok(ApiResponse {
         success: true,
         data: Some(db.list_strategies()?),
@@ -43,7 +43,7 @@ pub async fn create_strategy(
 
     let created = {
         let db = state.db.lock().await;
-        let db: &Database = &*db;
+        let db: &Database = &db;
         db.insert_strategy(request)?
     };
     if created.enabled {
@@ -61,7 +61,7 @@ pub async fn strategy_detail(
     Path(strategy_id): Path<String>,
 ) -> AppResult<ApiResponse<StrategyDetailResponse>> {
     let db = state.db.lock().await;
-    let db: &Database = &*db;
+    let db: &Database = &db;
     Ok(ApiResponse {
         success: true,
         data: Some(db.strategy_detail(&strategy_id)?),
@@ -84,7 +84,7 @@ pub async fn update_strategy(
 
     let updated = {
         let db = state.db.lock().await;
-        let db: &Database = &*db;
+        let db: &Database = &db;
         db.update_strategy(&strategy_id, request)?
     };
 
@@ -105,7 +105,9 @@ pub async fn run_strategy(
     Path(strategy_id): Path<String>,
     axum::extract::Query(query): axum::extract::Query<crate::RunQuery>,
 ) -> AppResult<ApiResponse<Option<TradeRecord>>> {
-    let symbol_override = query.symbol.map(|value| crate::models::normalize_symbol(&value));
+    let symbol_override = query
+        .symbol
+        .map(|value| crate::models::normalize_symbol(&value));
     let trade = run_strategy_once(&state, &strategy_id, symbol_override.as_deref()).await?;
     Ok(ApiResponse {
         success: true,
@@ -123,7 +125,11 @@ pub async fn start_strategy(
         db.set_strategy_enabled(&strategy_id, true)?
     };
     spawn_agent_loop(state, strategy_id).await;
-    Ok(ApiResponse { success: true, data: Some(updated), error: None })
+    Ok(ApiResponse {
+        success: true,
+        data: Some(updated),
+        error: None,
+    })
 }
 
 pub async fn stop_strategy(
@@ -135,12 +141,14 @@ pub async fn stop_strategy(
         let db = state.db.lock().await;
         db.set_strategy_enabled(&strategy_id, false)?
     };
-    Ok(ApiResponse { success: true, data: Some(updated), error: None })
+    Ok(ApiResponse {
+        success: true,
+        data: Some(updated),
+        error: None,
+    })
 }
 
-pub async fn panic_all(
-    State(state): State<AppState>,
-) -> ApiResponse<()> {
+pub async fn panic_all(State(state): State<AppState>) -> ApiResponse<()> {
     let ids: Vec<String> = {
         let tasks = state.agent_tasks.lock().await;
         tasks.keys().cloned().collect()
@@ -161,5 +169,9 @@ pub async fn panic_all(
     if let Ok(Some(credential)) = resolve_alpaca_credential(&state, None, true).await {
         let _ = cancel_all_alpaca_orders(&state.http, &credential).await;
     }
-    ApiResponse { success: true, data: Some(()), error: None }
+    ApiResponse {
+        success: true,
+        data: Some(()),
+        error: None,
+    }
 }

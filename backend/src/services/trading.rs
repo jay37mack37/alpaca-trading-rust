@@ -1,7 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    OptionContractSnapshot, OptionEntryStyle, OptionStructurePreset, SignalAction,
-    StrategyRecord, StrategySignal, TradeLeg, TradeSide,
+    OptionContractSnapshot, OptionEntryStyle, OptionStructurePreset, SignalAction, StrategyRecord,
+    StrategySignal, TradeLeg, TradeSide,
 };
 use crate::services::db::LocalTradeInput;
 use crate::services::providers::{AlpacaOrderLeg, AlpacaOrderRequest, AlpacaOrderType};
@@ -89,7 +89,9 @@ pub fn prepare_equity_trade(
     };
 
     if quantity <= 0.0 {
-        return TradePreparationOutcome::Skip("Signal skipped: quantity rounded to zero".to_string());
+        return TradePreparationOutcome::Skip(
+            "Signal skipped: quantity rounded to zero".to_string(),
+        );
     }
 
     let side = match signal.action {
@@ -119,7 +121,10 @@ pub fn prepare_equity_trade(
         order_type: AlpacaOrderType::Market,
     });
 
-    TradePreparationOutcome::Ready(PreparedTrade { local, broker_order })
+    TradePreparationOutcome::Ready(PreparedTrade {
+        local,
+        broker_order,
+    })
 }
 
 pub fn prepare_option_trade(
@@ -141,18 +146,52 @@ pub fn prepare_option_trade(
         SignalAction::Buy => {
             let Some(contract) = resolve_option_contract(strategy, quote, option_contracts) else {
                 return Ok(TradePreparationOutcome::Skip(
-                    "Signal skipped: no tradable option contract matched the selector"
-                        .to_string(),
+                    "Signal skipped: no tradable option contract matched the selector".to_string(),
                 ));
             };
             let option_structure_preset = Some(strategy.option_structure_preset);
-            let (instrument_symbol, net_limit_price, net_mark_price, legs) =
-                match strategy.option_structure_preset {
-                    OptionStructurePreset::Single => (
-                        contract.contract_symbol.clone(),
-                        contract.marketable_limit_price,
-                        contract.mark_price,
-                        vec![TradeLeg {
+            let (instrument_symbol, net_limit_price, net_mark_price, legs) = match strategy
+                .option_structure_preset
+            {
+                OptionStructurePreset::Single => (
+                    contract.contract_symbol.clone(),
+                    contract.marketable_limit_price,
+                    contract.mark_price,
+                    vec![TradeLeg {
+                        instrument_symbol: contract.contract_symbol.clone(),
+                        side: TradeSide::Buy,
+                        ratio_quantity: 1,
+                        position_intent: Some("buy_to_open".to_string()),
+                        price: contract.mark_price,
+                        multiplier: 100.0,
+                        option_type: Some(contract.option_type.clone()),
+                        expiration: Some(contract.expiration.clone()),
+                        strike: Some(contract.strike),
+                    }],
+                ),
+                OptionStructurePreset::BullCallSpread | OptionStructurePreset::BearPutSpread => {
+                    let Some(short_leg) =
+                        resolve_spread_short_leg(strategy, &contract, option_contracts)
+                    else {
+                        return Ok(TradePreparationOutcome::Skip(
+                            "Signal skipped: no spread wing matched the configured width"
+                                .to_string(),
+                        ));
+                    };
+                    let net_mark = (contract.mark_price - short_leg.mark_price).max(0.01);
+                    let net_limit = (contract.ask * (1.0 + strategy.option_limit_buffer_pct)
+                        - short_leg.bid * (1.0 - strategy.option_limit_buffer_pct))
+                        .max(0.01);
+                    let spread_symbol = format!(
+                        "{}:{}:{}:{:.2}:{:.2}",
+                        option_structure_label(strategy.option_structure_preset),
+                        symbol,
+                        contract.expiration,
+                        contract.strike,
+                        short_leg.strike
+                    );
+                    let legs = vec![
+                        TradeLeg {
                             instrument_symbol: contract.contract_symbol.clone(),
                             side: TradeSide::Buy,
                             ratio_quantity: 1,
@@ -162,56 +201,22 @@ pub fn prepare_option_trade(
                             option_type: Some(contract.option_type.clone()),
                             expiration: Some(contract.expiration.clone()),
                             strike: Some(contract.strike),
-                        }],
-                    ),
-                    OptionStructurePreset::BullCallSpread | OptionStructurePreset::BearPutSpread => {
-                        let Some(short_leg) =
-                            resolve_spread_short_leg(strategy, &contract, option_contracts)
-                        else {
-                            return Ok(TradePreparationOutcome::Skip(
-                                "Signal skipped: no spread wing matched the configured width"
-                                    .to_string(),
-                            ));
-                        };
-                        let net_mark = (contract.mark_price - short_leg.mark_price).max(0.01);
-                        let net_limit = (contract.ask * (1.0 + strategy.option_limit_buffer_pct)
-                            - short_leg.bid * (1.0 - strategy.option_limit_buffer_pct))
-                            .max(0.01);
-                        let spread_symbol = format!(
-                            "{}:{}:{}:{:.2}:{:.2}",
-                            option_structure_label(strategy.option_structure_preset),
-                            symbol,
-                            contract.expiration,
-                            contract.strike,
-                            short_leg.strike
-                        );
-                        let legs = vec![
-                            TradeLeg {
-                                instrument_symbol: contract.contract_symbol.clone(),
-                                side: TradeSide::Buy,
-                                ratio_quantity: 1,
-                                position_intent: Some("buy_to_open".to_string()),
-                                price: contract.mark_price,
-                                multiplier: 100.0,
-                                option_type: Some(contract.option_type.clone()),
-                                expiration: Some(contract.expiration.clone()),
-                                strike: Some(contract.strike),
-                            },
-                            TradeLeg {
-                                instrument_symbol: short_leg.contract_symbol.clone(),
-                                side: TradeSide::Sell,
-                                ratio_quantity: 1,
-                                position_intent: Some("sell_to_open".to_string()),
-                                price: short_leg.mark_price,
-                                multiplier: 100.0,
-                                option_type: Some(short_leg.option_type.clone()),
-                                expiration: Some(short_leg.expiration.clone()),
-                                strike: Some(short_leg.strike),
-                            },
-                        ];
-                        (spread_symbol, net_limit, net_mark, legs)
-                    }
-                };
+                        },
+                        TradeLeg {
+                            instrument_symbol: short_leg.contract_symbol.clone(),
+                            side: TradeSide::Sell,
+                            ratio_quantity: 1,
+                            position_intent: Some("sell_to_open".to_string()),
+                            price: short_leg.mark_price,
+                            multiplier: 100.0,
+                            option_type: Some(short_leg.option_type.clone()),
+                            expiration: Some(short_leg.expiration.clone()),
+                            strike: Some(short_leg.strike),
+                        },
+                    ];
+                    (spread_symbol, net_limit, net_mark, legs)
+                }
+            };
             let budget = strategy.cash_balance * signal.allocation_fraction.clamp(0.0, 1.0);
             let contract_cost = net_limit_price * 100.0;
             let quantity = if contract_cost > 0.0 {
@@ -243,17 +248,18 @@ pub fn prepare_option_trade(
                 strike: Some(contract.strike),
                 legs: legs.clone(),
             };
-            let broker_order = needs_broker_order.then_some(match strategy.option_structure_preset {
-                OptionStructurePreset::Single => AlpacaOrderRequest::Single {
-                    symbol: contract.contract_symbol.clone(),
-                    side,
-                    quantity,
-                    order_type: AlpacaOrderType::Limit {
-                        limit_price: net_limit_price,
+            let broker_order =
+                needs_broker_order.then_some(match strategy.option_structure_preset {
+                    OptionStructurePreset::Single => AlpacaOrderRequest::Single {
+                        symbol: contract.contract_symbol.clone(),
+                        side,
+                        quantity,
+                        order_type: AlpacaOrderType::Limit {
+                            limit_price: net_limit_price,
+                        },
                     },
-                },
-                OptionStructurePreset::BullCallSpread | OptionStructurePreset::BearPutSpread => {
-                    AlpacaOrderRequest::MultiLeg {
+                    OptionStructurePreset::BullCallSpread
+                    | OptionStructurePreset::BearPutSpread => AlpacaOrderRequest::MultiLeg {
                         quantity: quantity as u32,
                         limit_price: net_limit_price,
                         legs: legs
@@ -265,10 +271,12 @@ pub fn prepare_option_trade(
                                 position_intent: leg.position_intent.clone().unwrap_or_default(),
                             })
                             .collect(),
-                    }
-                }
-            });
-            Ok(TradePreparationOutcome::Ready(PreparedTrade { local, broker_order }))
+                    },
+                });
+            Ok(TradePreparationOutcome::Ready(PreparedTrade {
+                local,
+                broker_order,
+            }))
         }
         SignalAction::Sell => {
             let Some(position) = position else {
@@ -276,7 +284,9 @@ pub fn prepare_option_trade(
                     "Sell signal skipped: no open option position".to_string(),
                 ));
             };
-            let (market_price, legs): (f64, Vec<TradeLeg>) = if position.asset_type == "option_spread" {
+            let (market_price, legs): (f64, Vec<TradeLeg>) = if position.asset_type
+                == "option_spread"
+            {
                 let mut net_credit: f64 = 0.0;
                 let mut close_legs = Vec::with_capacity(position.legs.len());
                 for leg in &position.legs {
@@ -288,7 +298,8 @@ pub fn prepare_option_trade(
                             "Sell signal skipped: spread leg quote unavailable".to_string(),
                         ));
                     };
-                    let (leg_side, position_intent, leg_price, sign) = if leg.position_side == "short"
+                    let (leg_side, position_intent, leg_price, sign) = if leg.position_side
+                        == "short"
                     {
                         let ask = snapshot.ask.ok_or_else(|| {
                             AppError::Validation(
@@ -320,9 +331,10 @@ pub fn prepare_option_trade(
                         side: leg_side,
                         ratio_quantity: leg.ratio_quantity,
                         position_intent: Some(position_intent),
-                        price: snapshot
-                            .last
-                            .unwrap_or((snapshot.bid.unwrap_or_default() + snapshot.ask.unwrap_or_default()) / 2.0),
+                        price: snapshot.last.unwrap_or(
+                            (snapshot.bid.unwrap_or_default() + snapshot.ask.unwrap_or_default())
+                                / 2.0,
+                        ),
                         multiplier: leg.multiplier,
                         option_type: leg.option_type.clone(),
                         expiration: leg.expiration.clone(),
@@ -334,7 +346,9 @@ pub fn prepare_option_trade(
                 let market_price = option_contracts
                     .iter()
                     .find(|contract| contract.contract_symbol == position.instrument_symbol)
-                    .and_then(|contract| option_mark_price(contract, side, strategy.option_limit_buffer_pct))
+                    .and_then(|contract| {
+                        option_mark_price(contract, side, strategy.option_limit_buffer_pct)
+                    })
                     .unwrap_or(position.market_price);
                 (
                     market_price,
@@ -376,10 +390,11 @@ pub fn prepare_option_trade(
                 strike: position.strike,
                 legs: legs.clone(),
             };
-            let broker_order =
-                needs_broker_order.then_some(match position.option_structure_preset.unwrap_or(
-                    OptionStructurePreset::Single,
-                ) {
+            let broker_order = needs_broker_order.then_some(
+                match position
+                    .option_structure_preset
+                    .unwrap_or(OptionStructurePreset::Single)
+                {
                     OptionStructurePreset::Single => AlpacaOrderRequest::Single {
                         symbol: position.instrument_symbol.clone(),
                         side,
@@ -388,23 +403,26 @@ pub fn prepare_option_trade(
                             limit_price: market_price.max(0.01),
                         },
                     },
-                    OptionStructurePreset::BullCallSpread | OptionStructurePreset::BearPutSpread => {
-                        AlpacaOrderRequest::MultiLeg {
-                            quantity: quantity as u32,
-                            limit_price: market_price.max(0.01),
-                            legs: legs
-                                .iter()
-                                .map(|leg| AlpacaOrderLeg {
-                                    symbol: leg.instrument_symbol.clone(),
-                                    ratio_qty: leg.ratio_quantity,
-                                    side: leg.side,
-                                    position_intent: leg.position_intent.clone().unwrap_or_default(),
-                                })
-                                .collect(),
-                        }
-                    }
-                });
-            Ok(TradePreparationOutcome::Ready(PreparedTrade { local, broker_order }))
+                    OptionStructurePreset::BullCallSpread
+                    | OptionStructurePreset::BearPutSpread => AlpacaOrderRequest::MultiLeg {
+                        quantity: quantity as u32,
+                        limit_price: market_price.max(0.01),
+                        legs: legs
+                            .iter()
+                            .map(|leg| AlpacaOrderLeg {
+                                symbol: leg.instrument_symbol.clone(),
+                                ratio_qty: leg.ratio_quantity,
+                                side: leg.side,
+                                position_intent: leg.position_intent.clone().unwrap_or_default(),
+                            })
+                            .collect(),
+                    },
+                },
+            );
+            Ok(TradePreparationOutcome::Ready(PreparedTrade {
+                local,
+                broker_order,
+            }))
         }
         SignalAction::Hold => unreachable!(),
     }
@@ -454,7 +472,8 @@ pub fn resolve_option_contract(
                 .delta
                 .map(|delta: f64| (delta.abs() - strategy.option_target_delta).abs())
                 .unwrap_or_else(|| fallback_delta_score(contract, quote.price, target_type));
-            let dte_midpoint = (strategy.option_dte_min as f64 + strategy.option_dte_max as f64) / 2.0;
+            let dte_midpoint =
+                (strategy.option_dte_min as f64 + strategy.option_dte_max as f64) / 2.0;
             let dte_score = ((dte as f64) - dte_midpoint).abs();
 
             Some((
@@ -469,7 +488,8 @@ pub fn resolve_option_contract(
                     bid,
                     ask,
                     mark_price: mid,
-                    marketable_limit_price: (ask * (1.0 + strategy.option_limit_buffer_pct)).max(0.01),
+                    marketable_limit_price: (ask * (1.0 + strategy.option_limit_buffer_pct))
+                        .max(0.01),
                 },
             ))
         })
@@ -479,10 +499,21 @@ pub fn resolve_option_contract(
         left.0
             .partial_cmp(&right.0)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| left.1.partial_cmp(&right.1).unwrap_or(std::cmp::Ordering::Equal))
-            .then_with(|| left.2.partial_cmp(&right.2).unwrap_or(std::cmp::Ordering::Equal))
+            .then_with(|| {
+                left.1
+                    .partial_cmp(&right.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| {
+                left.2
+                    .partial_cmp(&right.2)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
     });
-    candidates.into_iter().map(|(_, _, _, contract)| contract).next()
+    candidates
+        .into_iter()
+        .map(|(_, _, _, contract)| contract)
+        .next()
 }
 
 pub fn resolve_spread_short_leg(
@@ -493,7 +524,8 @@ pub fn resolve_spread_short_leg(
     let mut candidates = option_contracts
         .iter()
         .filter_map(|contract| {
-            if contract.option_type != long_leg.option_type || contract.expiration != long_leg.expiration
+            if contract.option_type != long_leg.option_type
+                || contract.expiration != long_leg.expiration
             {
                 return None;
             }
@@ -573,7 +605,11 @@ pub fn option_structure_label(preset: OptionStructurePreset) -> &'static str {
     }
 }
 
-pub fn fallback_delta_score(contract: &OptionContractSnapshot, underlying_price: f64, target_type: &str) -> f64 {
+pub fn fallback_delta_score(
+    contract: &OptionContractSnapshot,
+    underlying_price: f64,
+    target_type: &str,
+) -> f64 {
     if underlying_price <= 0.0 {
         return 1.0;
     }
