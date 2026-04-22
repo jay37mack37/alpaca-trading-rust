@@ -164,20 +164,15 @@ async fn main() -> anyhow::Result<()> {
 
             // 3. Audit Options Chain (Fetch SPY options for sanity check)
             let mut options_active = false;
-            if let Ok(strats) = state_hb.db.lock().await.list_strategy_records() {
-                if let Some(_strat) = strats.into_iter().find(|s| s.enabled) {
-                match crate::services::providers::fetch_options(
-                    &state_hb.http, 
-                    crate::models::DataProvider::Yahoo, 
-                    "SPY", 
-                    None
-                ).await {
-                    Ok(_) => options_active = true,
-                    Err(e) => {
-                        // Only log if it was previously active to avoid noise
-                        tracing::warn!("Options heartbeat check failed for SPY: {:?}", e);
-                    }
-                }
+            match crate::services::providers::fetch_options(
+                &state_hb.http,
+                crate::models::DataProvider::Yahoo,
+                "SPY",
+                None
+            ).await {
+                Ok(_) => options_active = true,
+                Err(e) => {
+                    tracing::warn!("Options heartbeat check failed for SPY: {:?}", e);
                 }
             }
 
