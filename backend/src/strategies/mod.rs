@@ -371,6 +371,7 @@ fn rsi(values: &[f64], period: usize) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
+    use crate::models::{DataProvider, ExecutionMode, AssetClassTarget, OptionEntryStyle, OptionStructurePreset};
     use super::*;
     use crate::models::{DataProvider, ExecutionMode, AssetClassTarget, OptionEntryStyle, OptionStructurePreset};
 
