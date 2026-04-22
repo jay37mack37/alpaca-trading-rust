@@ -13,6 +13,7 @@
   "dependencies": {
     "@humanspeak/svelte-virtual-list": "^0.4.6",
     "lightweight-charts": "^5.0.8",
+    "playwright": "^1.59.1",
     "svelte": "^5.0.0"
   },
   "devDependencies": {

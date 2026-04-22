@@ -521,7 +521,7 @@ impl Database {
         ];
 
         for (id, name, kind, symbols) in defaults {
-            let enabled = if id == "parity-sniper" || id == "vwap-reversion" { 1 } else { 0 };
+            let enabled = 0;
             // Check if ID already exists
             let existing_kind: Option<String> = self.conn.query_row(
                 "SELECT kind FROM strategies WHERE id = ?1",
@@ -532,7 +532,7 @@ impl Database {
             if let Some(_old_kind) = existing_kind {
                 // If it exists but kind is different, or we just want to ensure the name is right
                 self.conn.execute(
-                    "UPDATE strategies SET name = ?1, kind = ?2, enabled = CASE WHEN id IN ('parity-sniper', 'vwap-reversion') THEN 1 ELSE enabled END WHERE id = ?3",
+                    "UPDATE strategies SET name = ?1, kind = ?2 WHERE id = ?3",
                     params![name, kind.as_str(), id],
                 )?;
             } else {
@@ -3095,6 +3095,7 @@ fn strategy_kind_from_str(value: &str) -> Result<StrategyKind, rusqlite::Error> 
         "put_call_parity" => Ok(StrategyKind::PutCallParity),
         "parity_sniper" => Ok(StrategyKind::ParitySniper),
         "vwap_reversion" => Ok(StrategyKind::VwapReversion),
+        "jarrod_vwap" => Ok(StrategyKind::JarrodVwap),
         other => Err(rusqlite::Error::FromSqlConversionFailure(
             0,
             rusqlite::types::Type::Text,
