@@ -329,6 +329,7 @@ fn rsi(values: &[f64], period: usize) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{AssetClassTarget, DataProvider, ExecutionMode, OptionEntryStyle, OptionStructurePreset};
 
     fn make_quote(price: f64, vwap: Option<f64>) -> Quote {
         Quote {
