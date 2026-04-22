@@ -356,6 +356,7 @@ mod tests {
             },
             streams: StreamHub::new(),
             agent_tasks: std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            api_token: std::sync::Arc::new("test-token".to_string()),
         }
     }
 
@@ -395,6 +396,12 @@ mod tests {
             razor_stop: None,
             stagnation_timestamp: None,
             kronos_sentiment: None,
+            take_profit: None,
+            buy_logic: None,
+            entry_math: None,
+            entry_ai: None,
+            entry_time: None,
+            exit_logic: None,
         }
     }
 
@@ -460,6 +467,7 @@ mod tests {
             last_run_at: None,
             run_interval_ms: 0,
             state_json: serde_json::json!({}),
+            risk_parameters: None,
         }
     }
 

@@ -10,6 +10,8 @@ use crate::models::{
 };
 use crate::services::broker::{resolve_alpaca_credential, sync_strategy_broker_state};
 use crate::services::kronos::fetch_kronos_score;
+use std::sync::Arc;
+use crate::services::risk::RiskEngine;
 use crate::services::providers::{
     fetch_candles, fetch_options, fetch_quote, poll_alpaca_order_until_filled,
     submit_alpaca_order,
@@ -56,6 +58,7 @@ pub async fn run_strategy_once(
     };
 
     let mut last_trade = None;
+    let risk_engine = Arc::new(RiskEngine::new());
     let mut tasks = FuturesUnordered::new();
 
     for symbol in symbols {
@@ -63,6 +66,7 @@ pub async fn run_strategy_once(
         let strategy_id = strategy_id.to_string();
         let trading_credential = trading_credential.clone();
         let data_credential = data_credential.clone();
+        let risk_engine = risk_engine.clone();
 
         tasks.push(async move {
             let res: AppResult<Option<crate::models::TradeRecord>> = async {
@@ -153,6 +157,26 @@ pub async fn run_strategy_once(
                     signal.action.as_str(),
                     &signal.reason,
                 );
+
+
+                if !matches!(signal.action, SignalAction::Hold) && current_position.is_none() {
+                    if let Err(e) = risk_engine.validate(&latest_strategy, &signal).await {
+                        broadcast_audit_log(
+                            &state,
+                            AuditEvent::now(
+                                SystemSource::System,
+                                symbol.to_string(),
+                                SystemEventType::Protection,
+                                format!("Price: ${:.2}", quote.quote.price),
+                                kronos_score.unwrap_or(0.5),
+                                format!("RISK ENGINE BLOCKED: {}", e),
+                            )
+                        );
+                        let mut db2 = state.db.lock().await;
+                        db2.mark_strategy_run(&strategy_id, &format!("Risk Engine Blocked: {}", e), signal.new_state.clone())?;
+                        return Ok(None);
+                    }
+                }
 
                 let prepared_trade = if matches!(signal.action, SignalAction::Hold) {
                     None
