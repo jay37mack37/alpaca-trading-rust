@@ -342,6 +342,7 @@ mod tests {
             "test-master-key-for-unit-tests",
         ).unwrap();
         AppState {
+            api_token: std::sync::Arc::new("test-token".to_string()),
             db: std::sync::Arc::new(tokio::sync::Mutex::new(db)),
             http: reqwest::Client::new(),
             config: crate::models::AppConfig {
@@ -355,6 +356,7 @@ mod tests {
             },
             streams: StreamHub::new(),
             agent_tasks: std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            risk_engine: std::sync::Arc::new(crate::services::risk::RiskEngine::new()),
         }
     }
 

@@ -44,6 +44,7 @@ pub struct AppState {
     pub streams: StreamHub,
     pub agent_tasks: Arc<Mutex<std::collections::HashMap<String, tokio::task::JoinHandle<()>>>>,
     pub api_token: Arc<String>,
+    pub risk_engine: Arc<services::risk::RiskEngine>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,6 +108,7 @@ async fn main() -> anyhow::Result<()> {
         streams: StreamHub::new(),
         agent_tasks: Arc::new(Mutex::new(std::collections::HashMap::new())),
         api_token: api_token.token().clone(),
+        risk_engine: Arc::new(services::risk::RiskEngine::new()),
     };
 
     let active_strategies: Vec<String> = {
