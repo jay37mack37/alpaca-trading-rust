@@ -60,8 +60,9 @@
     void (async () => {
       if (apiTokenConfigured) {
         try {
+          const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
           const resp = await fetch(
-            `${import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8080"}/api/market/candles/${symbol}?range=1d&interval=5m`,
+            `${apiBase}/api/market/candles/${symbol}?range=1d&interval=5m`,
             {
               headers: {
                 Authorization: `Bearer ${import.meta.env.VITE_API_TOKEN ?? ""}`,
