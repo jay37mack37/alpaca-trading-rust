@@ -2,12 +2,13 @@
   import SvelteVirtualList from "@humanspeak/svelte-virtual-list";
 
   export let logs: Array<{
+    source: string;
     time: string;
     symbol: string;
     math_edge: string;
-    kronos_score: string;
+    ai_score: string;
     decision: string;
-    reasoning: string;
+    narrative: string;
   }> = [];
 
   function getDecisionTone(decision: string) {
@@ -51,14 +52,14 @@
               class:row-heartbeat={log.decision.toLowerCase() === 'heartbeat' || log.decision.toLowerCase() === 'hold'}
             >
               <div class="col-time timestamp">{log.time.split(" ")[1]}</div>
-              <div class="col-type type-cell">{(log as any).type ?? 'DRIFT'}</div>
+              <div class="col-type type-cell">{log.source ?? 'DRIFT'}</div>
               <div class="col-symbol symbol-cell"><strong>{log.symbol}</strong></div>
               <div class="col-edge edge-cell">{log.math_edge}</div>
-              <div class="col-kronos kronos-cell">{log.kronos_score}</div>
+              <div class="col-kronos kronos-cell">{log.ai_score}</div>
               <div class="col-decision decision-cell">
                 <div class="decision-wrap">
                   <span class="decision-text">{log.decision}:</span>
-                  <span class="reasoning-text">{log.reasoning}</span>
+                  <span class="reasoning-text">{log.narrative}</span>
                 </div>
               </div>
             </div>
