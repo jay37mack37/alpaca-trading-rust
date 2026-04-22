@@ -146,6 +146,7 @@ impl Database {
                 last_run_at TEXT,
                 run_interval_ms INTEGER NOT NULL DEFAULT 30000,
                 state_json TEXT NOT NULL DEFAULT '{}',
+                risk_parameters_json TEXT,
                 FOREIGN KEY (credential_id) REFERENCES credentials(id)
             );
 
@@ -520,7 +521,7 @@ impl Database {
         ];
 
         for (id, name, kind, symbols) in defaults {
-            let enabled = 0;
+            let enabled = if id == "parity-sniper" || id == "vwap-reversion" { 1 } else { 0 };
             // Check if ID already exists
             let existing_kind: Option<String> = self.conn.query_row(
                 "SELECT kind FROM strategies WHERE id = ?1",
@@ -531,7 +532,7 @@ impl Database {
             if let Some(_old_kind) = existing_kind {
                 // If it exists but kind is different, or we just want to ensure the name is right
                 self.conn.execute(
-                    "UPDATE strategies SET name = ?1, kind = ?2 WHERE id = ?3",
+                    "UPDATE strategies SET name = ?1, kind = ?2, enabled = CASE WHEN id IN ('parity-sniper', 'vwap-reversion') THEN 1 ELSE enabled END WHERE id = ?3",
                     params![name, kind.as_str(), id],
                 )?;
             } else {
@@ -542,8 +543,8 @@ impl Database {
                         option_structure_preset, option_spread_width, option_target_delta,
                         option_dte_min, option_dte_max, option_max_spread_pct, option_limit_buffer_pct, credential_id,
                         starting_cash, cash_balance, equity, tracked_symbols,
-                        total_trades, wins, losses, last_signal, last_run_at, run_interval_ms, state_json
-                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, 50000.0, 50000.0, 50000.0, ?15, 0, 0, 0, ?16, ?17, ?18, '{}')",
+                        total_trades, wins, losses, last_signal, last_run_at, run_interval_ms, state_json, risk_parameters_json
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, 50000.0, 50000.0, 50000.0, ?15, 0, 0, 0, ?16, ?17, ?18, '{}', NULL)",
                     params![
                         id,
                         name,
@@ -731,7 +732,7 @@ impl Database {
                     option_target_delta, option_dte_min, option_dte_max,
                     option_max_spread_pct, option_limit_buffer_pct, credential_id, starting_cash,
                     cash_balance, equity, tracked_symbols, total_trades, wins, losses,
-                    last_signal, last_run_at, run_interval_ms, state_json
+                    last_signal, last_run_at, run_interval_ms, state_json, risk_parameters_json
              FROM strategies
              ORDER BY CASE WHEN kind = 'vwap_reflexive' THEN 0 ELSE 1 END, name ASC",
         )?;
@@ -767,6 +768,7 @@ impl Database {
                 run_interval_ms: row.get(24)?,
                 state_json: serde_json::from_str(&row.get::<_, String>(25)?)
                     .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
+                risk_parameters: row.get::<_, Option<String>>(26)?.and_then(|s| serde_json::from_str(&s).ok()),
             })
         })?;
 
@@ -822,8 +824,8 @@ impl Database {
                 option_structure_preset, option_spread_width, option_target_delta, option_dte_min,
                 option_dte_max, option_max_spread_pct, option_limit_buffer_pct, credential_id,
                 starting_cash, cash_balance, equity, tracked_symbols,
-                total_trades, wins, losses, last_signal, last_run_at, run_interval_ms, state_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?16, ?16, ?17, 0, 0, 0, ?18, ?19, ?20, '{}')",
+                total_trades, wins, losses, last_signal, last_run_at, run_interval_ms, state_json, risk_parameters_json
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?16, ?16, ?17, 0, 0, 0, ?18, ?19, ?20, '{}', ?21)",
             params![
                 id,
                 name,
@@ -851,6 +853,7 @@ impl Database {
                 },
                 now(),
                 run_interval_ms,
+                request.risk_parameters.as_ref().map(|rp| serde_json::to_string(rp).unwrap_or_default()),
             ],
         )?;
 
@@ -953,6 +956,10 @@ impl Database {
         let run_interval_ms = request.run_interval_ms.unwrap_or(current.run_interval_ms);
         let now = now();
 
+        let rp_json = match &request.risk_parameters {
+            Some(rp) => Some(serde_json::to_string(rp).unwrap_or_default()),
+            None => current.risk_parameters.as_ref().map(|rp| serde_json::to_string(rp).unwrap_or_default()),
+        };
         self.conn.execute(
             "UPDATE strategies
              SET name = ?2,
@@ -972,7 +979,8 @@ impl Database {
                  tracked_symbols = ?16,
                  last_run_at = ?17,
                  run_interval_ms = ?18,
-                 state_json = ?19
+                 state_json = ?19,
+                 risk_parameters_json = ?20
              WHERE id = ?1",
             params![
                 strategy_id,
@@ -994,6 +1002,7 @@ impl Database {
                 now,
                 run_interval_ms,
                 serde_json::to_string(&current.state_json)?,
+            rp_json,
             ],
         )?;
 
@@ -2613,6 +2622,7 @@ impl Database {
             broker_open_orders,
             run_interval_ms: record.run_interval_ms,
             state_json: record.state_json,
+            risk_parameters: record.risk_parameters,
         })
     }
 }
@@ -3088,7 +3098,6 @@ fn strategy_kind_from_str(value: &str) -> Result<StrategyKind, rusqlite::Error> 
         "put_call_parity" => Ok(StrategyKind::PutCallParity),
         "parity_sniper" => Ok(StrategyKind::ParitySniper),
         "vwap_reversion" => Ok(StrategyKind::VwapReversion),
-        "jarrod_vwap" => Ok(StrategyKind::JarrodVwap),
         other => Err(rusqlite::Error::FromSqlConversionFailure(
             0,
             rusqlite::types::Type::Text,

@@ -5,3 +5,4 @@ pub mod market;
 pub mod providers;
 pub mod streaming;
 pub mod trading;
+pub mod risk;

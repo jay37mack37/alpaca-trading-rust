@@ -211,7 +211,6 @@
       case "put_call_parity": return "Put-Call Parity: Arbitraging discrepancies between synthesized and market option prices.";
       case "parity_sniper": return "Parity Sniper: Specialized $S + P - C = K$ gap detector for exploitable option pricing discrepancies.";
       case "vwap_reversion": return "VWAP Reversion: Standard deviation 'Snap Back' strategy for over-extended price action.";
-      case "jarrod_vwap": return "Jarrod VWAP: Professional volume-confirmed VWAP reclaim strategy with integrated loss prevention.";
       default: return "Automated algorithmic execution strategy.";
     }
   }
@@ -221,7 +220,6 @@
       case "listing_arbitrage": return "Listing Arbitrage";
       case "parity_sniper": return "Parity Sniper";
       case "vwap_reversion": return "VWAP Reversion";
-      case "jarrod_vwap": return "Jarrod VWAP Reclaim";
       case "vwap_reflexive": return "VWAP Mean Reversion";
       case "rsi_mean_reversion": return "Gamma Scalping";
       case "sma_trend": return "0DTE Delta-Neutral";

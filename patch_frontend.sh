@@ -1,3 +1,0 @@
-sed -i 's/"vwap_reversion";/"vwap_reversion" | "jarrod_vwap";/g' frontend/src/lib/types.ts
-sed -i 's/case "vwap_reversion": return "VWAP Reversion";/case "vwap_reversion": return "VWAP Reversion";\n      case "jarrod_vwap": return "Jarrod VWAP";/g' frontend/src/components/AgentsWorkspace.svelte
-sed -i 's/case "vwap_reversion": return "VWAP Reversion: Standard deviation '\\''Snap Back'\\'' strategy for over-extended price action.";/case "vwap_reversion": return "VWAP Reversion: Standard deviation '\\''Snap Back'\\'' strategy for over-extended price action.";\n      case "jarrod_vwap": return "Jarrod VWAP: Professional volume-confirmed VWAP reclaim strategy with integrated loss prevention.";/g' frontend/src/components/AgentsWorkspace.svelte

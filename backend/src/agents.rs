@@ -154,6 +154,26 @@ pub async fn run_strategy_once(
                     &signal.reason,
                 );
 
+
+                if !matches!(signal.action, SignalAction::Hold) && current_position.is_none() {
+                    if let Err(e) = state.risk_engine.validate(&latest_strategy, &signal).await {
+                        broadcast_audit_log(
+                            &state,
+                            AuditEvent::now(
+                                SystemSource::System,
+                                symbol.to_string(),
+                                SystemEventType::Protection,
+                                format!("Price: ${:.2}", quote.quote.price),
+                                kronos_score.unwrap_or(0.5),
+                                format!("RISK ENGINE BLOCKED: {}", e),
+                            )
+                        );
+                        let db2 = state.db.lock().await;
+                        db2.mark_strategy_run(&strategy_id, &format!("Risk Engine Blocked: {}", e), signal.new_state.clone())?;
+                        return Ok(None);
+                    }
+                }
+
                 let prepared_trade = if matches!(signal.action, SignalAction::Hold) {
                     None
                 } else if latest_strategy.execution_mode.requires_external_broker() {

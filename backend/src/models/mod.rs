@@ -112,7 +112,6 @@ pub enum StrategyKind {
     PutCallParity,
     ParitySniper,
     VwapReversion,
-    JarrodVwap,
 }
 
 impl StrategyKind {
@@ -125,7 +124,6 @@ impl StrategyKind {
             Self::PutCallParity => "put_call_parity",
             Self::ParitySniper => "parity_sniper",
             Self::VwapReversion => "vwap_reversion",
-            Self::JarrodVwap => "jarrod_vwap",
         }
     }
 }
@@ -309,6 +307,7 @@ pub struct StrategySummary {
     pub broker_open_orders: Option<usize>,
     pub run_interval_ms: u64,
     pub state_json: serde_json::Value,
+    pub risk_parameters: Option<RiskParameters>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -428,6 +427,15 @@ pub struct WatchlistAddRequest {
     pub symbol: String,
 }
 
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RiskParameters {
+    pub max_position_size: f64,
+    pub max_daily_loss: f64,
+    #[serde(default)]
+    pub blacklisted_symbols: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateStrategyRequest {
     pub name: String,
@@ -448,6 +456,7 @@ pub struct CreateStrategyRequest {
     pub enabled: Option<bool>,
     pub live_confirmation: Option<String>,
     pub run_interval_ms: Option<u64>,
+    pub risk_parameters: Option<RiskParameters>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -471,6 +480,7 @@ pub struct UpdateStrategyRequest {
     pub reset_portfolio: Option<bool>,
     pub live_confirmation: Option<String>,
     pub run_interval_ms: Option<u64>,
+    pub risk_parameters: Option<RiskParameters>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -598,6 +608,7 @@ pub struct StrategyRecord {
     pub last_run_at: Option<String>,
     pub run_interval_ms: u64,
     pub state_json: serde_json::Value,
+    pub risk_parameters: Option<RiskParameters>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
