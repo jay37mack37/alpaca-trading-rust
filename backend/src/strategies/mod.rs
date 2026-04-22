@@ -343,6 +343,7 @@ mod tests {
             "test-master-key-for-unit-tests",
         ).unwrap();
         AppState {
+            api_token: std::sync::Arc::new("test-token".to_string()),
             db: std::sync::Arc::new(tokio::sync::Mutex::new(db)),
             http: reqwest::Client::new(),
             config: crate::models::AppConfig {
@@ -395,6 +396,12 @@ mod tests {
             razor_stop: None,
             stagnation_timestamp: None,
             kronos_sentiment: None,
+            take_profit: None,
+            exit_logic: None,
+            entry_time: None,
+            buy_logic: None,
+            entry_math: None,
+            entry_ai: None,
         }
     }
 
