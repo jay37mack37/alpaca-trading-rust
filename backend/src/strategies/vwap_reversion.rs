@@ -13,7 +13,7 @@ pub fn evaluate_vwap(prices: &[f64], volumes: &[f64]) -> (f64, f64) {
         vol_sum += v;
     }
     let vwap = if vol_sum > 0.0 { pv_sum / vol_sum } else { 0.0 };
-    
+
     let mean = prices.iter().sum::<f64>() / prices.len() as f64;
     let variance = prices.iter().map(|p| (p - mean).powi(2)).sum::<f64>() / prices.len() as f64;
     (vwap, variance.sqrt())
@@ -84,9 +84,9 @@ pub fn evaluate_vwap_reversion(
     let dev = (current_price - vwap) / sd;
     let abs_dev = dev.abs();
     let ai_score = kronos_score.unwrap_or(0.5);
-    
+
     // Mock ADX calculation for decision support (ADX < 25 is range/mean-reversion friendly)
-    let adx = 22.5; 
+    let adx = 22.5;
     let adx_allows = adx < 25.0;
 
     // SYSTEM LOGGING: Decision Support System
@@ -117,7 +117,7 @@ pub fn evaluate_vwap_reversion(
     if abs_dev >= 2.5 && ai_score > 0.8 && adx_allows {
         let action = if dev > 0.0 { SignalAction::Sell } else { SignalAction::Buy };
         let direction = if dev > 0.0 { "Over-extended (UP)" } else { "Over-extended (DOWN)" };
-        
+
         return StrategySignal {
             action,
             allocation_fraction: 0.15,

@@ -3,7 +3,7 @@ pub mod parity_sniper;
 pub mod vwap_reversion;
 
 use crate::models::{
-    Candle,
+    AssetClassTarget, Candle, DataProvider, ExecutionMode, OptionEntryStyle, OptionStructurePreset,
     PositionRecord, Quote, SignalAction, StrategyKind, StrategyRecord, StrategySignal,
 };
 use async_trait::async_trait;
@@ -154,7 +154,7 @@ impl TradingStrategy for VwapReversionStrategy {
     ) -> StrategySignal {
         // Use the brain logic from vwap_reversion module
         let mut tracker = vwap_reversion::VwapTracker::new();
-        // Since we don't persist tracker across evaluations in this stateful way yet, 
+        // Since we don't persist tracker across evaluations in this stateful way yet,
         // we'll bootstrap it from current candles for this run.
         // In a production high-frequency setup, we would maintain this in AppState.
         for candle in _candles {

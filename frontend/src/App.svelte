@@ -20,7 +20,7 @@
     UpdateStrategyRequest,
   } from "./lib/types";
 
-  let page: "market" | "workstation" | "analytics" = "market";
+  let page: "market" | "workstation" | "remodeling" | "analytics" = "market";
   let symbol = "SPY";
   let symbolDraft = "SPY";
   let provider: DataProvider = "yahoo";
@@ -226,10 +226,10 @@
     stream.addEventListener("log", (message) => {
       handleRealtimeEvent(JSON.parse(message.data) as RealtimeEvent);
     });
-    stream.addEventListener("system", (message) => {
+    stream.addEventListener("heartbeat", (message) => {
       handleRealtimeEvent(JSON.parse(message.data) as RealtimeEvent);
     });
-    stream.addEventListener("heartbeat", (message) => {
+    stream.addEventListener("system", (message) => {
       handleRealtimeEvent(JSON.parse(message.data) as RealtimeEvent);
     });
     stream.addEventListener("system_log", (message) => {
@@ -400,11 +400,11 @@
 
 <main class="shell">
   <DiagnosticHeader 
-    alpacaActive={alpacaActive} 
-    kronosActive={kronosActive} 
+    alpacaActive={alpacaActive}
+    kronosActive={kronosActive}
     optionsActive={optionsActive}
-    buyingPower={heartbeatBuyingPower || totalBuyingPower} 
-    kronosLatency={kronosLatency} 
+    buyingPower={heartbeatBuyingPower || totalBuyingPower}
+    kronosLatency={kronosLatency}
   />
   <header class="topbar">
     <div>
@@ -415,6 +415,7 @@
       <nav class="tab-strip" aria-label="Primary">
         <button class:active={page === "market"} type="button" on:click={() => (page = "market")}>Market</button>
         <button class:active={page === "workstation"} type="button" on:click={() => (page = "workstation")}>Workstation</button>
+        <button class:active={page === "remodeling"} type="button" on:click={() => (page = "remodeling")}>Remodeling</button>
         <button class:active={page === "analytics"} type="button" on:click={() => (page = "analytics")}>Analytics</button>
       </nav>
       <button type="button" class="panic-button" on:click={globalPanic} title="Stop all running strategies">
@@ -568,6 +569,9 @@
           on:start={async () => { await loadDashboard(true); }}
           on:stop={async () => { await loadDashboard(true); }}
         />
+        <div class="workstation-feed">
+          <StrategyLogTable logs={strategyLogs} />
+        </div>
       </section>
     {:else if page === "analytics"}
       <section class="analytics-page">

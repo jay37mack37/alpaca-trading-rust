@@ -130,6 +130,8 @@
       starting_cash: Number(createDraft.starting_cash),
       tracked_symbols: parseSymbols(createDraft.tracked_symbols),
       credential_id: createDraft.credential_id || null,
+      enabled: createDraft.enabled,
+      run_interval_ms: draftToRunIntervalMs(createDraft.run_interval, createDraft.run_interval_unit),
       live_confirmation: createDraft.live_confirmation,
       reset_portfolio: createDraft.reset_portfolio,
       risk_parameters: {
@@ -137,9 +139,7 @@
         max_daily_loss: Number(createDraft.max_daily_loss),
         blacklisted_symbols: parseSymbols(createDraft.blacklisted_symbols),
       },
-      run_interval_ms: draftToRunIntervalMs(createDraft.run_interval, createDraft.run_interval_unit),
     });
-
     createDraft = {
       name: "",
       enabled: true,
@@ -313,7 +313,7 @@
       </label>
       <label>
         <span>Asset class</span>
-        <select id="agent-create-asset" name="agent_create_asset" bind:value={createDraft.asset_class_target}>
+        <select id="agent-create-asset-class" name="agent_create_asset_class" bind:value={createDraft.asset_class_target}>
           <option value="equity">Equity</option>
           <option value="options">Options</option>
         </select>
@@ -448,7 +448,7 @@
                 <input type="text" class:invalid={draftErrors[strategy.id]?.tracked_symbols} bind:value={drafts[strategy.id].tracked_symbols} />
                 {#if draftErrors[strategy.id]?.tracked_symbols}<span class="error-msg">{draftErrors[strategy.id].tracked_symbols}</span>{/if}
               </label>
-              
+
               <label>
                 <span>Run interval</span>
                 <div style="display: flex; gap: 4px;">
@@ -467,11 +467,65 @@
                   <option value="">No broker credential</option>
                   {#each credentials as credential}
                     <option value={credential.id}>{credential.label} · {credential.environment}</option>
-                  {#each [credential] as _}
-                    <option value={credential.id}>{credential.label} · {credential.environment}</option>
-                  {/each}
                   {/each}
                 </select>
+              </label>
+
+              {#if drafts[strategy.id].asset_class_target === "options"}
+                <label>
+                  <span>Options structure</span>
+                  <select bind:value={drafts[strategy.id].option_structure_preset}>
+                    <option value="single">Single contract</option>
+                    <option value="bull_call_spread">Bull call spread</option>
+                    <option value="bear_put_spread">Bear put spread</option>
+                  </select>
+                </label>
+                {#if drafts[strategy.id].option_structure_preset === "single"}
+                  <label>
+                    <span>Option style</span>
+                    <select bind:value={drafts[strategy.id].option_entry_style}>
+                      <option value="long_call">Long call</option>
+                      <option value="long_put">Long put</option>
+                    </select>
+                  </label>
+                {/if}
+                {#if drafts[strategy.id].option_structure_preset !== "single"}
+                  <label>
+                    <span>Spread width</span>
+                    <input type="number" class:invalid={draftErrors[strategy.id]?.option_spread_width} bind:value={drafts[strategy.id].option_spread_width} />
+                    {#if draftErrors[strategy.id]?.option_spread_width}<span class="error-msg">{draftErrors[strategy.id].option_spread_width}</span>{/if}
+                  </label>
+                {/if}
+                <label>
+                  <span>Target delta</span>
+                  <input type="number" step="0.01" class:invalid={draftErrors[strategy.id]?.option_target_delta} bind:value={drafts[strategy.id].option_target_delta} />
+                  {#if draftErrors[strategy.id]?.option_target_delta}<span class="error-msg">{draftErrors[strategy.id].option_target_delta}</span>{/if}
+                </label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                  <label>
+                    <span>Min DTE</span>
+                    <input type="number" class:invalid={draftErrors[strategy.id]?.option_dte_min} bind:value={drafts[strategy.id].option_dte_min} />
+                    {#if draftErrors[strategy.id]?.option_dte_min}<span class="error-msg">{draftErrors[strategy.id].option_dte_min}</span>{/if}
+                  </label>
+                  <label>
+                    <span>Max DTE</span>
+                    <input type="number" class:invalid={draftErrors[strategy.id]?.option_dte_max} bind:value={drafts[strategy.id].option_dte_max} />
+                    {#if draftErrors[strategy.id]?.option_dte_max}<span class="error-msg">{draftErrors[strategy.id].option_dte_max}</span>{/if}
+                  </label>
+                </div>
+              {/if}
+
+              {#if drafts[strategy.id].execution_mode === "alpaca_live"}
+                <label class="danger">
+                  <span>Live confirmation</span>
+                  <input type="text" class:invalid={draftErrors[strategy.id]?.live_confirmation} bind:value={drafts[strategy.id].live_confirmation} placeholder="TRADE REAL MONEY" />
+                  {#if draftErrors[strategy.id]?.live_confirmation}<span class="error-msg">{draftErrors[strategy.id].live_confirmation}</span>{/if}
+                </label>
+              {/if}
+
+              <label class="inline-checkbox">
+                <input type="checkbox" bind:checked={drafts[strategy.id].reset_portfolio} />
+                <span>Reset the strategy ledger when saving</span>
               </label>
 
               <div class="config-actions">
@@ -623,6 +677,52 @@
   .workspace-header h2 {
     font-size: 1.8rem;
     font-weight: 700;
+  }
+
+  .create-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .config-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .config-form label {
+    display: grid;
+    gap: 4px;
+  }
+
+  .config-form input,
+  .config-form select {
+    padding: 8px;
+    font-size: 0.85rem;
+  }
+
+  .inline-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: rgba(221, 233, 255, 0.8);
+  }
+
+  .inline-checkbox input {
+    width: auto;
+    margin: 0;
+  }
+
+  input.invalid,
+  select.invalid {
+    border-color: #ff8a8a !important;
+  }
+
+  .error-msg {
+    color: #ff8a8a;
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
   }
 
   .section-header {

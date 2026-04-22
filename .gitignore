@@ -13,6 +13,14 @@ target/
 # Frontend
 frontend/node_modules/
 
+# Temp/scratch files
+temp_main.rs
+temp_main_utf8.rs
+backend/errors.txt
+
+# Old legacy ui/ folder
+ui/
+
 # IDE
 .vscode/
 .idea/

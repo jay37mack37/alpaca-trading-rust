@@ -27,23 +27,23 @@ pub fn evaluate_parity_sniper(
     let mut best_gap = 0.0;
     let mut best_strike = 0.0;
     let mut best_context = String::new();
-    
+
     for contract in options {
         if (contract.strike - spot_price).abs() / spot_price > 0.05 {
-            continue; 
+            continue;
         }
 
         if contract.option_type.to_lowercase() == "call" {
             let matching_put = options.iter().find(|o| {
-                o.strike == contract.strike && 
-                o.expiration == contract.expiration && 
+                o.strike == contract.strike &&
+                o.expiration == contract.expiration &&
                 o.option_type.to_lowercase() == "put"
             });
 
             if let Some(put) = matching_put {
                 let call_price = contract.ask.unwrap_or(0.0);
                 let put_price = put.ask.unwrap_or(0.0);
-                
+
                 if call_price > 0.0 && put_price > 0.0 {
                     let today = chrono::Local::now().date_naive();
                     let exp_date = chrono::NaiveDate::parse_from_str(&contract.expiration, "%Y-%m-%d").unwrap_or(today);
