@@ -1,11 +1,14 @@
 use crate::math::black_scholes_call;
 use crate::models::{
-    Candle, OptionContractSnapshot, PositionRecord, Quote, SignalAction, StrategyRecord,
-    StrategySignal,
+    OptionContractSnapshot, PositionRecord, Quote, SignalAction, StrategyRecord,
+    StrategySignal, Candle,
 };
 use crate::options::parse_expiration_from_occ;
 use crate::strategies::{hold, TradingStrategy};
 use async_trait::async_trait;
+use crate::agents::broadcast_system_event;
+use crate::models::telemetry::StrategyType;
+use crate::AppState;
 use chrono::{Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 
@@ -15,12 +18,14 @@ const SPY_SYMBOL: &str = "SPY";
 /// 
 /// Phase 1: Selective Sniper & Drift Hunter
 pub async fn evaluate_listing_arbitrage_v2(
+    state: &AppState,
     _strategy: &StrategyRecord,
     option: &OptionContractSnapshot,
     underlying_quote: &Quote,
     position: Option<&PositionRecord>,
     kronos_score: Option<f64>,
 ) -> StrategySignal {
+    let symbol = &option.contract_symbol;
     // 1. Quality Filters
     if option.underlying_symbol != SPY_SYMBOL {
         return hold("Non-SPY contracts ignored");
@@ -55,6 +60,16 @@ pub async fn evaluate_listing_arbitrage_v2(
 
     // 4. Alpha Calculation
     let edge = (mid - fair_value) / fair_value;
+    
+    // Telemetry
+    broadcast_system_event(
+        state,
+        StrategyType::Listing,
+        &option.underlying_symbol,
+        edge.abs(),
+        kronos_val,
+        &format!("Analyzed {} at strike {:.0}. Black-Scholes edge: {:.2}%", option.contract_symbol, option.strike, edge * 100.0),
+    );
     
     // 5. Entry Logic
     if position.is_none() {
@@ -161,29 +176,49 @@ pub struct ListingArbitrageStrategy;
 impl TradingStrategy for ListingArbitrageStrategy {
     async fn evaluate(
         &self,
+        state: &AppState,
         strategy: &StrategyRecord,
         candles: &[Candle],
         quote: &Quote,
+        options: &[OptionContractSnapshot],
         position: Option<&PositionRecord>,
         kronos_score: Option<f64>,
     ) -> StrategySignal {
-        evaluate_listing_arbitrage_wrapper(strategy, candles, quote, position, kronos_score).await
+        evaluate_listing_arbitrage_wrapper(state, strategy, candles, quote, options, position, kronos_score).await
     }
 }
 
 // Wrapper for the engine
 pub async fn evaluate_listing_arbitrage_wrapper(
-    _strategy: &StrategyRecord,
+    state: &AppState,
+    strategy: &StrategyRecord,
     _candles: &[Candle],
-    _quote: &Quote,
-    _position: Option<&PositionRecord>,
-    _kronos_score: Option<f64>,
+    underlying_quote: &Quote,
+    options: &[OptionContractSnapshot],
+    position: Option<&PositionRecord>,
+    kronos_score: Option<f64>,
 ) -> StrategySignal {
-    // Top 20 active options sweep logic would normally go here, 
-    // but the engine calls this per-symbol in its current loop.
-    // For now, we evaluate the first tracked symbol.
-    
-    // In a real run, we'd iterate the option chain.
-    // This is a simplified per-contract implementation.
-    hold("Interactive chain analysis required")
+    if options.is_empty() {
+        return hold("No option contracts available for evaluation");
+    }
+
+    let mut best_signal = hold("Scanning option chain...");
+
+    for option in options {
+        let signal = evaluate_listing_arbitrage_v2(
+            state,
+            strategy,
+            option,
+            underlying_quote,
+            position,
+            kronos_score,
+        ).await;
+
+        if signal.action != SignalAction::Hold {
+            return signal; // Found an opportunity
+        }
+        best_signal = signal;
+    }
+
+    best_signal
 }

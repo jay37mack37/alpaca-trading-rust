@@ -1,19 +1,14 @@
-use axum::{
-    extract::State,
-    Json,
-};
-use crate::models::{
-    CredentialSummary, CreateCredentialRequest,
-};
-use crate::error::{AppResult, ApiResponse};
-use crate::AppState;
+use crate::error::{ApiResponse, AppResult};
+use crate::models::{CreateCredentialRequest, CredentialSummary};
 use crate::services::db::Database;
+use crate::AppState;
+use axum::{extract::State, Json};
 
 pub async fn list_credentials(
     State(state): State<AppState>,
 ) -> AppResult<ApiResponse<Vec<CredentialSummary>>> {
     let db = state.db.lock().await;
-    let db: &Database = &*db;
+    let db: &Database = &db;
     Ok(ApiResponse {
         success: true,
         data: Some(db.list_credentials()?),
@@ -33,7 +28,7 @@ pub async fn create_credential(
 
     let created = {
         let db = state.db.lock().await;
-        let db: &Database = &*db;
+        let db: &Database = &db;
         db.insert_credential(request)?
     };
 

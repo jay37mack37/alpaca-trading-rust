@@ -169,9 +169,11 @@ pub async fn submit_alpaca_order(
         } => {
             let (qty, order_type, limit_price) = match order_type {
                 AlpacaOrderType::Market => (format!("{quantity:.3}"), "market", None),
-                AlpacaOrderType::Limit { limit_price } => {
-                    (format!("{quantity:.0}"), "limit", Some(format!("{limit_price:.2}")))
-                }
+                AlpacaOrderType::Limit { limit_price } => (
+                    format!("{quantity:.0}"),
+                    "limit",
+                    Some(format!("{limit_price:.2}")),
+                ),
             };
             let mut order = json!({
                 "symbol": symbol,
@@ -612,8 +614,6 @@ async fn yahoo_candles(
     Ok(FetchedCandles { candles })
 }
 
-
-
 async fn yahoo_options(client: &Client, symbol: &str) -> AppResult<FetchedOptions> {
     let response = client
         .get(format!(
@@ -947,7 +947,9 @@ fn parse_alpaca_contracts(
                 bid: latest_quote["bp"].as_f64(),
                 ask: latest_quote["ap"].as_f64(),
                 last: latest_trade["p"].as_f64(),
-                implied_volatility: snapshot["impliedVolatility"].as_f64().or_else(|| greeks["implied_volatility"].as_f64()),
+                implied_volatility: snapshot["impliedVolatility"]
+                    .as_f64()
+                    .or_else(|| greeks["implied_volatility"].as_f64()),
                 open_interest: None,
                 volume: None,
                 in_the_money: None,
@@ -986,8 +988,8 @@ fn numberish(value: &Value) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::{AlpacaOrderLeg, AlpacaOrderRequest, AlpacaOrderType};
-    use crate::options::parse_option_contract_symbol;
     use crate::models::TradeSide;
+    use crate::options::parse_option_contract_symbol;
 
     #[test]
     fn parses_call_contract_symbol() {

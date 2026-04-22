@@ -1,4 +1,5 @@
 use std::time::Duration;
+use crate::models::telemetry::{StrategyType, SystemEvent};
 
 use chrono::Utc;
 use futures_util::stream::{FuturesUnordered, StreamExt};
@@ -14,6 +15,7 @@ use crate::services::providers::{
     submit_alpaca_order,
 };
 use crate::services::trading::{prepare_trade, TradePreparationOutcome};
+use crate::logger::{SystemEvent as AuditEvent, SystemSource, SystemEventType};
 use crate::AppState;
 use tracing::warn;
 
@@ -131,9 +133,11 @@ pub async fn run_strategy_once(
                 let kronos_score = kronos_result.as_ref().map(|s| s.confidence).ok();
 
                 let signal = crate::strategies::evaluate_strategy(
+                    &state,
                     &latest_strategy,
                     &candles.candles,
                     &quote.quote,
+                    &option_contracts,
                     current_position.as_ref(),
                     kronos_score,
                 )
@@ -251,6 +255,18 @@ pub async fn run_strategy_once(
                                 }
                             };
 
+                            broadcast_audit_log(
+                                &state,
+                                AuditEvent::now(
+                                    SystemSource::System,
+                                    symbol.to_string(),
+                                    SystemEventType::Haggle,
+                                    format!("Order:{}", submitted.order_id),
+                                    kronos_score.unwrap_or(0.5),
+                                    "THE HAGGLER | Order submitted. Walking price to mid for optimal fill.".to_string(),
+                                )
+                            );
+
                             let fill = match poll_alpaca_order_until_filled(
                                 &state.http,
                                 credential,
@@ -283,6 +299,36 @@ pub async fn run_strategy_once(
                             let mut reconciled_trade = prepared_trade.local.clone();
                             reconciled_trade.quantity = fill.filled_qty;
                             reconciled_trade.price = fill.filled_avg_price;
+
+                            // HAGGLER LOGGING: Slippage Audit
+                            let slippage = (fill.filled_avg_price - prepared_trade.local.price).abs();
+                            let slippage_pct = (slippage / prepared_trade.local.price) * 100.0;
+                            broadcast_audit_log(
+                                &state,
+                                AuditEvent::now(
+                                    SystemSource::System,
+                                    symbol.to_string(),
+                                    SystemEventType::Exit,
+                                    format!("Exp:${:.2} Act:${:.2}", prepared_trade.local.price, fill.filled_avg_price),
+                                    kronos_score.unwrap_or(0.5),
+                                    format!("FILL COMPLETE | Slippage: ${:.2} ({:.2}%)", slippage, slippage_pct),
+                                )
+                            );
+
+                            // RAZOR LOGGING: Stop Loss Initialization
+                            if let Some(stop) = signal.stop_loss {
+                                broadcast_audit_log(
+                                    &state,
+                                    AuditEvent::now(
+                                        SystemSource::System,
+                                        symbol.to_string(),
+                                        SystemEventType::Protection,
+                                        format!("Stop:${:.2}", stop),
+                                        kronos_score.unwrap_or(0.5),
+                                        format!("RAZOR ACTIVE | Protective stop set at ${:.2}", stop),
+                                    )
+                                );
+                            }
 
                             let trade = {
                                 let mut db = state.db.lock().await;
@@ -371,6 +417,29 @@ pub fn broadcast_strategy_log(
     });
 }
 
+pub fn broadcast_system_event(
+    state: &crate::AppState,
+    strategy: StrategyType,
+    symbol: &str,
+    edge: f64,
+    ai_confirmation: f64,
+    message: &str,
+) {
+    let event = SystemEvent {
+        timestamp: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        strategy,
+        symbol: symbol.to_string(),
+        edge,
+        ai_confirmation,
+        message: message.to_string(),
+    };
+    let _ = state.streams.send_event(crate::models::RealtimeEvent::System { event });
+}
+
+
+pub fn broadcast_audit_log(state: &AppState, event: crate::logger::SystemEvent) {
+    let _ = state.streams.send_event(RealtimeEvent::SystemLog { event });
+}
 
 pub async fn spawn_agent_loop(state: AppState, strategy_id: String) {
     let mut tasks = state.agent_tasks.lock().await;

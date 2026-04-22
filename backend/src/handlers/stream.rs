@@ -1,15 +1,15 @@
+use crate::error::{AppError, AppResult};
+use crate::models::{normalize_symbol, DataProvider, RealtimeStreamQuery};
+use crate::services::broker::{resolve_alpaca_credential, stream_matches};
+use crate::services::db::Database;
+use crate::AppState;
 use axum::{
     extract::{Query, State},
     response::sse::{Event, KeepAlive, Sse},
 };
-use crate::models::{RealtimeStreamQuery, DataProvider, normalize_symbol};
-use crate::error::{AppResult, AppError};
-use crate::AppState;
-use crate::services::broker::{resolve_alpaca_credential, stream_matches};
-use crate::services::db::Database;
+use serde_json::json;
 use std::convert::Infallible;
 use std::time::Duration;
-use serde_json::json;
 
 pub async fn realtime_stream(
     State(state): State<AppState>,
@@ -40,7 +40,7 @@ pub async fn realtime_stream(
     {
         let strategy = {
             let db = state.db.lock().await;
-            let db: &Database = &*db;
+            let db: &Database = &db;
             db.list_strategy_records()?
                 .into_iter()
                 .find(|candidate| candidate.id == strategy_id)

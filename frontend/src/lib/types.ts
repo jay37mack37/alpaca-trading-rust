@@ -361,6 +361,34 @@ export interface HeartbeatRealtimeEvent {
   type: "heartbeat";
   timestamp: number;
   buying_power: number;
+  kronos_active: boolean;
+  alpaca_active: boolean;
+  options_active: boolean;
+}
+
+export interface SystemRealtimeEvent {
+  type: "system";
+  event: {
+    timestamp: string;
+    strategy: "PARITY" | "VWAP" | "SYSTEM";
+    symbol: string;
+    edge: number;
+    ai_confirmation: number;
+    message: string;
+  };
+}
+
+export interface SystemLogRealtimeEvent {
+  type: "system_log";
+  event: {
+    timestamp: string;
+    source: "PARITY" | "VWAP" | "SYSTEM";
+    symbol: string;
+    event_type: "SCAN" | "SIGNAL" | "HAGGLE" | "PROTECTION" | "EXIT";
+    math_context: string;
+    ai_confidence: number;
+    narrative: string;
+  };
 }
 
 export type RealtimeEvent =
@@ -368,7 +396,9 @@ export type RealtimeEvent =
   | BrokerSyncRealtimeEvent
   | StatusRealtimeEvent
   | LogRealtimeEvent
-  | HeartbeatRealtimeEvent;
+  | HeartbeatRealtimeEvent
+  | SystemRealtimeEvent
+  | SystemLogRealtimeEvent;
 
 export interface Watchlist {
   id: string;

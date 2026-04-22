@@ -17,11 +17,10 @@ use crate::{
     models::{
         AssetClassTarget, BrokerAccountSummary, BrokerOrderSummary, BrokerPositionSummary,
         BrokerSyncState, CreateCredentialRequest, CreateStrategyRequest, CredentialEnvironment,
-        CredentialSummary, DataProvider, ExecutionMode, OptionContractSnapshot,
-        OptionEntryStyle, OptionStructurePreset, PositionLeg, PositionRecord, PositionSummary,
-        Quote, SignalAction, StoredCredential, StrategyDetailResponse, StrategyKind,
-        StrategyRecord, StrategySignal, StrategySummary, TradeLeg, TradeRecord, TradeSide,
-        UpdateStrategyRequest,
+        CredentialSummary, DataProvider, ExecutionMode, OptionContractSnapshot, OptionEntryStyle,
+        OptionStructurePreset, PositionLeg, PositionRecord, PositionSummary, Quote, SignalAction,
+        StoredCredential, StrategyDetailResponse, StrategyKind, StrategyRecord, StrategySignal,
+        StrategySummary, TradeLeg, TradeRecord, TradeSide, UpdateStrategyRequest,
     },
 };
 
@@ -50,11 +49,7 @@ pub struct LocalTradeInput {
 }
 
 impl Database {
-    pub fn open(
-        path: &Path,
-        default_watchlist: &[String],
-        master_key: &str,
-    ) -> AppResult<Self> {
+    pub fn open(path: &Path, default_watchlist: &[String], master_key: &str) -> AppResult<Self> {
         if master_key.trim().is_empty() {
             return Err(AppError::Internal(
                 "AUTO_STONKS_MASTER_KEY is required; set it to a strong, unique secret before starting the backend".to_string(),
@@ -84,6 +79,7 @@ impl Database {
         };
         db.seed_default_watchlist(default_watchlist)?;
         db.seed_default_strategies()?;
+        db.seed_alpaca_from_env()?;
         Ok(db)
     }
 
@@ -355,8 +351,14 @@ impl Database {
             "ALTER TABLE strategy_positions ADD COLUMN option_structure_preset TEXT",
             [],
         );
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN option_type TEXT", []);
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN expiration TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN option_type TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN expiration TEXT",
+            [],
+        );
         let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN strike REAL", []);
         let _ = conn.execute(
             "ALTER TABLE strategy_positions ADD COLUMN stale_quote INTEGER NOT NULL DEFAULT 0",
@@ -382,7 +384,10 @@ impl Database {
             "ALTER TABLE trade_log ADD COLUMN multiplier REAL NOT NULL DEFAULT 1.0",
             [],
         );
-        let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN option_structure_preset TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE trade_log ADD COLUMN option_structure_preset TEXT",
+            [],
+        );
         let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN option_type TEXT", []);
         let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN expiration TEXT", []);
         let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN strike REAL", []);
@@ -440,6 +445,17 @@ impl Database {
 
     fn seed_default_strategies(&self) -> AppResult<()> {
         let now = now();
+
+        // Migration: Rename old 'put-call-parity' to 'parity-sniper'
+        let _ = self.conn.execute(
+            "UPDATE strategies SET id = 'parity-sniper', name = 'Parity Sniper', kind = 'parity_sniper' WHERE id = 'put-call-parity'",
+            [],
+        );
+        let _ = self.conn.execute(
+            "UPDATE strategies SET id = 'vwap-reversion', name = 'VWAP Reversion', kind = 'vwap_reversion' WHERE id = 'vwap-reflexive'",
+            [],
+        );
+
         let defaults = [
             (
                 "listing-arbitrage",
@@ -448,10 +464,10 @@ impl Database {
                 vec!["SPY"],
             ),
             (
-                "vwap-reflexive",
-                "VWAP Mean Reversion",
-                StrategyKind::VwapReflexive,
-                vec!["SPY", "AAPL"],
+                "vwap-reversion",
+                "VWAP Reversion",
+                StrategyKind::VwapReversion,
+                vec!["SPY"],
             ),
             (
                 "gamma-scalping",
@@ -466,22 +482,31 @@ impl Database {
                 vec!["SPY"],
             ),
             (
-                "put-call-parity",
-                "Put-Call Parity",
-                StrategyKind::PutCallParity,
+                "parity-sniper",
+                "Parity Sniper",
+                StrategyKind::ParitySniper,
                 vec!["SPY"],
             ),
         ];
 
         for (id, name, kind, symbols) in defaults {
-            // Only insert if missing
-            let exists: bool = self.conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM strategies WHERE id = ?1 OR kind = ?2)",
-                params![id, kind.as_str()],
+            let enabled = if id == "parity-sniper" || id == "vwap-reversion" { 1 } else { 0 };
+            // Check if ID already exists
+            let existing_kind: Option<String> = self.conn.query_row(
+                "SELECT kind FROM strategies WHERE id = ?1",
+                params![id],
                 |row| row.get(0),
-            )?;
+            ).optional()?;
 
-            if !exists {
+            if let Some(old_kind) = existing_kind {
+                // If it exists but kind is different, or we just want to ensure the name is right
+                // If it exists but kind is different, or we just want to ensure the name is right
+                self.conn.execute(
+                    "UPDATE strategies SET name = ?1, kind = ?2, enabled = CASE WHEN id IN ('parity-sniper', 'vwap-reversion') THEN 1 ELSE enabled END WHERE id = ?3",
+                    params![name, kind.as_str(), id],
+                )?;
+            } else {
+                // Insert new
                 self.conn.execute(
                     "INSERT INTO strategies (
                         id, name, kind, enabled, execution_mode, asset_class_target, option_entry_style,
@@ -489,12 +514,13 @@ impl Database {
                         option_dte_min, option_dte_max, option_max_spread_pct, option_limit_buffer_pct, credential_id,
                         starting_cash, cash_balance, equity, tracked_symbols,
                         total_trades, wins, losses, last_signal, last_run_at, run_interval_ms
-                    ) VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, NULL, 50000.0, 50000.0, 50000.0, ?14, 0, 0, 0, ?15, ?16, ?17)",
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, 50000.0, 50000.0, 50000.0, ?15, 0, 0, 0, ?16, ?17, ?18)",
                     params![
                         id,
                         name,
                         kind.as_str(),
-                        execution_mode_to_str(ExecutionMode::LocalPaper),
+                        enabled,
+                        execution_mode_to_str(if std::env::var("ALPACA_API_KEY").is_ok() { ExecutionMode::AlpacaPaper } else { ExecutionMode::LocalPaper }),
                         asset_class_target_to_str(AssetClassTarget::Options),
                         option_entry_style_to_str(OptionEntryStyle::LongCall),
                         option_structure_preset_to_str(OptionStructurePreset::Single),
@@ -513,6 +539,43 @@ impl Database {
             }
         }
 
+        Ok(())
+    }
+
+    fn seed_alpaca_from_env(&self) -> AppResult<()> {
+        let api_key = std::env::var("ALPACA_API_KEY").unwrap_or_default();
+        let api_secret = std::env::var("ALPACA_API_SECRET").unwrap_or_default();
+        
+        if api_key.is_empty() || api_key == "your_api_key_here" {
+            return Ok(());
+        }
+
+        // Check if we already have a credential with this key
+        let exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM credentials WHERE label = 'Auto-Seeded Alpaca Paper')",
+            [],
+            |row| row.get(0),
+        ).unwrap_or(false);
+
+        if !exists {
+            let id = "default-paper-cred".to_string();
+            let encrypted_key = encrypt(&self.credential_cipher, api_key.trim())?;
+            let encrypted_secret = encrypt(&self.credential_cipher, api_secret.trim())?;
+            
+            self.conn.execute(
+                "INSERT INTO credentials (
+                    id, provider, label, environment, api_key_encrypted, api_secret_encrypted,
+                    use_for_data, use_for_trading, created_at
+                ) VALUES (?1, 'alpaca', 'Auto-Seeded Alpaca Paper', 'paper', ?2, ?3, 1, 1, ?4)",
+                params![id, encrypted_key, encrypted_secret, now()],
+            )?;
+
+            // Assign this credential to the core strategies
+            self.conn.execute(
+                "UPDATE strategies SET credential_id = ?1, execution_mode = 'alpaca_paper' WHERE id IN ('parity-sniper', 'vwap-reversion')",
+                params![id],
+            )?;
+        }
         Ok(())
     }
 
@@ -642,7 +705,9 @@ impl Database {
                 execution_mode: execution_mode_from_str(&row.get::<_, String>(4)?)?,
                 asset_class_target: asset_class_target_from_str(&row.get::<_, String>(5)?)?,
                 option_entry_style: option_entry_style_from_str(&row.get::<_, String>(6)?)?,
-                option_structure_preset: option_structure_preset_from_str(&row.get::<_, String>(7)?)?,
+                option_structure_preset: option_structure_preset_from_str(
+                    &row.get::<_, String>(7)?,
+                )?,
                 option_spread_width: row.get(8)?,
                 option_target_delta: row.get(9)?,
                 option_dte_min: row.get(10)?,
@@ -772,13 +837,19 @@ impl Database {
         })
     }
 
-    pub fn set_strategy_enabled(&self, strategy_id: &str, enabled: bool) -> AppResult<StrategySummary> {
+    pub fn set_strategy_enabled(
+        &self,
+        strategy_id: &str,
+        enabled: bool,
+    ) -> AppResult<StrategySummary> {
         let changes = self.conn.execute(
             "UPDATE strategies SET enabled = ? WHERE id = ?",
             rusqlite::params![enabled as i64, strategy_id],
         )?;
         if changes == 0 {
-            return Err(crate::error::AppError::NotFound(format!("strategy {strategy_id}")));
+            return Err(crate::error::AppError::NotFound(format!(
+                "strategy {strategy_id}"
+            )));
         }
         self.list_strategies()?
             .into_iter()
@@ -1093,7 +1164,7 @@ impl Database {
                 quote.session_high,
                 quote.session_low,
                 quote.timestamp,
-                serde_json::to_string(raw_json)?,
+                "{}".to_string(),
             ],
         )?;
         Ok(())
@@ -1137,7 +1208,7 @@ impl Database {
                     contract.vega,
                     contract.moneyness,
                     captured_at,
-                    raw_json_str,
+                    "{}".to_string(),
                 ],
             )?;
         }
@@ -1391,7 +1462,6 @@ impl Database {
         self.broker_sync_state(&credential_id)
     }
 
-
     pub fn insert_watchlist(&self, id: &str, name: &str, symbols: &[String]) -> AppResult<()> {
         let normalized = normalize_symbols(symbols);
         let symbols_json = serde_json::to_string(&normalized)?;
@@ -1403,7 +1473,9 @@ impl Database {
     }
 
     pub fn list_watchlists(&self) -> AppResult<Vec<crate::models::Watchlist>> {
-        let mut stmt = self.conn.prepare("SELECT id, name, symbols FROM watchlists ORDER BY name ASC")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, name, symbols FROM watchlists ORDER BY name ASC")?;
         let rows = stmt.query_map([], |row| {
             Ok(crate::models::Watchlist {
                 id: row.get(0)?,
@@ -1419,18 +1491,25 @@ impl Database {
         Ok(results)
     }
 
-    pub fn update_watchlist(&self, id: &str, req: &crate::models::UpdateWatchlistRequest) -> AppResult<()> {
-        let current: crate::models::Watchlist = self.conn.query_row(
-            "SELECT id, name, symbols FROM watchlists WHERE id = ?1",
-            params![id],
-            |row| {
-                Ok(crate::models::Watchlist {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    symbols: parse_symbols(&row.get::<_, String>(2)?),
-                })
-            },
-        ).map_err(|_| AppError::NotFound(format!("watchlist {}", id)))?;
+    pub fn update_watchlist(
+        &self,
+        id: &str,
+        req: &crate::models::UpdateWatchlistRequest,
+    ) -> AppResult<()> {
+        let current: crate::models::Watchlist = self
+            .conn
+            .query_row(
+                "SELECT id, name, symbols FROM watchlists WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok(crate::models::Watchlist {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        symbols: parse_symbols(&row.get::<_, String>(2)?),
+                    })
+                },
+            )
+            .map_err(|_| AppError::NotFound(format!("watchlist {}", id)))?;
 
         let new_name = req.name.as_deref().unwrap_or(&current.name);
         let new_symbols = req.symbols.as_ref().unwrap_or(&current.symbols);
@@ -1445,7 +1524,9 @@ impl Database {
     }
 
     pub fn delete_watchlist(&self, id: &str) -> AppResult<()> {
-        let deleted = self.conn.execute("DELETE FROM watchlists WHERE id = ?1", params![id])?;
+        let deleted = self
+            .conn
+            .execute("DELETE FROM watchlists WHERE id = ?1", params![id])?;
         if deleted == 0 {
             return Err(AppError::NotFound(format!("watchlist {}", id)));
         }
@@ -1468,10 +1549,8 @@ impl Database {
 
         let mut stmt = self.conn.prepare("SELECT symbol FROM watchlist")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        for symbol in rows {
-            if let Ok(symbol) = symbol {
-                all_symbols.insert(symbol.to_uppercase());
-            }
+        for symbol in rows.flatten() {
+            all_symbols.insert(symbol.to_uppercase());
         }
 
         for strategy in self.list_strategy_records()? {
@@ -1546,7 +1625,9 @@ impl Database {
              WHERE strategy_id = ?1 AND underlying_symbol = ?2 AND asset_type IN ('option', 'option_spread')",
         )?;
         let position_symbols = stmt
-            .query_map(params![strategy_id, underlying_symbol], |row| row.get::<_, String>(0))?
+            .query_map(params![strategy_id, underlying_symbol], |row| {
+                row.get::<_, String>(0)
+            })?
             .collect::<Result<Vec<_>, _>>()?;
 
         if position_symbols.is_empty() {
@@ -1569,7 +1650,11 @@ impl Database {
                         .and_then(option_contract_mark_price)
                         .unwrap_or(leg.market_price);
                     let leg_stale = snapshot.and_then(option_contract_mark_price).is_none();
-                    let sign = if leg.position_side == "short" { -1.0 } else { 1.0 };
+                    let sign = if leg.position_side == "short" {
+                        -1.0
+                    } else {
+                        1.0
+                    };
                     total_mark += sign * leg_mark;
                     any_stale |= leg_stale;
                     updated_legs.push(PositionLeg {
@@ -1603,7 +1688,11 @@ impl Database {
                     position
                         .legs
                         .into_iter()
-                        .map(|leg| PositionLeg { market_price, stale_quote, ..leg })
+                        .map(|leg| PositionLeg {
+                            market_price,
+                            stale_quote,
+                            ..leg
+                        })
                         .collect()
                 };
                 (market_price, stale_quote, legs)
@@ -1630,7 +1719,11 @@ impl Database {
         Self::mark_strategy_run_internal(&self.conn, strategy_id, signal)
     }
 
-    fn mark_strategy_run_internal(conn: &Connection, strategy_id: &str, signal: &str) -> AppResult<()> {
+    fn mark_strategy_run_internal(
+        conn: &Connection,
+        strategy_id: &str,
+        signal: &str,
+    ) -> AppResult<()> {
         conn.execute(
             "UPDATE strategies SET last_signal = ?2, last_run_at = ?3 WHERE id = ?1",
             params![strategy_id, signal, now()],
@@ -1662,7 +1755,8 @@ impl Database {
             Self::mark_symbol_price_internal(&tx, &trade.instrument_symbol, trade.price)?;
         }
 
-        let existing = Self::get_position_record_internal(&tx, strategy_id, &trade.instrument_symbol)?;
+        let existing =
+            Self::get_position_record_internal(&tx, strategy_id, &trade.instrument_symbol)?;
         let trade_id = Uuid::new_v4().to_string();
         let executed_at = now();
         let mut cash_balance = strategy.cash_balance;
@@ -1688,7 +1782,11 @@ impl Database {
 
                 let position_cost = quantity * price * multiplier;
                 if position_cost > cash_balance {
-                    Self::mark_strategy_run_internal(&tx, strategy_id, "Buy signal skipped: insufficient cash")?;
+                    Self::mark_strategy_run_internal(
+                        &tx,
+                        strategy_id,
+                        "Buy signal skipped: insufficient cash",
+                    )?;
                     tx.commit()?;
                     return Ok(None);
                 }
@@ -1736,13 +1834,21 @@ impl Database {
             }
             SignalAction::Sell => {
                 let Some(current) = existing else {
-                    Self::mark_strategy_run_internal(&tx, strategy_id, "Sell signal skipped: no open position")?;
+                    Self::mark_strategy_run_internal(
+                        &tx,
+                        strategy_id,
+                        "Sell signal skipped: no open position",
+                    )?;
                     tx.commit()?;
                     return Ok(None);
                 };
 
                 if quantity <= 0.0 {
-                    Self::mark_strategy_run_internal(&tx, strategy_id, "Sell signal skipped: zero quantity")?;
+                    Self::mark_strategy_run_internal(
+                        &tx,
+                        strategy_id,
+                        "Sell signal skipped: zero quantity",
+                    )?;
                     tx.commit()?;
                     return Ok(None);
                 }
@@ -1757,7 +1863,8 @@ impl Database {
                     losses += 1;
                 }
 
-                let remaining = round_position_quantity(current.quantity - quantity, &trade.asset_type);
+                let remaining =
+                    round_position_quantity(current.quantity - quantity, &trade.asset_type);
                 if remaining <= 0.0 {
                     Self::delete_position_internal(&tx, strategy_id, &trade.instrument_symbol)?;
                 } else {
@@ -1907,8 +2014,8 @@ impl Database {
                 cash_balance -= position_cost;
                 let updated = if let Some(current) = existing {
                     let new_quantity = current.quantity + fill_quantity;
-                    let new_average = ((current.quantity * current.average_price) + position_cost)
-                        / new_quantity;
+                    let new_average =
+                        ((current.quantity * current.average_price) + position_cost) / new_quantity;
                     PositionRecord {
                         underlying_symbol: symbol.to_string(),
                         instrument_symbol: symbol.to_string(),
@@ -2060,7 +2167,6 @@ impl Database {
         }))
     }
 
-
     fn upsert_position_internal(
         conn: &Connection,
         strategy_id: &str,
@@ -2107,7 +2213,6 @@ impl Database {
         Ok(())
     }
 
-
     fn delete_position_internal(
         conn: &Connection,
         strategy_id: &str,
@@ -2119,7 +2224,6 @@ impl Database {
         )?;
         Ok(())
     }
-
 
     fn recompute_strategy_equity_internal(conn: &Connection, strategy_id: &str) -> AppResult<()> {
         let cash_balance: f64 = conn.query_row(
@@ -2525,7 +2629,9 @@ fn deserialize_position_legs(json_text: &str) -> Result<Vec<PositionLeg>, rusqli
         rusqlite::Error::FromSqlConversionFailure(
             0,
             rusqlite::types::Type::Text,
-            Box::new(AppError::Internal(format!("invalid position legs json: {err}"))),
+            Box::new(AppError::Internal(format!(
+                "invalid position legs json: {err}"
+            ))),
         )
     })
 }
@@ -2535,7 +2641,9 @@ fn deserialize_trade_legs(json_text: &str) -> Result<Vec<TradeLeg>, rusqlite::Er
         rusqlite::Error::FromSqlConversionFailure(
             0,
             rusqlite::types::Type::Text,
-            Box::new(AppError::Internal(format!("invalid trade legs json: {err}"))),
+            Box::new(AppError::Internal(format!(
+                "invalid trade legs json: {err}"
+            ))),
         )
     })
 }
@@ -2652,9 +2760,7 @@ fn option_entry_style_from_str(value: &str) -> Result<OptionEntryStyle, rusqlite
     }
 }
 
-fn option_structure_preset_from_str(
-    value: &str,
-) -> Result<OptionStructurePreset, rusqlite::Error> {
+fn option_structure_preset_from_str(value: &str) -> Result<OptionStructurePreset, rusqlite::Error> {
     match value {
         "single" => Ok(OptionStructurePreset::Single),
         "bull_call_spread" => Ok(OptionStructurePreset::BullCallSpread),
@@ -2676,6 +2782,8 @@ fn strategy_kind_from_str(value: &str) -> Result<StrategyKind, rusqlite::Error> 
         "sma_trend" => Ok(StrategyKind::SmaTrend),
         "listing_arbitrage" => Ok(StrategyKind::ListingArbitrage),
         "put_call_parity" => Ok(StrategyKind::PutCallParity),
+        "parity_sniper" => Ok(StrategyKind::ParitySniper),
+        "vwap_reversion" => Ok(StrategyKind::VwapReversion),
         other => Err(rusqlite::Error::FromSqlConversionFailure(
             0,
             rusqlite::types::Type::Text,
@@ -2802,9 +2910,6 @@ mod tests {
 
         // Empty input
         let empty: Vec<String> = vec![];
-        assert_eq!(
-            normalize_symbols(&empty),
-            empty
-        );
+        assert_eq!(normalize_symbols(&empty), empty);
     }
 }
