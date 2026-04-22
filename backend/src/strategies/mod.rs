@@ -4,8 +4,7 @@ pub mod vwap_reversion;
 pub mod jarrod_vwap;
 
 use crate::models::{
-    AssetClassTarget, Candle, DataProvider, ExecutionMode, OptionEntryStyle, OptionStructurePreset,
-    PositionRecord, Quote, SignalAction, StrategyKind, StrategyRecord, StrategySignal,
+    Candle, PositionRecord, Quote, SignalAction, StrategyKind, StrategyRecord, StrategySignal,
 };
 use async_trait::async_trait;
 use crate::AppState;
@@ -359,7 +358,7 @@ mod tests {
             },
             streams: StreamHub::new(),
             agent_tasks: std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-            api_token: std::sync::Arc::new("test-token".to_string()),
+            risk_engine: std::sync::Arc::new(crate::services::risk::RiskEngine::new()),
         }
     }
 

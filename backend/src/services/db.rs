@@ -956,7 +956,10 @@ impl Database {
         let run_interval_ms = request.run_interval_ms.unwrap_or(current.run_interval_ms);
         let now = now();
 
-        let rp_json = request.risk_parameters.as_ref().map(|rp| serde_json::to_string(rp).unwrap_or_default()).or(current.risk_parameters.map(|rp| serde_json::to_string(&rp).unwrap_or_default()));
+        let rp_json = match &request.risk_parameters {
+            Some(rp) => Some(serde_json::to_string(rp).unwrap_or_default()),
+            None => current.risk_parameters.as_ref().map(|rp| serde_json::to_string(rp).unwrap_or_default()),
+        };
         self.conn.execute(
             "UPDATE strategies
              SET name = ?2,
