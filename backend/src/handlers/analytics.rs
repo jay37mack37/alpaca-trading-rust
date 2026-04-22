@@ -1,7 +1,7 @@
+use crate::error::{ApiResponse, AppResult};
+use crate::AppState;
 use axum::extract::{Query, State};
 use serde::{Deserialize, Serialize};
-use crate::error::{AppResult, ApiResponse};
-use crate::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct PatternAnalysisQuery {
@@ -43,7 +43,12 @@ pub async fn run_pattern_analysis(
             .unwrap_or_default()
             .iter()
             .flat_map(|s| s.tracked_symbols.clone())
-            .chain(db.list_watchlists().unwrap_or_default().into_iter().flat_map(|w| w.symbols))
+            .chain(
+                db.list_watchlists()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .flat_map(|w| w.symbols),
+            )
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
             .take(10)
@@ -64,7 +69,10 @@ pub async fn run_pattern_analysis(
         };
 
         let credential = if data_provider == crate::models::DataProvider::Alpaca {
-            crate::services::broker::resolve_alpaca_credential(&state, None, false).await.ok().flatten()
+            crate::services::broker::resolve_alpaca_credential(&state, None, false)
+                .await
+                .ok()
+                .flatten()
         } else {
             None
         };
@@ -87,14 +95,17 @@ pub async fn run_pattern_analysis(
         let close_prices: Vec<f64> = candle_data.candles.iter().map(|c| c.close).collect();
 
         // VWAP deviation signal - use only candles with volume data
-        let vol_candles: Vec<(&crate::models::Candle, f64)> = candle_data.candles.iter()
+        let vol_candles: Vec<(&crate::models::Candle, f64)> = candle_data
+            .candles
+            .iter()
             .filter(|c| c.volume > 0.0)
             .map(|c| (c, c.volume))
             .collect();
 
         if !vol_candles.is_empty() {
             let total_volume: f64 = vol_candles.iter().map(|(_, v)| *v).sum();
-            let vwap: f64 = vol_candles.iter()
+            let vwap: f64 = vol_candles
+                .iter()
                 .map(|(c, v)| ((c.high + c.low + c.close) / 3.0) * v)
                 .sum::<f64>()
                 / total_volume;
@@ -109,7 +120,11 @@ pub async fn run_pattern_analysis(
                         all_signals.push(PatternSignal {
                             symbol: symbol.clone(),
                             pattern: "vwap_deviation".to_string(),
-                            direction: if deviation_pct < 0.0 { "bullish".to_string() } else { "bearish".to_string() },
+                            direction: if deviation_pct < 0.0 {
+                                "bullish".to_string()
+                            } else {
+                                "bearish".to_string()
+                            },
                             confidence: (confidence * 100.0).round() / 100.0,
                             details: serde_json::json!({
                                 "vwap": (vwap * 100.0).round() / 100.0,
@@ -123,16 +138,22 @@ pub async fn run_pattern_analysis(
         }
 
         // Volume spike signal - use candles with actual volume data
-        let vol_with_prices: Vec<(f64, f64, f64)> = candle_data.candles.iter()
+        let vol_with_prices: Vec<(f64, f64, f64)> = candle_data
+            .candles
+            .iter()
             .filter(|c| c.volume > 0.0)
             .map(|c| (c.close, c.open, c.volume))
             .collect();
 
         if vol_with_prices.len() >= 20 {
             let window = 20.min(vol_with_prices.len());
-            let recent: Vec<f64> = vol_with_prices[vol_with_prices.len() - window..].iter().map(|(_, _, v)| *v).collect();
+            let recent: Vec<f64> = vol_with_prices[vol_with_prices.len() - window..]
+                .iter()
+                .map(|(_, _, v)| *v)
+                .collect();
             let avg: f64 = recent.iter().sum::<f64>() / window as f64;
-            let std_dev = (recent.iter().map(|v| (v - avg).powi(2)).sum::<f64>() / window as f64).sqrt();
+            let std_dev =
+                (recent.iter().map(|v| (v - avg).powi(2)).sum::<f64>() / window as f64).sqrt();
             let (last_close, last_open, current_vol) = vol_with_prices[vol_with_prices.len() - 1];
 
             if std_dev > 0.0 && avg > 0.0 {
@@ -143,7 +164,11 @@ pub async fn run_pattern_analysis(
                         all_signals.push(PatternSignal {
                             symbol: symbol.clone(),
                             pattern: "unusual_volume".to_string(),
-                            direction: if last_close >= last_open { "bullish".to_string() } else { "bearish".to_string() },
+                            direction: if last_close >= last_open {
+                                "bullish".to_string()
+                            } else {
+                                "bearish".to_string()
+                            },
                             confidence: (confidence * 100.0).round() / 100.0,
                             details: serde_json::json!({
                                 "volume": current_vol as i64,
@@ -170,7 +195,11 @@ pub async fn run_pattern_analysis(
                             all_signals.push(PatternSignal {
                                 symbol: symbol.clone(),
                                 pattern: format!("momentum_{period}d"),
-                                direction: if roc_pct > 0.0 { "bullish".to_string() } else { "bearish".to_string() },
+                                direction: if roc_pct > 0.0 {
+                                    "bullish".to_string()
+                                } else {
+                                    "bearish".to_string()
+                                },
                                 confidence: (confidence * 100.0).round() / 100.0,
                                 details: serde_json::json!({
                                     "roc_pct": (roc_pct * 100.0).round() / 100.0,
@@ -184,7 +213,11 @@ pub async fn run_pattern_analysis(
         }
     }
 
-    all_signals.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    all_signals.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     Ok(ApiResponse {
         success: true,

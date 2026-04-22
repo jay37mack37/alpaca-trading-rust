@@ -4,8 +4,6 @@ use std::{
     sync::Arc,
 };
 
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
 use axum::{
     extract::{Query, Request, State},
     http::{header, StatusCode},
@@ -14,6 +12,8 @@ use axum::{
 };
 use rand::RngCore;
 use serde::Deserialize;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use subtle::ConstantTimeEq;
 use tracing::info;
 
@@ -69,7 +69,10 @@ impl ApiToken {
         {
             let permissions = fs::Permissions::from_mode(0o600);
             if let Err(err) = fs::set_permissions(&token_path, permissions) {
-                warn!("could not tighten permissions on {}: {err}", token_path.display());
+                warn!(
+                    "could not tighten permissions on {}: {err}",
+                    token_path.display()
+                );
             }
         }
         #[cfg(not(unix))]

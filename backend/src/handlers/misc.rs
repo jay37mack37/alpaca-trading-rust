@@ -1,14 +1,12 @@
+use crate::error::{ApiResponse, AppResult};
+use crate::models::{BrokerSyncState, CollectResponse, HealthResponse};
+use crate::services::broker::sync_strategy_broker_state;
+use crate::services::market::collect_once;
+use crate::AppState;
 use axum::{
     extract::{Path, State},
     Json,
 };
-use crate::models::{
-    HealthResponse, CollectResponse, BrokerSyncState,
-};
-use crate::error::{AppResult, ApiResponse};
-use crate::AppState;
-use crate::services::broker::sync_strategy_broker_state;
-use crate::services::market::collect_once;
 use chrono::Utc;
 use tracing::info;
 

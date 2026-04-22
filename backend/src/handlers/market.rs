@@ -1,13 +1,13 @@
-use axum::{
-    extract::{Path, Query, State},
+use crate::error::{ApiResponse, AppResult};
+use crate::models::{
+    normalize_symbol, CandleQuery, DashboardQuery, DashboardResponse, DataProvider, ProviderQuery,
 };
-use crate::models::{DashboardResponse, DashboardQuery, DataProvider, normalize_symbol, ProviderQuery, CandleQuery};
-use crate::error::{AppResult, ApiResponse};
-use crate::AppState;
 use crate::services::broker::resolve_alpaca_credential;
-use crate::services::trading::top_option_contracts;
-use crate::services::providers::{fetch_quote, fetch_candles, fetch_options};
 use crate::services::db::Database;
+use crate::services::providers::{fetch_candles, fetch_options, fetch_quote};
+use crate::services::trading::top_option_contracts;
+use crate::AppState;
+use axum::extract::{Path, Query, State};
 use serde_json::json;
 use tracing::warn;
 
@@ -99,7 +99,7 @@ pub async fn market_quote(
     let fetched = fetch_quote(&state.http, provider, &symbol, credential.as_ref()).await?;
     {
         let db = state.db.lock().await;
-        let db: &Database = &*db;
+        let db: &Database = &db;
         db.store_market_snapshot(&fetched.quote, &fetched.raw_json)?;
     }
     Ok(ApiResponse {

@@ -4,14 +4,11 @@ use chrono::Utc;
 use futures_util::stream::{FuturesUnordered, StreamExt};
 
 use crate::error::{AppError, AppResult};
-use crate::models::{
-    AssetClassTarget, DataProvider, ExecutionMode, RealtimeEvent, SignalAction,
-};
+use crate::models::{AssetClassTarget, DataProvider, ExecutionMode, RealtimeEvent, SignalAction};
 use crate::services::broker::{resolve_alpaca_credential, sync_strategy_broker_state};
 use crate::services::kronos::fetch_kronos_score;
 use crate::services::providers::{
-    fetch_candles, fetch_options, fetch_quote, poll_alpaca_order_until_filled,
-    submit_alpaca_order,
+    fetch_candles, fetch_options, fetch_quote, poll_alpaca_order_until_filled, submit_alpaca_order,
 };
 use crate::services::trading::{prepare_trade, TradePreparationOutcome};
 use crate::AppState;
@@ -145,7 +142,9 @@ pub async fn run_strategy_once(
                     &symbol,
                     signal.source.as_deref().unwrap_or("HEARTBEAT"),
                     &format!("Price: ${:.2}", quote.quote.price),
-                    &kronos_score.map(|s| format!("{:.2}", s)).unwrap_or_else(|| "N/A".to_string()),
+                    &kronos_score
+                        .map(|s| format!("{:.2}", s))
+                        .unwrap_or_else(|| "N/A".to_string()),
                     signal.action.as_str(),
                     &signal.reason,
                 );
@@ -245,7 +244,9 @@ pub async fn run_strategy_once(
                                         Some(strategy_id.as_str()),
                                         "error",
                                         "Order Submission Failed",
-                                        &format!("Alpaca order submission failed for {symbol}: {err}"),
+                                        &format!(
+                                            "Alpaca order submission failed for {symbol}: {err}"
+                                        ),
                                     );
                                     return Ok(None);
                                 }
@@ -274,7 +275,9 @@ pub async fn run_strategy_once(
                                         Some(strategy_id.as_str()),
                                         "error",
                                         "Fill Reconciliation Failed",
-                                        &format!("Alpaca fill reconciliation failed for {symbol}: {err}"),
+                                        &format!(
+                                            "Alpaca fill reconciliation failed for {symbol}: {err}"
+                                        ),
                                     );
                                     return Ok(None);
                                 }
@@ -371,7 +374,6 @@ pub fn broadcast_strategy_log(
     });
 }
 
-
 pub async fn spawn_agent_loop(state: AppState, strategy_id: String) {
     let mut tasks = state.agent_tasks.lock().await;
     if let Some(handle) = tasks.remove(&strategy_id) {
@@ -390,7 +392,7 @@ pub async fn spawn_agent_loop(state: AppState, strategy_id: String) {
                         if !strat.enabled {
                             break;
                         }
-                        strat.run_interval_ms as u64
+                        strat.run_interval_ms
                     } else {
                         break;
                     }
