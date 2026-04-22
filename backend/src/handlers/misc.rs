@@ -23,9 +23,11 @@ pub async fn health() -> ApiResponse<HealthResponse> {
 
 #[derive(serde::Deserialize)]
 pub struct RobinhoodIngestPayload {
+    #[allow(dead_code)]
     pub source: Option<String>,
     #[serde(rename = "type")]
     pub event_type: Option<String>,
+    #[allow(dead_code)]
     pub timestamp: Option<u64>,
     pub payload: Option<serde_json::Value>,
 }

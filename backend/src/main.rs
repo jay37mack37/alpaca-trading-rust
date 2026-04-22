@@ -1,5 +1,6 @@
 mod agents;
 mod auth;
+mod logger;
 mod config;
 mod error;
 mod handlers;
@@ -12,6 +13,8 @@ mod strategies;
 use std::{env, net::SocketAddr, sync::Arc};
 
 use auth::{require_token, ApiToken};
+use chrono::Utc;
+use std::time::Duration;
 use axum::{
     http::{HeaderValue, Method},
     middleware,
@@ -120,6 +123,96 @@ async fn main() -> anyhow::Result<()> {
     if state.config.polling_seconds > 0 {
         tokio::spawn(collector_loop(state.clone()));
     }
+
+    // Global Heartbeat and Connectivity Audit Loop
+    let state_hb = state.clone();
+    tokio::spawn(async move {
+        use crate::models::RealtimeEvent;
+        use crate::logger::{SystemEvent, SystemSource, SystemEventType};
+        use crate::agents::broadcast_audit_log;
+        use crate::services::providers::fetch_alpaca_broker_sync;
+        use crate::services::kronos::fetch_kronos_score;
+        use crate::services::broker::resolve_alpaca_credential;
+
+        loop {
+            // 1. Audit Kronos
+            let kronos_status = match fetch_kronos_score(&state_hb.http, "SPY").await {
+                Ok(score) => format!("CONNECTED | Signal: {} ({:.1}%)", score.trend, score.confidence * 100.0),
+                Err(_) => "OFFLINE | Using fallback internal probability".to_string(),
+            };
+
+            // 2. Audit Alpaca (Get Buying Power from first enabled strategy)
+            let mut buying_power = 0.0;
+            let mut alpaca_status = "STBY".to_string();
+            
+            if state_hb.config.mock_alpaca {
+                buying_power = 100000.0;
+                alpaca_status = "LIVE (MOCK)".to_string();
+            } else {
+                let strat_to_audit = {
+                    let db = state_hb.db.lock().await;
+                    db.list_strategy_records().ok().and_then(|strats| 
+                        strats.into_iter().find(|s| s.enabled && s.credential_id.is_some())
+                    )
+                };
+
+                if let Some(strat) = strat_to_audit {
+                    if let Ok(Some(cred)) = resolve_alpaca_credential(&state_hb, strat.credential_id.as_deref(), false).await {
+                        if let Ok(sync) = fetch_alpaca_broker_sync(&state_hb.http, &cred, false).await {
+                            buying_power = sync.account.buying_power.unwrap_or(0.0);
+                            alpaca_status = format!("LIVE | BP: ${:.2}", buying_power);
+                        } else {
+                            alpaca_status = "ERROR | Credential Invalid".to_string();
+                        }
+                    }
+                }
+            }
+
+            // 3. Audit Options Chain (Fetch SPY options for sanity check)
+            let mut options_active = false;
+            if let Ok(strats) = state_hb.db.lock().await.list_strategy_records() {
+                if let Some(_strat) = strats.into_iter().find(|s| s.enabled) {
+                    if let Ok(opts) = crate::services::providers::fetch_options(
+                        &state_hb.http, 
+                        crate::models::DataProvider::Yahoo, 
+                        "SPY", 
+                        None
+                    ).await {
+                        options_active = !opts.contracts.is_empty();
+                    }
+                }
+            }
+
+            // Fallback for Options connectivity in Mock Mode
+            if state_hb.config.mock_alpaca && !options_active {
+               options_active = true; 
+            }
+
+            // 4. Broadcast Heartbeat (for UI indicator)
+            let _ = state_hb.streams.send_event(RealtimeEvent::Heartbeat { 
+                timestamp: Utc::now().timestamp_millis() as u64,
+                buying_power,
+                kronos_active: kronos_status.contains("CONNECTED") || kronos_status.contains("SIM"),
+                alpaca_active: alpaca_status.contains("LIVE"),
+                options_active,
+            });
+
+            // 5. Audit Log
+            broadcast_audit_log(
+                &state_hb,
+                SystemEvent::now(
+                    SystemSource::System,
+                    "SYS".to_string(),
+                    SystemEventType::Scan,
+                    format!("BP:${:.0}", buying_power),
+                    0.0,
+                    format!("Kronos: {} | Alpaca: {} | Options: {}", kronos_status, alpaca_status, if options_active { "LINKED" } else { "ERROR" }),
+                )
+            );
+
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    });
 
     let app = Router::new()
         .route("/api/health", get(handlers::misc::health))

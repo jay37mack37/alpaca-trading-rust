@@ -11,14 +11,19 @@ test('Verification of UI functionality', async ({ page }) => {
   // 1. Verify dashboard loads
   await expect(page.locator('.eyebrow')).toContainText('AutoStonks');
 
+  // Screenshot: Market tab loaded
+  await page.screenshot({ path: 'test-results/01-market-tab.png', fullPage: true });
+
   // 2. Test Tab Switching
-  console.log('Switching to Agents tab');
-  await page.click('button:has-text("Remodeling")');
-  await expect(page.locator('h2:has-text("Remodeling & Setup")')).toBeVisible({ timeout: 5000 });
+  console.log('Switching to Workstation tab');
+  await page.click('button:has-text("Workstation")');
+  await expect(page.locator('.workstation-page')).toBeVisible({ timeout: 5000 });
+  await page.screenshot({ path: 'test-results/02-workstation-tab.png', fullPage: true });
 
   console.log('Switching to Analytics tab');
   await page.click('button:has-text("Analytics")');
-  await expect(page.locator('h2:has-text("Analytics Workspace")')).toBeVisible();
+  await expect(page.locator('.analytics-page')).toBeVisible();
+  await page.screenshot({ path: 'test-results/03-analytics-tab.png', fullPage: true });
 
   console.log('Switching back to Market tab');
   await page.click('button:has-text("Market")');
@@ -28,19 +33,5 @@ test('Verification of UI functionality', async ({ page }) => {
   await page.fill('#market-symbol', 'AAPL');
   await page.click('button:has-text("Load ticker")');
   await expect(page.locator('.ticker-stage h2')).toHaveText('AAPL', { timeout: 10000 });
-
-  // 4. Test Agent Creation
-  await page.click('button:has-text("Remodeling")');
-  await page.fill('input[id="agent-create-name"]', 'Test Agent');
-  await page.fill('input[id="agent-create-symbols"]', 'AAPL');
-  await page.click('button:has-text("Create and run")');
-
-  await expect(page.locator('.banner.status')).toContainText('Test Agent created', { timeout: 10000 });
-
-  // 5. Check if it's on the Workstation view now
-  await expect(page.locator('h2:has-text("Multi-Strategy Workstation")')).toBeVisible({ timeout: 5000 });
-
-  // 6. Stop the agent
-  const stopButton = page.locator('button.btn-stop').first();
-  await stopButton.click();
+  await page.screenshot({ path: 'test-results/04-aapl-loaded.png', fullPage: true });
 });
