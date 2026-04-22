@@ -15,21 +15,21 @@ describe('api.streamUrl', () => {
     vi.stubEnv('VITE_API_TOKEN', '');
     api = (await import('./api')).api;
     const url = api.streamUrl('AAPL', 'yahoo');
-    expect(url).toBe('http://127.0.0.1:8080/api/stream?symbol=AAPL&provider=yahoo');
+    expect(url).toBe('/api/stream?symbol=AAPL&provider=yahoo');
   });
 
   it('should include strategy_id when provided', async () => {
     vi.stubEnv('VITE_API_TOKEN', '');
     api = (await import('./api')).api;
     const url = api.streamUrl('AAPL', 'yahoo', 'strat-123');
-    expect(url).toBe('http://127.0.0.1:8080/api/stream?symbol=AAPL&provider=yahoo&strategy_id=strat-123');
+    expect(url).toBe('/api/stream?symbol=AAPL&provider=yahoo&strategy_id=strat-123');
   });
 
   it('should URL-encode special characters in parameters', async () => {
     vi.stubEnv('VITE_API_TOKEN', '');
     api = (await import('./api')).api;
     const url = api.streamUrl('BRK.B', 'yahoo', 'strat/456');
-    const urlObj = new URL(url);
+    const urlObj = new URL(url, 'http://localhost');
     expect(urlObj.searchParams.get('symbol')).toBe('BRK.B');
     expect(urlObj.searchParams.get('provider')).toBe('yahoo');
     expect(urlObj.searchParams.get('strategy_id')).toBe('strat/456');
@@ -39,7 +39,7 @@ describe('api.streamUrl', () => {
     vi.stubEnv('VITE_API_TOKEN', 'test-token-123');
     api = (await import('./api')).api;
     const url = api.streamUrl('AAPL', 'yahoo');
-    const urlObj = new URL(url);
+    const urlObj = new URL(url, 'http://localhost');
     expect(urlObj.searchParams.get('token')).toBe('test-token-123');
   });
 });
