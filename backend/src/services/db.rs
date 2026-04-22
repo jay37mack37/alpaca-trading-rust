@@ -1164,7 +1164,7 @@ impl Database {
                 quote.session_high,
                 quote.session_low,
                 quote.timestamp,
-                serde_json::to_string(raw_json)?,
+                "{}".to_string(),
             ],
         )?;
         Ok(())
@@ -1208,7 +1208,7 @@ impl Database {
                     contract.vega,
                     contract.moneyness,
                     captured_at,
-                    raw_json_str,
+                    "{}".to_string(),
                 ],
             )?;
         }
