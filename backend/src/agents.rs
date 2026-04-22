@@ -159,7 +159,7 @@ pub async fn run_strategy_once(
                 } else if latest_strategy.execution_mode.requires_external_broker() {
                     let Some(credential) = trading_credential.as_ref() else {
                         let db = state.db.lock().await;
-                        db.mark_strategy_run(&strategy_id, "Missing Alpaca trading credential")?;
+                        db.mark_strategy_run(&strategy_id, "Missing Alpaca trading credential", signal.new_state.clone())?;
                         RealtimeEvent::broadcast_notification(
                             &state.streams,
                             Some(strategy_id.as_str()),
@@ -177,6 +177,7 @@ pub async fn run_strategy_once(
                         db.mark_strategy_run(
                             &strategy_id,
                             "Live mode selected but credential is not live",
+                            signal.new_state.clone(),
                         )?;
                         RealtimeEvent::broadcast_notification(
                             &state.streams,
@@ -200,7 +201,7 @@ pub async fn run_strategy_once(
                         TradePreparationOutcome::Ready(trade) => Some(trade),
                         TradePreparationOutcome::Skip(reason) => {
                             let db = state.db.lock().await;
-                            db.mark_strategy_run(&strategy_id, &reason)?;
+                            db.mark_strategy_run(&strategy_id, &reason, signal.new_state.clone())?;
                             return Ok(None);
                         }
                     }
@@ -217,7 +218,7 @@ pub async fn run_strategy_once(
                         TradePreparationOutcome::Ready(trade) => Some(trade),
                         TradePreparationOutcome::Skip(reason) => {
                             let db = state.db.lock().await;
-                            db.mark_strategy_run(&strategy_id, &reason)?;
+                            db.mark_strategy_run(&strategy_id, &reason, signal.new_state.clone())?;
                             return Ok(None);
                         }
                     }
@@ -243,6 +244,7 @@ pub async fn run_strategy_once(
                                     db.mark_strategy_run(
                                         &strategy_id,
                                         &format!("Alpaca order submission failed: {err}"),
+                                        signal.new_state.clone(),
                                     )?;
                                     RealtimeEvent::broadcast_notification(
                                         &state.streams,
@@ -284,6 +286,7 @@ pub async fn run_strategy_once(
                                     db.mark_strategy_run(
                                         &strategy_id,
                                         &format!("Alpaca fill reconciliation failed: {err}"),
+                                        signal.new_state.clone(),
                                     )?;
                                     RealtimeEvent::broadcast_notification(
                                         &state.streams,
@@ -368,7 +371,7 @@ pub async fn run_strategy_once(
                             &prepared_trade.local,
                         )?
                     } else {
-                        db.mark_strategy_run(&strategy_id, &signal.reason)?;
+                        db.mark_strategy_run(&strategy_id, &signal.reason, signal.new_state.clone())?;
                         None
                     }
                 };
