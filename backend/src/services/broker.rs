@@ -101,5 +101,7 @@ pub fn stream_matches(
             }
         }
         RealtimeEvent::Heartbeat { .. } => true,
+        RealtimeEvent::System { .. } => true,
+        RealtimeEvent::SystemLog { .. } => true,
     }
 }

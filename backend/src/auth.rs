@@ -127,7 +127,7 @@ pub async fn require_token(
     Query(query): Query<TokenQuery>,
     request: Request,
     next: Next,
-) -> Result<Response, StatusCode> {
+) -> Result<Response, AppError> {
     let path = request.uri().path();
     if path == "/api/health" {
         return Ok(next.run(request).await);
@@ -142,11 +142,11 @@ pub async fn require_token(
 
     let candidate = header_token.or(query.token);
     let Some(candidate) = candidate else {
-        return Err(StatusCode::UNAUTHORIZED);
+        return Err(AppError::Unauthorized("Missing API token".to_string()));
     };
 
     if !token.matches(candidate.trim()) {
-        return Err(StatusCode::UNAUTHORIZED);
+        return Err(AppError::Unauthorized("Invalid API token".to_string()));
     }
 
     Ok(next.run(request).await)

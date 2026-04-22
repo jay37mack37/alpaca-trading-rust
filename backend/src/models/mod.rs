@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+pub mod telemetry;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -527,6 +528,15 @@ pub enum RealtimeEvent {
     Heartbeat {
         timestamp: u64,
         buying_power: f64,
+        kronos_active: bool,
+        alpaca_active: bool,
+        options_active: bool,
+    },
+    System {
+        event: telemetry::SystemEvent,
+    },
+    SystemLog {
+        event: crate::logger::SystemEvent,
     },
 }
 
@@ -539,6 +549,8 @@ impl RealtimeEvent {
             Self::Log { .. } => "log",
             Self::Notification { .. } => "notification",
             Self::Heartbeat { .. } => "heartbeat",
+            Self::System { .. } => "system",
+            Self::SystemLog { .. } => "system_log",
         }
     }
 

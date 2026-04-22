@@ -1,35 +1,42 @@
 <script lang="ts">
   import { prettyMoneyStrict } from "../lib/format";
 
-  export let alpacaStatus: "idle" | "connecting" | "live" | "reconnecting" = "idle";
-  export let kronosStatus: "active" | "standby" | "off" = "active";
+  export let alpacaActive: boolean = false;
+  export let kronosActive: boolean = false;
+  export let optionsActive: boolean = false;
   export let kronosLatency: number = 0;
   export let buyingPower: number = 0;
 
-  function getStatusColor(status: string) {
-    if (status === "live" || status === "active") return "#4ade80";
-    if (status === "connecting" || status === "reconnecting" || status === "standby") return "#fbbf24";
-    return "#f87171";
+  function getStatusColor(active: boolean) {
+    return active ? "#4ade80" : "#f87171";
   }
 </script>
 
 <div class="diagnostic-header">
   <div class="stat-item">
-    <span class="label">Alpaca Feed</span>
+    <span class="label">Alpaca</span>
     <div class="value-row">
-      <div class="indicator" style="background: {getStatusColor(alpacaStatus)}"></div>
-      <span class="value">{alpacaStatus.toUpperCase()}</span>
+      <div class="indicator" style="background: {getStatusColor(alpacaActive)}"></div>
+      <span class="value">{alpacaActive ? "LIVE" : "OFFLINE"}</span>
     </div>
   </div>
 
   <div class="stat-item">
-    <span class="label">Kronos AI</span>
+    <span class="label">Kronos Intelligence</span>
     <div class="value-row">
-      <div class="indicator" style="background: {getStatusColor(kronosStatus)}"></div>
-      <span class="value">{kronosStatus.toUpperCase()}</span>
-      {#if kronosStatus === "active"}
+      <div class="indicator" style="background: {getStatusColor(kronosActive)}"></div>
+      <span class="value">{kronosActive ? "SYNCED" : "OFFLINE"}</span>
+      {#if kronosActive}
         <span class="latency">{kronosLatency}ms</span>
       {/if}
+    </div>
+  </div>
+
+  <div class="stat-item">
+    <span class="label">Options Chain</span>
+    <div class="value-row">
+      <div class="indicator" style="background: {getStatusColor(optionsActive)}"></div>
+      <span class="value">{optionsActive ? "READY" : "ERROR"}</span>
     </div>
   </div>
 

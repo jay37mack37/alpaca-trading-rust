@@ -84,6 +84,7 @@ impl Database {
         };
         db.seed_default_watchlist(default_watchlist)?;
         db.seed_default_strategies()?;
+        db.seed_alpaca_from_env()?;
         Ok(db)
     }
 
@@ -440,6 +441,17 @@ impl Database {
 
     fn seed_default_strategies(&self) -> AppResult<()> {
         let now = now();
+
+        // Migration: Rename old 'put-call-parity' to 'parity-sniper'
+        let _ = self.conn.execute(
+            "UPDATE strategies SET id = 'parity-sniper', name = 'Parity Sniper', kind = 'parity_sniper' WHERE id = 'put-call-parity'",
+            [],
+        );
+        let _ = self.conn.execute(
+            "UPDATE strategies SET id = 'vwap-reversion', name = 'VWAP Reversion', kind = 'vwap_reversion' WHERE id = 'vwap-reflexive'",
+            [],
+        );
+
         let defaults = [
             (
                 "listing-arbitrage",
@@ -448,10 +460,10 @@ impl Database {
                 vec!["SPY"],
             ),
             (
-                "vwap-reflexive",
-                "VWAP Mean Reversion",
-                StrategyKind::VwapReflexive,
-                vec!["SPY", "AAPL"],
+                "vwap-reversion",
+                "VWAP Reversion",
+                StrategyKind::VwapReversion,
+                vec!["SPY"],
             ),
             (
                 "gamma-scalping",
@@ -466,22 +478,31 @@ impl Database {
                 vec!["SPY"],
             ),
             (
-                "put-call-parity",
-                "Put-Call Parity",
-                StrategyKind::PutCallParity,
+                "parity-sniper",
+                "Parity Sniper",
+                StrategyKind::ParitySniper,
                 vec!["SPY"],
             ),
         ];
 
         for (id, name, kind, symbols) in defaults {
-            // Only insert if missing
-            let exists: bool = self.conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM strategies WHERE id = ?1 OR kind = ?2)",
-                params![id, kind.as_str()],
+            let enabled = if id == "parity-sniper" || id == "vwap-reversion" { 1 } else { 0 };
+            // Check if ID already exists
+            let existing_kind: Option<String> = self.conn.query_row(
+                "SELECT kind FROM strategies WHERE id = ?1",
+                params![id],
                 |row| row.get(0),
-            )?;
+            ).optional()?;
 
-            if !exists {
+            if let Some(old_kind) = existing_kind {
+                // If it exists but kind is different, or we just want to ensure the name is right
+                // If it exists but kind is different, or we just want to ensure the name is right
+                self.conn.execute(
+                    "UPDATE strategies SET name = ?1, kind = ?2, enabled = CASE WHEN id IN ('parity-sniper', 'vwap-reversion') THEN 1 ELSE enabled END WHERE id = ?3",
+                    params![name, kind.as_str(), id],
+                )?;
+            } else {
+                // Insert new
                 self.conn.execute(
                     "INSERT INTO strategies (
                         id, name, kind, enabled, execution_mode, asset_class_target, option_entry_style,
@@ -489,12 +510,13 @@ impl Database {
                         option_dte_min, option_dte_max, option_max_spread_pct, option_limit_buffer_pct, credential_id,
                         starting_cash, cash_balance, equity, tracked_symbols,
                         total_trades, wins, losses, last_signal, last_run_at, run_interval_ms
-                    ) VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, NULL, 50000.0, 50000.0, 50000.0, ?14, 0, 0, 0, ?15, ?16, ?17)",
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, 50000.0, 50000.0, 50000.0, ?15, 0, 0, 0, ?16, ?17, ?18)",
                     params![
                         id,
                         name,
                         kind.as_str(),
-                        execution_mode_to_str(ExecutionMode::LocalPaper),
+                        enabled,
+                        execution_mode_to_str(if std::env::var("ALPACA_API_KEY").is_ok() { ExecutionMode::AlpacaPaper } else { ExecutionMode::LocalPaper }),
                         asset_class_target_to_str(AssetClassTarget::Options),
                         option_entry_style_to_str(OptionEntryStyle::LongCall),
                         option_structure_preset_to_str(OptionStructurePreset::Single),
@@ -513,6 +535,43 @@ impl Database {
             }
         }
 
+        Ok(())
+    }
+
+    fn seed_alpaca_from_env(&self) -> AppResult<()> {
+        let api_key = std::env::var("ALPACA_API_KEY").unwrap_or_default();
+        let api_secret = std::env::var("ALPACA_API_SECRET").unwrap_or_default();
+        
+        if api_key.is_empty() || api_key == "your_api_key_here" {
+            return Ok(());
+        }
+
+        // Check if we already have a credential with this key
+        let exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM credentials WHERE label = 'Auto-Seeded Alpaca Paper')",
+            [],
+            |row| row.get(0),
+        ).unwrap_or(false);
+
+        if !exists {
+            let id = "default-paper-cred".to_string();
+            let encrypted_key = encrypt(&self.credential_cipher, api_key.trim())?;
+            let encrypted_secret = encrypt(&self.credential_cipher, api_secret.trim())?;
+            
+            self.conn.execute(
+                "INSERT INTO credentials (
+                    id, provider, label, environment, api_key_encrypted, api_secret_encrypted,
+                    use_for_data, use_for_trading, created_at
+                ) VALUES (?1, 'alpaca', 'Auto-Seeded Alpaca Paper', 'paper', ?2, ?3, 1, 1, ?4)",
+                params![id, encrypted_key, encrypted_secret, now()],
+            )?;
+
+            // Assign this credential to the core strategies
+            self.conn.execute(
+                "UPDATE strategies SET credential_id = ?1, execution_mode = 'alpaca_paper' WHERE id IN ('parity-sniper', 'vwap-reversion')",
+                params![id],
+            )?;
+        }
         Ok(())
     }
 
@@ -2676,6 +2735,8 @@ fn strategy_kind_from_str(value: &str) -> Result<StrategyKind, rusqlite::Error> 
         "sma_trend" => Ok(StrategyKind::SmaTrend),
         "listing_arbitrage" => Ok(StrategyKind::ListingArbitrage),
         "put_call_parity" => Ok(StrategyKind::PutCallParity),
+        "parity_sniper" => Ok(StrategyKind::ParitySniper),
+        "vwap_reversion" => Ok(StrategyKind::VwapReversion),
         other => Err(rusqlite::Error::FromSqlConversionFailure(
             0,
             rusqlite::types::Type::Text,
