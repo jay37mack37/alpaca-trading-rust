@@ -357,6 +357,7 @@ mod tests {
             },
             streams: StreamHub::new(),
             agent_tasks: std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            api_token: std::sync::Arc::new("test-token".to_string()),
         }
     }
 
