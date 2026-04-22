@@ -107,6 +107,8 @@ fn default_signal() -> StrategySignal {
         trailing_stop: None,
         walk_to_mid: None,
         split_exit: None,
+        log_type: None,
+        new_state: None,
         source: Some("PARITY_SNIPER".to_string()),
         math_edge: None,
         ai_score: None,
