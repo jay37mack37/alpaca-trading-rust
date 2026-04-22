@@ -111,6 +111,11 @@ export const api = {
       method: "POST",
     });
   },
+  flattenPosition(strategyId: string, symbol: string) {
+    return request<void>(`/api/strategies/${strategyId}/positions/${symbol}/flatten`, {
+      method: "POST",
+    });
+  },
   syncStrategy(strategyId: string) {
     return request<BrokerSyncState>(`/api/strategies/${strategyId}/alpaca-sync`, {
       method: "POST",

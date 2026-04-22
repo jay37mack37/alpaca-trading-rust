@@ -148,5 +148,6 @@ fn default_signal() -> StrategySignal {
         source: Some("VWAP_REVERSION".to_string()),
         math_edge: None,
         ai_score: None,
+        ..Default::default()
     }
 }

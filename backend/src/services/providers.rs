@@ -786,6 +786,36 @@ pub async fn cancel_all_alpaca_orders(
     Ok(())
 }
 
+pub async fn liquidate_alpaca_position(
+    client: &Client,
+    credential: &StoredCredential,
+    symbol: &str,
+    mock: bool,
+) -> AppResult<()> {
+    if mock {
+        return Ok(());
+    }
+    let response = client
+        .delete(format!(
+            "{}/v2/positions/{}",
+            credential.environment.base_trading_url(),
+            symbol
+        ))
+        .header("APCA-API-KEY-ID", credential.key_id.as_str())
+        .header("APCA-API-SECRET-KEY", credential.secret_key.as_str())
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::External(format!(
+            "Alpaca liquidate position failed for {symbol}: {body}"
+        )));
+    }
+
+    Ok(())
+}
+
 async fn alpaca_get(
     client: &Client,
     credential: &StoredCredential,

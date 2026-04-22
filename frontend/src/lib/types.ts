@@ -106,6 +106,7 @@ export interface StrategySummary {
   broker_open_orders: number | null;
   risk_parameters: RiskParameters | null;
   run_interval_ms: number;
+  description?: string;
 }
 
 export interface PositionSummary {
@@ -125,6 +126,9 @@ export interface PositionSummary {
   legs: PositionLeg[];
   market_value: number;
   unrealized_pnl: number;
+  razor_stop?: number;
+  stagnation_timestamp?: string;
+  kronos_sentiment?: number;
 }
 
 export interface PositionLeg {
@@ -309,6 +313,8 @@ export interface CreateStrategyRequest {
   live_confirmation?: string;
   risk_parameters?: RiskParameters | null;
   run_interval_ms?: number;
+  description?: string;
+  reset_portfolio?: boolean;
 }
 
 export interface CollectResponse {
@@ -391,6 +397,11 @@ export interface SystemLogRealtimeEvent {
   };
 }
 
+export interface PositionsRealtimeEvent {
+  type: "positions";
+  positions: PositionSummary[];
+}
+
 export type RealtimeEvent =
   | MarketRealtimeEvent
   | BrokerSyncRealtimeEvent
@@ -398,7 +409,8 @@ export type RealtimeEvent =
   | LogRealtimeEvent
   | HeartbeatRealtimeEvent
   | SystemRealtimeEvent
-  | SystemLogRealtimeEvent;
+  | SystemLogRealtimeEvent
+  | PositionsRealtimeEvent;
 
 export interface Watchlist {
   id: string;

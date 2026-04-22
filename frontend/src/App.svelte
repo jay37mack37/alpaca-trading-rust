@@ -36,6 +36,7 @@
   let stream: EventSource | null = null;
   let streamKey = "";
   let streamState: "idle" | "connecting" | "live" | "reconnecting" = "idle";
+  let openPositions: any[] = [];
   let strategyLogs: Array<{
     time: string;
     symbol: string;
@@ -108,6 +109,9 @@
 
   function handleRealtimeEvent(event: RealtimeEvent) {
     switch (event.type) {
+      case "positions":
+        openPositions = event.positions;
+        break;
       case "market":
         if (!dashboard || dashboard.symbol !== event.symbol || dashboard.provider !== event.provider) return;
         dashboard = {
@@ -193,6 +197,9 @@
         }, ...strategyLogs].slice(0, 200);
         break;
       }
+      case "positions":
+        openPositions = event.positions;
+        break;
     }
   }
 
@@ -234,6 +241,9 @@
     });
     stream.addEventListener("system_log", (message) => {
       handleRealtimeEvent(JSON.parse(message.data) as RealtimeEvent);
+    });
+    stream.addEventListener("positions", (message) => {
+       handleRealtimeEvent(JSON.parse(message.data) as RealtimeEvent);
     });
     stream.onopen = () => {
       streamState = "live";
@@ -559,6 +569,7 @@
           selectedStrategyId={selectedStrategyId}
           selectedStrategyDetail={selectedStrategyDetail}
           detailLoading={detailLoading}
+          positions={openPositions}
           logs={strategyLogs}
           viewMode="active"
           on:create={createStrategy}

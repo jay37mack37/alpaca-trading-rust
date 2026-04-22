@@ -141,7 +141,7 @@ async fn main() -> anyhow::Result<()> {
                 Err(_) => "OFFLINE | Using fallback internal probability".to_string(),
             };
 
-            // 2. Audit Alpaca (Get Buying Power from first enabled strategy)
+            // 2. Audit Alpaca (Fetch system-wide buying power)
             let mut buying_power = 0.0;
             let mut alpaca_status = "STBY".to_string();
             
@@ -149,21 +149,13 @@ async fn main() -> anyhow::Result<()> {
                 buying_power = 100000.0;
                 alpaca_status = "LIVE (MOCK)".to_string();
             } else {
-                let strat_to_audit = {
-                    let db = state_hb.db.lock().await;
-                    db.list_strategy_records().ok().and_then(|strats| 
-                        strats.into_iter().find(|s| s.enabled && s.credential_id.is_some())
-                    )
-                };
-
-                if let Some(strat) = strat_to_audit {
-                    if let Ok(Some(cred)) = resolve_alpaca_credential(&state_hb, strat.credential_id.as_deref(), false).await {
-                        if let Ok(sync) = fetch_alpaca_broker_sync(&state_hb.http, &cred, false).await {
-                            buying_power = sync.account.buying_power.unwrap_or(0.0);
-                            alpaca_status = format!("LIVE | BP: ${:.2}", buying_power);
-                        } else {
-                            alpaca_status = "ERROR | Credential Invalid".to_string();
-                        }
+                // Try to get buying power using ANY available alpaca credential
+                if let Ok(Some(cred)) = resolve_alpaca_credential(&state_hb, None, false).await {
+                    if let Ok(sync) = fetch_alpaca_broker_sync(&state_hb.http, &cred, false).await {
+                        buying_power = sync.account.buying_power.unwrap_or(0.0);
+                        alpaca_status = "LIVE".to_string();
+                    } else {
+                        alpaca_status = "ERROR | Connectivity".to_string();
                     }
                 }
             }
@@ -172,13 +164,13 @@ async fn main() -> anyhow::Result<()> {
             let mut options_active = false;
             if let Ok(strats) = state_hb.db.lock().await.list_strategy_records() {
                 if let Some(_strat) = strats.into_iter().find(|s| s.enabled) {
-                    if let Ok(opts) = crate::services::providers::fetch_options(
+                    if crate::services::providers::fetch_options(
                         &state_hb.http, 
                         crate::models::DataProvider::Yahoo, 
                         "SPY", 
                         None
-                    ).await {
-                        options_active = !opts.contracts.is_empty();
+                    ).await.is_ok() {
+                        options_active = true; 
                     }
                 }
             }
@@ -211,6 +203,23 @@ async fn main() -> anyhow::Result<()> {
             );
 
             tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    });
+
+    // High-Frequency Position Update Loop (10Hz)
+    let state_pos = state.clone();
+    tokio::spawn(async move {
+        loop {
+            let positions = {
+                let db = state_pos.db.lock().await;
+                db.list_all_open_positions().unwrap_or_default()
+            };
+            
+            if !positions.is_empty() {
+                let _ = state_pos.streams.send_event(crate::models::RealtimeEvent::Positions { positions });
+            }
+            
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     });
 
@@ -264,6 +273,10 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/strategies/:strategy_id/stop",
             post(handlers::agents::stop_strategy),
+        )
+        .route(
+            "/api/strategies/:strategy_id/positions/:symbol/flatten",
+            post(handlers::agents::flatten_strategy_position),
         )
         .route("/api/panic", post(handlers::agents::panic_all))
         .route(

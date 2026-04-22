@@ -112,5 +112,6 @@ fn default_signal() -> StrategySignal {
         source: Some("PARITY_SNIPER".to_string()),
         math_edge: None,
         ai_score: None,
+        ..Default::default()
     }
 }

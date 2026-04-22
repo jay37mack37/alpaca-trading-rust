@@ -7,6 +7,7 @@
     ExecutionMode,
     OptionEntryStyle,
     OptionStructurePreset,
+    PositionSummary,
     StrategyDetailResponse,
     StrategyKind,
     StrategySummary,
@@ -15,6 +16,7 @@
   import InteractiveTicker from "./InteractiveTicker.svelte";
   import AgentCardTicker from "./AgentCardTicker.svelte";
   import StrategyLogTable from "./StrategyLogTable.svelte";
+  import PositionsSection from "./PositionsSection.svelte";
   import { api } from "../lib/api";
   import { prettyMoney, quantityDigits, structureLabel, contractLabel, legLabel, parseSymbols } from "../lib/format";
   import { validateStrategyDraft, type ValidationErrors } from "../lib/validation";
@@ -23,6 +25,7 @@
 
   export let strategies: StrategySummary[] = [];
   export let credentials: CredentialSummary[] = [];
+  export let positions: PositionSummary[] = [];
   export let selectedStrategyId = "";
   export let selectedStrategyDetail: StrategyDetailResponse | null = null;
   export let detailLoading = false;
@@ -409,6 +412,8 @@
       <h2>Live Execution Engines</h2>
       <p>Hardened strategies certified for production trading.</p>
     </div>
+
+    <PositionsSection {positions} />
     <div class="workstation-grid">
       {#each workingStrats as strategy}
         <article class="strat-card" class:active={getEffectiveEnabled(strategy)}>
@@ -663,19 +668,19 @@
   }
 
   .workspace-header {
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
   }
 
   .workspace-header p {
-    font-size: 0.8rem;
+    font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     color: rgba(34, 197, 94, 0.8);
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.25rem;
   }
 
   .workspace-header h2 {
-    font-size: 1.8rem;
+    font-size: 1.4rem;
     font-weight: 700;
   }
 

@@ -106,33 +106,15 @@ async fn evaluate_vwap_reflexive(
             action: SignalAction::Buy,
             allocation_fraction: 0.18,
             reason: format!("Price is {:.2}% above session VWAP", d * 100.0),
-            limit_price: None,
-            stop_loss: None,
-            take_profit: None,
-            trailing_stop: None,
-            walk_to_mid: None,
-            split_exit: None,
-            log_type: None,
-            new_state: None,
-            source: None,
-            math_edge: None,
-            ai_score: None,
+            ..Default::default()
+
         },
         (Some(_), d) if d < -0.001 => StrategySignal {
             action: SignalAction::Sell,
             allocation_fraction: 1.0,
             reason: format!("Price fell {:.2}% below session VWAP", d * 100.0),
-            limit_price: None,
-            stop_loss: None,
-            take_profit: None,
-            trailing_stop: None,
-            walk_to_mid: None,
-            split_exit: None,
-            log_type: None,
-            new_state: None,
-            source: None,
-            math_edge: None,
-            ai_score: None,
+            ..Default::default()
+
         },
         _ => hold("Waiting for VWAP displacement"),
     }
@@ -205,33 +187,15 @@ async fn evaluate_rsi_mean_reversion(
             action: SignalAction::Buy,
             allocation_fraction: 0.12,
             reason: format!("RSI mean reversion entry at {:.1}", value),
-            limit_price: None,
-            stop_loss: None,
-            take_profit: None,
-            trailing_stop: None,
-            walk_to_mid: None,
-            split_exit: None,
-            log_type: None,
-            new_state: None,
-            source: None,
-            math_edge: None,
-            ai_score: None,
+            ..Default::default()
+
         },
         (Some(_), value) if value > 62.0 => StrategySignal {
             action: SignalAction::Sell,
             allocation_fraction: 1.0,
             reason: format!("RSI exit at {:.1}", value),
-            limit_price: None,
-            stop_loss: None,
-            take_profit: None,
-            trailing_stop: None,
-            walk_to_mid: None,
-            split_exit: None,
-            log_type: None,
-            new_state: None,
-            source: None,
-            math_edge: None,
-            ai_score: None,
+            ..Default::default()
+
         },
         _ => hold("RSI within neutral zone"),
     }
@@ -274,33 +238,15 @@ async fn evaluate_sma_trend(
             action: SignalAction::Buy,
             allocation_fraction: 0.15,
             reason: format!("Fast SMA {:.2} crossed above slow SMA {:.2}", fast, slow),
-            limit_price: None,
-            stop_loss: None,
-            take_profit: None,
-            trailing_stop: None,
-            walk_to_mid: None,
-            split_exit: None,
-            log_type: None,
-            new_state: None,
-            source: None,
-            math_edge: None,
-            ai_score: None,
+            ..Default::default()
+
         },
         (Some(_), false) => StrategySignal {
             action: SignalAction::Sell,
             allocation_fraction: 1.0,
             reason: format!("Fast SMA {:.2} dropped below slow SMA {:.2}", fast, slow),
-            limit_price: None,
-            stop_loss: None,
-            take_profit: None,
-            trailing_stop: None,
-            walk_to_mid: None,
-            split_exit: None,
-            log_type: None,
-            new_state: None,
-            source: None,
-            math_edge: None,
-            ai_score: None,
+            ..Default::default()
+
         },
         _ => hold("Trend regime unchanged"),
     }
@@ -322,6 +268,7 @@ pub(crate) fn hold(reason: impl Into<String>) -> StrategySignal {
         source: None,
         math_edge: None,
         ai_score: None,
+        ..Default::default()
     }
 }
 
@@ -421,6 +368,9 @@ mod tests {
             strike: None,
             stale_quote: false,
             legs: Vec::new(),
+            razor_stop: None,
+            stagnation_timestamp: None,
+            kronos_sentiment: None,
         }
     }
 

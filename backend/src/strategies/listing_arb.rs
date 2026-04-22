@@ -81,14 +81,13 @@ pub async fn evaluate_listing_arbitrage_v2(
                 limit_price: Some(bid), // Start at Bid
                 walk_to_mid: Some(true), // Walk if not filled
                 stop_loss: Some(mid * 0.98), // 2% Hard Stop
-                take_profit: None,
-                trailing_stop: None,
                 split_exit: Some(true), // 50/50 Scalp/Runner
                 log_type: Some("NEW".to_string()),
                 new_state: None,
                 source: Some("PARITY_SNIPER".to_string()),
                 math_edge: Some(format!("{:.1}%", edge * 100.0)),
                 ai_score: Some(format!("{:.2}", kronos_val)),
+                ..default_signal()
             };
         }
 
@@ -109,6 +108,7 @@ pub async fn evaluate_listing_arbitrage_v2(
                 source: Some("PARITY_SNIPER".to_string()),
                 math_edge: Some(format!("{:.1}%", edge * 100.0)),
                 ai_score: Some(format!("{:.2}", kronos_val)),
+                ..default_signal()
             };
         }
     }
@@ -166,6 +166,7 @@ fn default_signal() -> StrategySignal {
         source: None,
         math_edge: None,
         ai_score: None,
+        ..Default::default()
     }
 }
 

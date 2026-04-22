@@ -160,6 +160,9 @@ impl Database {
                 strike REAL,
                 stale_quote INTEGER NOT NULL DEFAULT 0,
                 legs_json TEXT NOT NULL DEFAULT '[]',
+                razor_stop REAL,
+                stagnation_timestamp TEXT,
+                kronos_sentiment REAL,
                 PRIMARY KEY (strategy_id, symbol),
                 FOREIGN KEY (strategy_id) REFERENCES strategies(id) ON DELETE CASCADE
             );
@@ -424,6 +427,11 @@ impl Database {
             "ALTER TABLE strategies ADD COLUMN state_json TEXT NOT NULL DEFAULT '{}'",
             [],
         );
+ 
+        // New columns for active risk management and AI integration
+        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN razor_stop REAL", []);
+        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN stagnation_timestamp TEXT", []);
+        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN kronos_sentiment REAL", []);
 
         Ok(())
     }
@@ -651,6 +659,13 @@ impl Database {
             masked_key: mask_raw_key(request.api_key.trim()),
             created_at,
         })
+    }
+
+    pub fn get_strategy_record(&self, id: &str) -> AppResult<StrategyRecord> {
+        self.list_strategy_records()?
+            .into_iter()
+            .find(|s| s.id == id)
+            .ok_or_else(|| AppError::NotFound(format!("strategy {id}")))
     }
 
     pub fn resolve_alpaca_credential(
@@ -991,7 +1006,7 @@ impl Database {
         let mut stmt = self.conn.prepare(
             "SELECT underlying_symbol, instrument_symbol, asset_type, quantity, average_price,
                     market_price, multiplier, option_structure_preset, option_type, expiration, strike,
-                    stale_quote, legs_json
+                    stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment
              FROM strategy_positions
              WHERE strategy_id = ?1
              ORDER BY instrument_symbol ASC",
@@ -1025,6 +1040,9 @@ impl Database {
                 legs,
                 market_value: quantity * market_price * multiplier,
                 unrealized_pnl: (market_price - average_price) * quantity * multiplier,
+                razor_stop: row.get(13)?,
+                stagnation_timestamp: row.get(14)?,
+                kronos_sentiment: row.get(15)?,
             })
         })?;
 
@@ -1047,7 +1065,7 @@ impl Database {
         conn.query_row(
             "SELECT underlying_symbol, instrument_symbol, asset_type, quantity, average_price,
                     market_price, multiplier, option_structure_preset, option_type, expiration,
-                    strike, stale_quote, legs_json
+                    strike, stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment
              FROM strategy_positions WHERE strategy_id = ?1 AND instrument_symbol = ?2",
             params![strategy_id, instrument_symbol],
             |row| {
@@ -1069,6 +1087,9 @@ impl Database {
                     strike: row.get(10)?,
                     stale_quote: row.get::<_, i64>(11)? != 0,
                     legs: deserialize_position_legs(&row.get::<_, String>(12)?)?,
+                    razor_stop: row.get(13)?,
+                    stagnation_timestamp: row.get(14)?,
+                    kronos_sentiment: row.get(15)?,
                 })
             },
         )
@@ -1086,7 +1107,7 @@ impl Database {
             AssetClassTarget::Equity => {
                 "SELECT underlying_symbol, instrument_symbol, asset_type, quantity, average_price,
                         market_price, multiplier, option_structure_preset, option_type, expiration,
-                        strike, stale_quote, legs_json
+                        strike, stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment
                  FROM strategy_positions
                  WHERE strategy_id = ?1 AND instrument_symbol = ?2
                  LIMIT 1"
@@ -1094,7 +1115,7 @@ impl Database {
             AssetClassTarget::Options => {
                 "SELECT underlying_symbol, instrument_symbol, asset_type, quantity, average_price,
                         market_price, multiplier, option_structure_preset, option_type, expiration,
-                        strike, stale_quote, legs_json
+                        strike, stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment
                  FROM strategy_positions
                  WHERE strategy_id = ?1 AND underlying_symbol = ?2 AND asset_type IN ('option', 'option_spread')
                  ORDER BY expiration ASC, instrument_symbol ASC
@@ -1122,6 +1143,9 @@ impl Database {
                     strike: row.get(10)?,
                     stale_quote: row.get::<_, i64>(11)? != 0,
                     legs: deserialize_position_legs(&row.get::<_, String>(12)?)?,
+                    razor_stop: row.get(13)?,
+                    stagnation_timestamp: row.get(14)?,
+                    kronos_sentiment: row.get(15)?,
                 })
             })
             .optional()
@@ -1834,6 +1858,9 @@ impl Database {
                         strike: trade.strike,
                         stale_quote: false,
                         legs: position_legs_from_trade(trade, price, false),
+                        razor_stop: current.razor_stop,
+                        stagnation_timestamp: current.stagnation_timestamp.clone(),
+                        kronos_sentiment: current.kronos_sentiment,
                     }
                 } else {
                     PositionRecord {
@@ -1850,6 +1877,7 @@ impl Database {
                         strike: trade.strike,
                         stale_quote: false,
                         legs: position_legs_from_trade(trade, price, false),
+                        ..Default::default()
                     }
                 };
 
@@ -1909,7 +1937,10 @@ impl Database {
                             expiration: current.expiration,
                             strike: current.strike,
                             stale_quote: false,
-                            legs: current.legs,
+                            legs: current.legs.clone(),
+                            razor_stop: current.razor_stop,
+                            stagnation_timestamp: current.stagnation_timestamp.clone(),
+                            kronos_sentiment: current.kronos_sentiment,
                         },
                     )?;
                 }
@@ -2079,6 +2110,9 @@ impl Database {
                         strike: None,
                         stale_quote: false,
                         legs: Vec::new(),
+                        razor_stop: current.razor_stop,
+                        stagnation_timestamp: current.stagnation_timestamp.clone(),
+                        kronos_sentiment: current.kronos_sentiment,
                     }
                 } else {
                     PositionRecord {
@@ -2095,6 +2129,9 @@ impl Database {
                         strike: None,
                         stale_quote: false,
                         legs: Vec::new(),
+                        razor_stop: None,
+                        stagnation_timestamp: None,
+                        kronos_sentiment: None,
                     }
                 };
                 Self::upsert_position_internal(&tx, strategy_id, &updated)?;
@@ -2140,7 +2177,10 @@ impl Database {
                             expiration: current.expiration,
                             strike: current.strike,
                             stale_quote: false,
-                            legs: current.legs,
+                            legs: current.legs.clone(),
+                            razor_stop: current.razor_stop,
+                            stagnation_timestamp: current.stagnation_timestamp.clone(),
+                            kronos_sentiment: current.kronos_sentiment,
                         },
                     )?;
                 }
@@ -2249,8 +2289,8 @@ impl Database {
             "INSERT INTO strategy_positions (
                 strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type, quantity,
                 average_price, market_price, multiplier, option_structure_preset, option_type, expiration,
-                strike, stale_quote, legs_json
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                strike, stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
              ON CONFLICT(strategy_id, symbol) DO UPDATE SET
                 underlying_symbol = excluded.underlying_symbol,
                 instrument_symbol = excluded.instrument_symbol,
@@ -2264,7 +2304,10 @@ impl Database {
                 expiration = excluded.expiration,
                 strike = excluded.strike,
                 stale_quote = excluded.stale_quote,
-                legs_json = excluded.legs_json",
+                legs_json = excluded.legs_json,
+                razor_stop = excluded.razor_stop,
+                stagnation_timestamp = excluded.stagnation_timestamp,
+                kronos_sentiment = excluded.kronos_sentiment",
             params![
                 strategy_id,
                 position.instrument_symbol,
@@ -2281,8 +2324,48 @@ impl Database {
                 position.strike,
                 position.stale_quote as i64,
                 serde_json::to_string(&position.legs)?,
+                position.razor_stop,
+                position.stagnation_timestamp,
+                position.kronos_sentiment,
             ],
         )?;
+        Ok(())
+    }
+
+    pub fn liquidate_local_position(&mut self, strategy_id: &str, symbol: &str) -> AppResult<()> {
+        let position = self.conn.query_row(
+            "SELECT quantity, market_price, multiplier FROM strategy_positions WHERE strategy_id = ?1 AND instrument_symbol = ?2",
+            params![strategy_id, symbol],
+            |row| {
+                Ok((
+                    row.get::<_, f64>(0)?,
+                    row.get::<_, f64>(1)?,
+                    row.get::<_, f64>(2)?,
+                ))
+            },
+        ).optional()?;
+
+        if let Some((qty, price, multiplier)) = position {
+            let proceeds = qty * price * multiplier;
+            self.conn.execute(
+                "UPDATE strategies SET cash_balance = cash_balance + ?1 WHERE id = ?2",
+                params![proceeds, strategy_id],
+            )?;
+            self.conn.execute(
+                "DELETE FROM strategy_positions WHERE strategy_id = ?1 AND instrument_symbol = ?2",
+                params![strategy_id, symbol],
+            )?;
+            
+            // Log it
+             let trade_id = Uuid::new_v4().to_string();
+             self.conn.execute(
+                "INSERT INTO trade_log (id, strategy_id, symbol, instrument_symbol, asset_type, side, quantity, price, multiplier, provider, execution_mode, reason, executed_at)
+                 VALUES (?1, ?2, ?3, ?3, 'liquidated', 'sell', ?4, ?5, ?6, 'local', 'local_paper', 'MANUAL FLATTEN', ?7)",
+                 params![trade_id, strategy_id, symbol, qty, price, multiplier, Utc::now().to_rfc3339()],
+             )?;
+             
+             Self::recompute_strategy_equity_internal(&self.conn, strategy_id)?;
+        }
         Ok(())
     }
 
@@ -2318,6 +2401,54 @@ impl Database {
         )?;
 
         Ok(())
+    }
+
+    pub fn list_all_open_positions(&self) -> AppResult<Vec<PositionSummary>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT strategy_id, underlying_symbol, instrument_symbol, asset_type, quantity,
+                    average_price, market_price, multiplier, option_structure_preset, 
+                    option_type, expiration, strike, stale_quote, legs_json,
+                    razor_stop, stagnation_timestamp, kronos_sentiment
+             FROM strategy_positions"
+        )?;
+        
+        let position_rows = stmt.query_map([], |row| {
+             let legs_json: String = row.get(13)?;
+             let legs: Vec<PositionLeg> = serde_json::from_str(&legs_json).unwrap_or_default();
+             
+             let qty: f64 = row.get(4)?;
+             let avg_price: f64 = row.get(5)?;
+             let market_price: f64 = row.get(6)?;
+             let multiplier: f64 = row.get(7)?;
+             
+             Ok(PositionSummary {
+                strategy_id: row.get(0)?,
+                underlying_symbol: row.get(1)?,
+                instrument_symbol: row.get(2)?,
+                asset_type: row.get(3)?,
+                quantity: qty,
+                average_price: avg_price,
+                market_price,
+                multiplier,
+                option_structure_preset: row.get::<_, Option<String>>(8)?.as_deref().map(option_structure_preset_from_str).transpose().unwrap_or_default(),
+                option_type: row.get(9)?,
+                expiration: row.get(10)?,
+                strike: row.get(11)?,
+                stale_quote: row.get::<_, i64>(12)? != 0,
+                legs,
+                market_value: qty * market_price * multiplier,
+                unrealized_pnl: (market_price - avg_price) * qty * multiplier,
+                razor_stop: row.get(14)?,
+                stagnation_timestamp: row.get(15)?,
+                kronos_sentiment: row.get(16)?,
+             })
+        })?;
+
+        let mut positions = Vec::new();
+        for row in position_rows {
+            positions.push(row?);
+        }
+        Ok(positions)
     }
 
     fn map_strategy_summary(&self, record: StrategyRecord) -> AppResult<StrategySummary> {

@@ -341,6 +341,9 @@ pub struct PositionSummary {
     pub legs: Vec<PositionLeg>,
     pub market_value: f64,
     pub unrealized_pnl: f64,
+    pub razor_stop: Option<f64>,
+    pub stagnation_timestamp: Option<String>,
+    pub kronos_sentiment: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -487,6 +490,9 @@ pub enum RealtimeEvent {
         strategies: Vec<StrategySummary>,
         event: Option<String>,
     },
+    Positions {
+        positions: Vec<PositionSummary>,
+    },
     Status {
         channel: String,
         provider: Option<DataProvider>,
@@ -530,6 +536,7 @@ impl RealtimeEvent {
         match self {
             Self::Market { .. } => "market",
             Self::BrokerSync { .. } => "broker_sync",
+            Self::Positions { .. } => "positions",
             Self::Status { .. } => "status",
             Self::Log { .. } => "log",
             Self::Notification { .. } => "notification",
@@ -585,7 +592,7 @@ pub struct StrategyRecord {
     pub state_json: serde_json::Value,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PositionRecord {
     pub underlying_symbol: String,
     pub instrument_symbol: String,
@@ -600,13 +607,17 @@ pub struct PositionRecord {
     pub strike: Option<f64>,
     pub stale_quote: bool,
     pub legs: Vec<PositionLeg>,
+    pub razor_stop: Option<f64>,
+    pub stagnation_timestamp: Option<String>,
+    pub kronos_sentiment: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum SignalAction {
+    #[default]
+    Hold,
     Buy,
     Sell,
-    Hold,
 }
 
 impl SignalAction {
@@ -619,7 +630,7 @@ impl SignalAction {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StrategySignal {
     pub action: SignalAction,
     pub allocation_fraction: f64,
@@ -635,6 +646,7 @@ pub struct StrategySignal {
     pub source: Option<String>,
     pub math_edge: Option<String>,
     pub ai_score: Option<String>,
+    pub stagnation_timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
