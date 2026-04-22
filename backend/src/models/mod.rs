@@ -705,7 +705,6 @@ pub struct CandleQuery {
     pub provider: Option<DataProvider>,
     pub range: Option<String>,
     pub interval: Option<String>,
-    pub new_state: Option<serde_json::Value>,
 }
 
 #[derive(Debug, serde::Deserialize)]

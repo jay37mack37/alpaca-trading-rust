@@ -28,7 +28,7 @@
   export let credentials: CredentialSummary[] = [];
   export let positions: PositionSummary[] = [];
   export let recentTrades: any[] = [];
-  export let viewMode: "active" | "remodeling" = "active";
+  let viewMode: "active" | "remodeling" = "active";
   export let logs: any[] = [];
 
   const dispatch = createEventDispatcher<{
@@ -221,8 +221,6 @@
       case "listing_arbitrage": return "Listing Arbitrage";
       case "parity_sniper": return "Parity Sniper";
       case "vwap_reversion": return "VWAP Reversion";
-      case "jarrod_vwap": return "Jarrod VWAP Reclaim";
-      case "jarrod_vwap": return "Jarrod VWAP";
       case "jarrod_vwap": return "Jarrod VWAP Reclaim";
       case "vwap_reflexive": return "VWAP Mean Reversion";
       case "rsi_mean_reversion": return "Gamma Scalping";

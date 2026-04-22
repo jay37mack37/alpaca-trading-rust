@@ -4,8 +4,7 @@ pub mod vwap_reversion;
 pub mod jarrod_vwap;
 
 use crate::models::{
-    AssetClassTarget, Candle, DataProvider, ExecutionMode, OptionEntryStyle, OptionStructurePreset,
-    PositionRecord, Quote, SignalAction, StrategyKind, StrategyRecord, StrategySignal,
+    Candle, PositionRecord, Quote, SignalAction, StrategyKind, StrategyRecord, StrategySignal,
 };
 use async_trait::async_trait;
 use crate::AppState;
@@ -359,7 +358,6 @@ mod tests {
             },
             streams: StreamHub::new(),
             agent_tasks: std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-            api_token: std::sync::Arc::new("test-token".to_string()),
         }
     }
 
@@ -381,32 +379,6 @@ mod tests {
         }
     }
 
-    fn make_position() -> PositionRecord {
-        PositionRecord {
-            underlying_symbol: "AAPL".to_string(),
-            instrument_symbol: "AAPL".to_string(),
-            asset_type: "equity".to_string(),
-            quantity: 10.0,
-            average_price: 100.0,
-            market_price: 100.0,
-            multiplier: 1.0,
-            option_structure_preset: None,
-            option_type: None,
-            expiration: None,
-            strike: None,
-            stale_quote: false,
-            legs: Vec::new(),
-            razor_stop: None,
-            stagnation_timestamp: None,
-            kronos_sentiment: None,
-            take_profit: None,
-            exit_logic: None,
-            entry_time: None,
-            buy_logic: None,
-            entry_math: None,
-            entry_ai: None,
-        }
-    }
 
     fn make_candle(close: f64) -> Candle {
         Candle {
