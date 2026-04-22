@@ -8,8 +8,10 @@ config.json
 # Rust build artifacts
 backend/target/
 target/
-frontend/node_modules/
 **/*.rs.bk
+
+# Frontend
+frontend/node_modules/
 
 # Temp/scratch files
 temp_main.rs
@@ -37,4 +39,4 @@ Thumbs.db
 data/
 *.db
 *.db-shm
-*.db-wal
+*.db-wal

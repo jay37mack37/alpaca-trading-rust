@@ -1,19 +1,21 @@
+use crate::error::{ApiResponse, AppResult};
+use crate::models::{
+    CreateWatchlistRequest, UpdateWatchlistRequest, Watchlist, WatchlistAddRequest,
+};
+use crate::services::db::Database;
+use crate::AppState;
 use axum::{
     extract::{Path, State},
     Json,
 };
-use crate::models::{
-    Watchlist, CreateWatchlistRequest, UpdateWatchlistRequest, WatchlistAddRequest,
-};
-use crate::error::{AppResult, ApiResponse};
-use crate::AppState;
-use crate::services::db::Database;
 use serde_json::json;
 
-pub async fn list_watchlists(State(state): State<AppState>) -> AppResult<ApiResponse<Vec<Watchlist>>> {
+pub async fn list_watchlists(
+    State(state): State<AppState>,
+) -> AppResult<ApiResponse<Vec<Watchlist>>> {
     let watchlists = {
         let db = state.db.lock().await;
-        let db: &Database = &*db;
+        let db: &Database = &db;
         db.list_watchlists()?
     };
     Ok(ApiResponse {
@@ -30,13 +32,13 @@ pub async fn create_watchlist(
     let id = uuid::Uuid::new_v4().to_string();
     {
         let db = state.db.lock().await;
-        let db: &Database = &*db;
+        let db: &Database = &db;
         db.insert_watchlist(&id, &payload.name, &payload.symbols)?;
     }
 
     let watchlists = {
         let db = state.db.lock().await;
-        let db: &Database = &*db;
+        let db: &Database = &db;
         db.list_watchlists()?
     };
     let created = watchlists.into_iter().find(|w| w.id == id).unwrap();
@@ -54,13 +56,13 @@ pub async fn update_watchlist(
 ) -> AppResult<ApiResponse<Watchlist>> {
     {
         let db = state.db.lock().await;
-        let db: &Database = &*db;
+        let db: &Database = &db;
         db.update_watchlist(&id, &payload)?;
     }
 
     let watchlists = {
         let db = state.db.lock().await;
-        let db: &Database = &*db;
+        let db: &Database = &db;
         db.list_watchlists()?
     };
     let updated = watchlists.into_iter().find(|w| w.id == id).unwrap();
@@ -77,7 +79,7 @@ pub async fn delete_watchlist(
 ) -> AppResult<ApiResponse<serde_json::Value>> {
     {
         let db = state.db.lock().await;
-        let db: &Database = &*db;
+        let db: &Database = &db;
         db.delete_watchlist(&id)?;
     }
     Ok(ApiResponse {
@@ -92,7 +94,7 @@ pub async fn add_watchlist_symbol(
     Json(request): Json<WatchlistAddRequest>,
 ) -> AppResult<ApiResponse<serde_json::Value>> {
     let db = state.db.lock().await;
-    let db: &Database = &*db;
+    let db: &Database = &db;
     db.insert_watchlist_symbol(&request.symbol)?;
     Ok(ApiResponse {
         success: true,
@@ -109,7 +111,7 @@ pub async fn remove_watchlist_symbol(
     Path(symbol): Path<String>,
 ) -> AppResult<ApiResponse<serde_json::Value>> {
     let db = state.db.lock().await;
-    let db: &Database = &*db;
+    let db: &Database = &db;
     db.delete_watchlist_symbol(&symbol)?;
     Ok(ApiResponse {
         success: true,

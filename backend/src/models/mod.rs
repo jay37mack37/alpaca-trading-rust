@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+pub mod telemetry;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -18,7 +19,9 @@ pub fn normalize_symbol(symbol: &str) -> String {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum DataProvider {
+    #[default]
     Yahoo,
     Alpaca,
 }
@@ -29,12 +32,6 @@ impl DataProvider {
             Self::Yahoo => "yahoo",
             Self::Alpaca => "alpaca",
         }
-    }
-}
-
-impl Default for DataProvider {
-    fn default() -> Self {
-        Self::Yahoo
     }
 }
 
@@ -70,7 +67,9 @@ impl ExecutionMode {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum AssetClassTarget {
+    #[default]
     Equity,
     Options,
 }
@@ -84,37 +83,23 @@ impl AssetClassTarget {
     }
 }
 
-impl Default for AssetClassTarget {
-    fn default() -> Self {
-        Self::Equity
-    }
-}
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum OptionEntryStyle {
+    #[default]
     LongCall,
     LongPut,
 }
 
-impl Default for OptionEntryStyle {
-    fn default() -> Self {
-        Self::LongCall
-    }
-}
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum OptionStructurePreset {
+    #[default]
     Single,
     BullCallSpread,
     BearPutSpread,
-}
-
-impl Default for OptionStructurePreset {
-    fn default() -> Self {
-        Self::Single
-    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -527,6 +512,15 @@ pub enum RealtimeEvent {
     Heartbeat {
         timestamp: u64,
         buying_power: f64,
+        kronos_active: bool,
+        alpaca_active: bool,
+        options_active: bool,
+    },
+    System {
+        event: telemetry::SystemEvent,
+    },
+    SystemLog {
+        event: crate::logger::SystemEvent,
     },
 }
 
@@ -539,6 +533,8 @@ impl RealtimeEvent {
             Self::Log { .. } => "log",
             Self::Notification { .. } => "notification",
             Self::Heartbeat { .. } => "heartbeat",
+            Self::System { .. } => "system",
+            Self::SystemLog { .. } => "system_log",
         }
     }
 

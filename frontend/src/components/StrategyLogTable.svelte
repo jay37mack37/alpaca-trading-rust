@@ -4,10 +4,11 @@
   export let logs: Array<{
     time: string;
     symbol: string;
+    source: string;
     math_edge: string;
-    kronos_score: string;
+    ai_score: string;
     decision: string;
-    reasoning: string;
+    narrative: string;
   }> = [];
 
   function getDecisionTone(decision: string) {
@@ -31,11 +32,11 @@
   <div class="log-container">
     <div class="log-header">
       <div class="col-time">Time</div>
-      <div class="col-type">Type</div>
-      <div class="col-symbol">Symbol</div>
-      <div class="col-edge">Math Edge %</div>
-      <div class="col-kronos">Kronos Score</div>
-      <div class="col-decision">Decision / Reasoning</div>
+      <div class="col-type">Src</div>
+      <div class="col-symbol">Sym</div>
+      <div class="col-edge">Math Context</div>
+      <div class="col-kronos">Kronos</div>
+      <div class="col-decision">Audit Trail</div>
     </div>
 
     <div class="log-body">
@@ -46,19 +47,21 @@
           {#snippet renderItem(log)}
             <div
               class="log-row"
-              class:row-buy={log.decision.toLowerCase() === 'buy'}
-              class:row-exit={log.decision.toLowerCase() === 'exit' || log.decision.toLowerCase() === 'skip'}
-              class:row-heartbeat={log.decision.toLowerCase() === 'heartbeat' || log.decision.toLowerCase() === 'hold'}
+              class:row-signal={['signal', 'buy', 'sell'].includes(log.decision.toLowerCase())}
+              class:row-protection={log.decision.toLowerCase() === 'protection'}
+              class:row-exit={log.decision.toLowerCase() === 'exit'}
+              class:row-haggle={log.decision.toLowerCase() === 'haggle'}
+              class:row-scan={['scan', 'heartbeat', 'hold', 'scanning'].includes(log.decision.toLowerCase())}
             >
               <div class="col-time timestamp">{log.time.split(" ")[1]}</div>
-              <div class="col-type type-cell">{(log as any).type ?? 'DRIFT'}</div>
+              <div class="col-type type-cell">{log.source}</div>
               <div class="col-symbol symbol-cell"><strong>{log.symbol}</strong></div>
               <div class="col-edge edge-cell">{log.math_edge}</div>
-              <div class="col-kronos kronos-cell">{log.kronos_score}</div>
+              <div class="col-kronos kronos-cell">{log.ai_score}</div>
               <div class="col-decision decision-cell">
                 <div class="decision-wrap">
                   <span class="decision-text">{log.decision}:</span>
-                  <span class="reasoning-text">{log.reasoning}</span>
+                  <span class="reasoning-text">{log.narrative}</span>
                 </div>
               </div>
             </div>
@@ -70,9 +73,11 @@
 </div>
 
 <style>
-  .log-row.row-buy { background: rgba(34, 197, 94, 0.15); border-left: 4px solid #4ade80; }
-  .log-row.row-exit { background: rgba(239, 68, 68, 0.1); border-left: 4px solid #f87171; }
-  .log-row.row-heartbeat { background: rgba(59, 130, 246, 0.1); border-left: 4px solid #60a5fa; }
+  .log-row.row-signal { background: rgba(59, 130, 246, 0.15); border-left: 4px solid #60a5fa; }
+  .log-row.row-protection { background: rgba(239, 68, 68, 0.15); border-left: 4px solid #f87171; }
+  .log-row.row-exit { background: rgba(251, 191, 36, 0.15); border-left: 4px solid #fbbf24; }
+  .log-row.row-haggle { background: rgba(168, 85, 247, 0.15); border-left: 4px solid #c084fc; }
+  .log-row.row-scan { background: rgba(255, 255, 255, 0.03); border-left: 4px solid rgba(255,255,255,0.2); }
 
   .decision-wrap { display: flex; gap: 8px; align-items: baseline; }
   .decision-text { font-weight: 700; text-transform: uppercase; font-size: 0.75rem; min-width: 60px; }
@@ -156,34 +161,10 @@
     font-family: var(--font-mono);
   }
 
-  .reasoning {
-    color: var(--color-text-dim);
-    font-style: italic;
-  }
-
   .empty-state {
     text-align: center;
     padding: 40px !important;
     color: var(--color-text-dim);
-  }
-
-  .tag {
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    background: rgba(255, 255, 255, 0.05);
-  }
-
-  .tag--positive {
-    background: rgba(34, 197, 94, 0.1);
-    color: #4ade80;
-  }
-
-  .tag--negative {
-    background: rgba(239, 68, 68, 0.1);
-    color: #f87171;
   }
 
   .btn-ghost {

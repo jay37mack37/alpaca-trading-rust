@@ -12,9 +12,9 @@
     StrategySummary,
     UpdateStrategyRequest,
   } from "../lib/types";
-  import BrokerSyncPanel from "./BrokerSyncPanel.svelte";
   import InteractiveTicker from "./InteractiveTicker.svelte";
   import AgentCardTicker from "./AgentCardTicker.svelte";
+  import StrategyLogTable from "./StrategyLogTable.svelte";
   import { api } from "../lib/api";
   import { prettyMoney, quantityDigits, structureLabel, contractLabel, legLabel, parseSymbols } from "../lib/format";
   import { validateStrategyDraft, type ValidationErrors } from "../lib/validation";
@@ -28,6 +28,7 @@
   export let detailLoading = false;
   export let collectorIntervalSeconds = 0;
   export let viewMode: "active" | "remodeling" = "active";
+  export let logs: any[] = [];
 
   const dispatch = createEventDispatcher<{
     create: CreateStrategyRequest;
@@ -97,7 +98,7 @@
         reset_portfolio: false,
         max_position_size: strategy.risk_parameters?.max_position_size != null ? String(strategy.risk_parameters.max_position_size) : "5000",
         max_daily_loss: strategy.risk_parameters?.max_daily_loss != null ? String(strategy.risk_parameters.max_daily_loss) : "500",
-        blacklisted_symbols: strategy.risk_parameters?.blacklisted_symbols?.join(", ") || "",
+        blacklisted_symbols: strategy.risk_parameters?.blacklisted_symbols?.join(", ") ?? "",
         run_interval: interval.value,
         run_interval_unit: interval.unit,
       };
@@ -108,10 +109,14 @@
     draftErrors = nextErrors;
   }
 
+  $: workingStrats = strategies.filter(s => s.id === 'parity-sniper' || s.id === 'vwap-reversion');
+  $: researchStrats = strategies.filter(s => s.id !== 'parity-sniper' && s.id !== 'vwap-reversion');
+
   function createAgent() {
     dispatch("create", {
       name: createDraft.name.trim() || `${labelForKind(createKind)} Agent`,
       kind: createKind,
+      enabled: createDraft.enabled,
       execution_mode: createDraft.execution_mode,
       asset_class_target: createDraft.asset_class_target,
       option_entry_style: createDraft.option_entry_style,
@@ -125,9 +130,15 @@
       starting_cash: Number(createDraft.starting_cash),
       tracked_symbols: parseSymbols(createDraft.tracked_symbols),
       credential_id: createDraft.credential_id || null,
-      enabled: true,
+      enabled: createDraft.enabled,
       run_interval_ms: draftToRunIntervalMs(createDraft.run_interval, createDraft.run_interval_unit),
       live_confirmation: createDraft.live_confirmation,
+      reset_portfolio: createDraft.reset_portfolio,
+      risk_parameters: {
+        max_position_size: Number(createDraft.max_position_size),
+        max_daily_loss: Number(createDraft.max_daily_loss),
+        blacklisted_symbols: parseSymbols(createDraft.blacklisted_symbols),
+      },
     });
     createDraft = {
       name: "",
@@ -199,6 +210,8 @@
       case "rsi_mean_reversion": return "Gamma Scalping: Harvesting theta while maintaining a delta-neutral profile.";
       case "sma_trend": return "0DTE Delta-Neutral: Capturing premium decay on same-day SPY expirations.";
       case "put_call_parity": return "Put-Call Parity: Arbitraging discrepancies between synthesized and market option prices.";
+      case "parity_sniper": return "Parity Sniper: Specialized $S + P - C = K$ gap detector for exploitable option pricing discrepancies.";
+      case "vwap_reversion": return "VWAP Reversion: Standard deviation 'Snap Back' strategy for over-extended price action.";
       default: return "Automated algorithmic execution strategy.";
     }
   }
@@ -273,9 +286,11 @@
       <label>
         <span>Template</span>
         <select id="agent-create-kind" name="agent_create_kind" bind:value={createKind}>
-          <option value="vwap_reflexive">VWAP Reflexive</option>
-          <option value="rsi_mean_reversion">RSI Mean Reversion</option>
-          <option value="sma_trend">SMA Trend</option>
+          <option value="vwap_reversion">VWAP Reversion</option>
+          <option value="parity_sniper">Parity Sniper</option>
+          <option value="listing_arbitrage">Listing Arbitrage</option>
+          <option value="rsi_mean_reversion">Gamma Scalping</option>
+          <option value="sma_trend">0DTE Delta-Neutral</option>
         </select>
       </label>
       <label>
@@ -304,6 +319,17 @@
         </select>
       </label>
       <label>
+        <span>Run interval</span>
+        <div style="display: flex; gap: 4px;">
+          <input id="agent-create-interval" name="agent_create_interval" style="flex: 1" type="number" min="1" class:invalid={createErrors.run_interval} bind:value={createDraft.run_interval} />
+          <select id="agent-create-unit" name="agent_create_unit" bind:value={createDraft.run_interval_unit}>
+            <option value="seconds">s</option>
+            <option value="milliseconds">ms</option>
+          </select>
+        </div>
+        {#if createErrors.run_interval}<span class="error-msg">{createErrors.run_interval}</span>{/if}
+      </label>
+      <label>
         <span>Credential</span>
         <select id="agent-create-credential" name="agent_create_credential" bind:value={createDraft.credential_id}>
           <option value="">No broker credential</option>
@@ -312,22 +338,11 @@
           {/each}
         </select>
       </label>
-      <label>
-        <span>Run Interval Mode</span>
-        <select id="agent-create-interval-unit" name="agent_create_interval_unit" bind:value={createDraft.run_interval_unit}>
-          <option value="seconds">Seconds</option>
-          <option value="milliseconds">Milliseconds</option>
-        </select>
-      </label>
-      <label>
-        <span>Run Interval</span>
-        <input id="agent-create-interval" name="agent_create_interval" type="number" min="1" step="1" class:invalid={createErrors.run_interval} bind:value={createDraft.run_interval} />
-        {#if createErrors.run_interval}<span class="error-msg">{createErrors.run_interval}</span>{/if}
-      </label>
+
       {#if createDraft.asset_class_target === "options"}
         <label>
           <span>Options structure</span>
-          <select id="agent-create-option-structure" name="agent_create_option_structure" bind:value={createDraft.option_structure_preset}>
+          <select id="agent-create-option-preset" name="agent_create_option_preset" bind:value={createDraft.option_structure_preset}>
             <option value="single">Single contract</option>
             <option value="bull_call_spread">Bull call spread</option>
             <option value="bear_put_spread">Bear put spread</option>
@@ -335,7 +350,7 @@
         </label>
         {#if createDraft.option_structure_preset === "single"}
           <label>
-            <span>Option entry style</span>
+            <span>Option style</span>
             <select id="agent-create-option-style" name="agent_create_option_style" bind:value={createDraft.option_entry_style}>
               <option value="long_call">Long call</option>
               <option value="long_put">Long put</option>
@@ -345,32 +360,34 @@
         {#if createDraft.option_structure_preset !== "single"}
           <label>
             <span>Spread width</span>
-            <input id="agent-create-option-width" name="agent_create_option_width" type="number" min="0.5" step="0.5" class:invalid={createErrors.option_spread_width} bind:value={createDraft.option_spread_width} />
+            <input id="agent-create-option-width" name="agent_create_option_width" type="number" class:invalid={createErrors.option_spread_width} bind:value={createDraft.option_spread_width} />
             {#if createErrors.option_spread_width}<span class="error-msg">{createErrors.option_spread_width}</span>{/if}
           </label>
         {/if}
         <label>
           <span>Target delta</span>
-          <input id="agent-create-option-delta" name="agent_create_option_delta" type="number" min="0" max="1" step="0.01" class:invalid={createErrors.option_target_delta} bind:value={createDraft.option_target_delta} />
+          <input id="agent-create-option-delta" name="agent_create_option_delta" type="number" step="0.01" class:invalid={createErrors.option_target_delta} bind:value={createDraft.option_target_delta} />
           {#if createErrors.option_target_delta}<span class="error-msg">{createErrors.option_target_delta}</span>{/if}
         </label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <label>
+            <span>Min DTE</span>
+            <input id="agent-create-option-dte-min" name="agent_create_option_dte_min" type="number" class:invalid={createErrors.option_dte_min} bind:value={createDraft.option_dte_min} />
+            {#if createErrors.option_dte_min}<span class="error-msg">{createErrors.option_dte_min}</span>{/if}
+          </label>
+          <label>
+            <span>Max DTE</span>
+            <input id="agent-create-option-dte-max" name="agent_create_option_dte_max" type="number" class:invalid={createErrors.option_dte_max} bind:value={createDraft.option_dte_max} />
+            {#if createErrors.option_dte_max}<span class="error-msg">{createErrors.option_dte_max}</span>{/if}
+          </label>
+        </div>
         <label>
-          <span>Min DTE</span>
-          <input id="agent-create-option-dte-min" name="agent_create_option_dte_min" type="number" min="1" step="1" class:invalid={createErrors.option_dte_min} bind:value={createDraft.option_dte_min} />
-          {#if createErrors.option_dte_min}<span class="error-msg">{createErrors.option_dte_min}</span>{/if}
-        </label>
-        <label>
-          <span>Max DTE</span>
-          <input id="agent-create-option-dte-max" name="agent_create_option_dte_max" type="number" min="1" step="1" class:invalid={createErrors.option_dte_max} bind:value={createDraft.option_dte_max} />
-          {#if createErrors.option_dte_max}<span class="error-msg">{createErrors.option_dte_max}</span>{/if}
-        </label>
-        <label>
-          <span>Max spread pct</span>
+          <span>Max spread %</span>
           <input id="agent-create-option-spread" name="agent_create_option_spread" type="number" min="0" max="1" step="0.01" class:invalid={createErrors.option_max_spread_pct} bind:value={createDraft.option_max_spread_pct} />
           {#if createErrors.option_max_spread_pct}<span class="error-msg">{createErrors.option_max_spread_pct}</span>{/if}
         </label>
         <label>
-          <span>Limit buffer pct</span>
+          <span>Limit buffer %</span>
           <input id="agent-create-option-buffer" name="agent_create_option_buffer" type="number" min="0" max="1" step="0.01" class:invalid={createErrors.option_limit_buffer_pct} bind:value={createDraft.option_limit_buffer_pct} />
           {#if createErrors.option_limit_buffer_pct}<span class="error-msg">{createErrors.option_limit_buffer_pct}</span>{/if}
         </label>
@@ -388,8 +405,12 @@
   {/if}
 
   <section class="agents-layout">
+    <div class="section-header">
+      <h2>Live Execution Engines</h2>
+      <p>Hardened strategies certified for production trading.</p>
+    </div>
     <div class="workstation-grid">
-      {#each strategies as strategy}
+      {#each workingStrats as strategy}
         <article class="strat-card" class:active={getEffectiveEnabled(strategy)}>
           {#if flipped[strategy.id]}
             <div class="config-form">
@@ -507,233 +528,160 @@
                 <span>Reset the strategy ledger when saving</span>
               </label>
 
-              <div class="strat-footer" style="justify-content: flex-end;">
-                <button class="ghost-link" on:click={() => flipped[strategy.id] = false}>Cancel</button>
-                <button class="btn-save" disabled={Object.keys(draftErrors[strategy.id] || {}).length > 0} on:click={() => save(strategy.id)}>Save</button>
+              <div class="config-actions">
+                <button class="save-button" on:click={() => save(strategy.id)}>Save changes</button>
+                <button class="cancel-button" on:click={() => flipped[strategy.id] = false}>Cancel</button>
               </div>
             </div>
           {:else}
             <div class="strat-header">
               <div class="strat-title">
-                <h3>{labelForKind(strategy.kind)}</h3>
-                <p class="strat-desc">{getDescriptionForKind(strategy.kind)}</p>
+                <h3>{strategy.name}</h3>
+                <p class="strat-desc">{strategy.description || getDescriptionForKind(strategy.kind)}</p>
               </div>
-              <div class="strat-status">
-                <span class="status-dot" class:live={getEffectiveEnabled(strategy)}></span>
-                <span class="status-label">{getEffectiveEnabled(strategy) ? "Live" : "Idle"}</span>
+              <div class="status-indicator" class:active={getEffectiveEnabled(strategy)}>
+                <span class="dot"></span>
+                {getEffectiveEnabled(strategy) ? 'Active' : 'Idle'}
               </div>
             </div>
 
             <div class="strat-actions">
               <button
                 type="button"
-                class="btn-execute"
+                class="run-button"
                 class:dim={getEffectiveEnabled(strategy)}
                 on:click={() => !getEffectiveEnabled(strategy) && toggleAgent(strategy)}
               >
-                Execute
+                EXECUTE
               </button>
               <button
                 type="button"
-                class="btn-stop"
+                class="stop-button"
                 class:dim={!getEffectiveEnabled(strategy)}
                 on:click={() => getEffectiveEnabled(strategy) && toggleAgent(strategy)}
               >
-                Stop
+                STOP
               </button>
             </div>
 
-            <div class="strat-footer">
-              <button class="ghost-link" on:click={() => dispatch("inspect", { strategyId: strategy.id })}>
-                Activity
-              </button>
-              <button class="ghost-link" on:click={() => { flipped[strategy.id] = true; dispatch("inspect", { strategyId: strategy.id }); }}>
-                Config
-              </button>
+            <div class="strat-meta">
+              <button class="ghost-link" on:click={() => dispatch("inspect", { strategyId: strategy.id })}>Activity</button>
+              <button class="ghost-link" on:click={() => { flipped[strategy.id] = !flipped[strategy.id] }}>Config</button>
             </div>
           {/if}
         </article>
       {/each}
     </div>
 
-    <aside class="agent-detail">
-      <div class="detail-header">
-        <div>
-          <p>Agent Activity</p>
-          <h3>{selectedStrategyDetail?.strategy.name ?? "Select an agent"}</h3>
+    <div class="section-header mt-4">
+      <h2>R&D / Experimental Lab</h2>
+      <p>Strategies currently in testing or simulation mode.</p>
+    </div>
+    <div class="workstation-grid mb-4">
+      {#each researchStrats as strategy}
+        <article class="strat-card" class:active={getEffectiveEnabled(strategy)}>
+          {#if flipped[strategy.id]}
+            <div class="config-form">
+               <label>
+                <span>Name</span>
+                <input type="text" class:invalid={draftErrors[strategy.id]?.name} bind:value={drafts[strategy.id].name} />
+                {#if draftErrors[strategy.id]?.name}<span class="error-msg">{draftErrors[strategy.id].name}</span>{/if}
+              </label>
+
+              <label>
+                <span>Execution mode</span>
+                <select bind:value={drafts[strategy.id].execution_mode}>
+                  <option value="local_paper">Local paper</option>
+                  <option value="alpaca_paper">Alpaca paper</option>
+                  <option value="alpaca_live">Alpaca live</option>
+                </select>
+              </label>
+
+              <div class="config-actions">
+                <button class="save-button" on:click={() => save(strategy.id)}>Save changes</button>
+                <button class="cancel-button" on:click={() => flipped[strategy.id] = false}>Cancel</button>
+              </div>
+            </div>
+          {:else}
+            <div class="strat-header">
+              <div class="strat-title">
+                <h3>{strategy.name}</h3>
+                <p class="strat-desc">{strategy.description || getDescriptionForKind(strategy.kind)}</p>
+              </div>
+              <div class="status-indicator" class:active={getEffectiveEnabled(strategy)}>
+                <span class="dot"></span>
+                {getEffectiveEnabled(strategy) ? 'Active' : 'Idle'}
+              </div>
+            </div>
+
+            <div class="strat-actions">
+               <button
+                type="button"
+                class="run-button"
+                class:dim={getEffectiveEnabled(strategy)}
+                on:click={() => !getEffectiveEnabled(strategy) && toggleAgent(strategy)}
+              >
+                EXECUTE
+              </button>
+              <button
+                type="button"
+                class="stop-button"
+                class:dim={!getEffectiveEnabled(strategy)}
+                on:click={() => getEffectiveEnabled(strategy) && toggleAgent(strategy)}
+              >
+                STOP
+              </button>
+            </div>
+
+            <div class="strat-meta">
+              <button class="ghost-link" on:click={() => dispatch("inspect", { strategyId: strategy.id })}>Activity</button>
+              <button class="ghost-link" on:click={() => { flipped[strategy.id] = !flipped[strategy.id] }}>Config</button>
+            </div>
+          {/if}
+        </article>
+      {/each}
+    </div>
+
+    <div class="log-panel-wrapper">
+      <div class="log-header">
+        <h2>Intelligence Feed</h2>
+        <div class="log-controls">
+          <button class="ghost-link text-xs" on:click={() => logs = []}>Clear</button>
         </div>
       </div>
-
-      {#if detailLoading}
-        <div class="empty">Loading agent detail…</div>
-      {:else if !selectedStrategyDetail}
-        <div class="empty">Pick an agent to review trades, positions, and broker state.</div>
-      {:else}
-        <div class="detail-grid">
-          <article>
-            <span>Last run</span>
-            <strong>{selectedStrategyDetail.strategy.last_run_at ? new Date(selectedStrategyDetail.strategy.last_run_at).toLocaleString() : "—"}</strong>
-          </article>
-          <article>
-            <span>Win rate</span>
-            <strong>{(selectedStrategyDetail.strategy.win_rate * 100).toFixed(1)}%</strong>
-          </article>
-          <article>
-            <span>Open positions</span>
-            <strong>{selectedStrategyDetail.positions.length}</strong>
-          </article>
-          <article>
-            <span>Execution</span>
-            <strong>{selectedStrategyDetail.strategy.execution_mode.replaceAll("_", " ")} · {selectedStrategyDetail.strategy.asset_class_target} · {structureLabel(selectedStrategyDetail.strategy.option_structure_preset)}</strong>
-          </article>
-        </div>
-
-        <div class="detail-block">
-          <h4>Open positions</h4>
-          {#if selectedStrategyDetail.positions.length === 0}
-            <div class="empty empty--small">No open positions.</div>
-          {:else}
-            <div class="trade-feed">
-              {#each selectedStrategyDetail.positions as position}
-                <article>
-                  <header>
-                    <strong>{contractLabel(position)}</strong>
-                    <span>{position.asset_type}</span>
-                  </header>
-                  <p>{position.quantity.toFixed(quantityDigits(position.asset_type))} @ ${position.average_price.toFixed(2)} · value {prettyMoney(position.market_value)}</p>
-                  <small>UPL {prettyMoney(position.unrealized_pnl)}{position.stale_quote ? " · stale quote" : ""}</small>
-                  {#if position.legs.length > 0}
-                    <small>{position.legs.map((leg) => `${leg.position_side} ${legLabel(leg)}`).join(" | ")}</small>
-                  {/if}
-                </article>
-              {/each}
-            </div>
-          {/if}
-        </div>
-
-        <div class="detail-block">
-          <h4>Recent trades</h4>
-          {#if selectedStrategyDetail.trades.length === 0}
-            <div class="empty empty--small">No trades yet.</div>
-          {:else}
-            <div class="trade-feed">
-              {#each selectedStrategyDetail.trades.slice(0, 8) as trade}
-                <article>
-                  <header>
-                    <strong>{contractLabel(trade)}</strong>
-                    <span>{trade.side}</span>
-                  </header>
-                  <p>{trade.reason}</p>
-                  <small>{trade.quantity.toFixed(quantityDigits(trade.asset_type))} @ ${trade.price.toFixed(2)} · {new Date(trade.executed_at).toLocaleString()}</small>
-                  {#if trade.legs.length > 0}
-                    <small>{trade.legs.map((leg) => `${leg.position_intent ?? leg.side} ${legLabel(leg)}`).join(" | ")}</small>
-                  {/if}
-                </article>
-              {/each}
-            </div>
-          {/if}
-        </div>
-
-        <BrokerSyncPanel detail={selectedStrategyDetail} loading={detailLoading} on:sync={(event) => dispatch("sync", event.detail)} />
-      {/if}
-    </aside>
+      <StrategyLogTable {logs} />
+    </div>
   </section>
 </section>
 
 <style>
   .workspace {
-    display: grid;
-    gap: 1rem;
+    padding: 1.5rem;
+    max-width: 1400px;
+    margin: 0 auto;
+    color: white;
   }
 
   .workspace-header {
     margin-bottom: 2rem;
   }
 
-  .workspace-header h2 {
-    font-size: 1.8rem;
-    font-weight: 700;
-    margin: 0;
-  }
-
   .workspace-header p {
     font-size: 0.8rem;
     text-transform: uppercase;
-    letter-spacing: 2px;
-    color: rgba(221, 233, 255, 0.66);
-    margin-bottom: 4px;
+    letter-spacing: 0.1em;
+    color: rgba(34, 197, 94, 0.8);
+    margin-bottom: 0.5rem;
   }
 
-  .create-agent {
-    display: grid;
-    gap: 1rem;
-    padding: 1.25rem;
-    border-radius: 28px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background:
-      radial-gradient(circle at top left, rgba(249, 212, 119, 0.14), transparent 35%),
-      linear-gradient(180deg, rgba(29, 24, 18, 0.96), rgba(14, 11, 9, 0.94));
-  }
-
-  .create-copy span {
-    display: block;
-    margin-top: 0.55rem;
-    color: rgba(236, 243, 255, 0.78);
-    line-height: 1.5;
-  }
-
-  .create-grid,
-  .detail-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.5rem;
-  }
-
-  label {
-    display: grid;
-    gap: 0.35rem;
-  }
-
-  label span,
-  .detail-grid span {
-    color: rgba(221, 233, 255, 0.66);
-    font-size: 0.82rem;
-  }
-
-  input,
-  select,
-  button {
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(8, 11, 19, 0.88);
-    color: white;
-    padding: 0.5rem 0.6rem;
-    font-size: 0.85rem;
-  }
-
-  button {
-    cursor: pointer;
-  }
-
-  .create-button {
-    background: linear-gradient(135deg, #f0b450, #f7dc72);
-    color: #180e00;
+  .workspace-header h2 {
+    font-size: 1.8rem;
     font-weight: 700;
   }
 
-  .create-button:disabled,
-  .btn-save:disabled {
+  .create-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-
-  .btn-save {
-    background: linear-gradient(135deg, #3a7bfd, #63d7ff);
-    color: #07101d;
-    font-weight: 700;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 8px;
   }
 
   .config-form {
@@ -777,28 +725,46 @@
     margin-top: 0.25rem;
   }
 
+  .section-header {
+    margin-bottom: 1.5rem;
+    border-left: 3px solid #22c55e;
+    padding-left: 1rem;
+  }
+
+  .section-header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+  }
+
+  .section-header p {
+    font-size: 0.85rem;
+    color: rgba(221, 233, 255, 0.6);
+  }
+
+  .mt-4 { margin-top: 3rem; }
+  .mb-4 { margin-bottom: 2rem; }
+
   .workstation-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
     gap: 1.5rem;
-    margin-bottom: 3rem;
   }
 
   .strat-card {
     background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 12px;
-    padding: 20px;
+    padding: 1.5rem;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 1.5rem;
     transition: all 0.2s ease;
+    cursor: pointer;
   }
 
-  .strat-card.active {
-    border-color: rgba(34, 197, 94, 0.3);
-    box-shadow: 0 0 20px rgba(34, 197, 94, 0.05);
-  }
+  .strat-card:hover { border-color: rgba(255, 255, 255, 0.15); }
+  .strat-card.active { border-color: rgba(34, 197, 94, 0.3); box-shadow: 0 0 20px rgba(34, 197, 94, 0.05); }
 
   .strat-header {
     display: flex;
@@ -806,91 +772,55 @@
     align-items: flex-start;
   }
 
-  .strat-title h3 {
-    margin: 0 0 6px 0;
-    font-size: 1.1rem;
-    font-weight: 600;
-  }
+  .strat-title h3 { margin: 0 0 0.25rem 0; font-size: 1.1rem; }
+  .strat-desc { font-size: 0.8rem; color: rgba(221, 233, 255, 0.6); line-height: 1.4; }
 
-  .strat-desc {
-    font-size: 0.85rem;
-    color: rgba(221, 233, 255, 0.66);
-    line-height: 1.4;
-    margin: 0;
-  }
-
-  .strat-status {
+  .status-indicator {
     display: flex;
     align-items: center;
-    gap: 8px;
-    background: rgba(0, 0, 0, 0.2);
-    padding: 4px 10px;
-    border-radius: 100px;
+    gap: 0.5rem;
     font-size: 0.75rem;
-    color: rgba(221, 233, 255, 0.66);
+    color: rgba(221, 233, 255, 0.5);
+    background: rgba(0, 0, 0, 0.2);
+    padding: 0.25rem 0.6rem;
+    border-radius: 20px;
   }
 
-  .status-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #4b5563;
-  }
-
-  .status-dot.live {
-    background: #4ade80;
-    box-shadow: 0 0 8px #4ade80;
-  }
+  .status-indicator.active { color: #22c55e; background: rgba(34, 197, 94, 0.1); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
   .strat-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
+    gap: 0.75rem;
   }
 
-  .btn-execute, .btn-stop {
-    border: none;
-    padding: 12px;
-    border-radius: 8px;
+  .run-button, .stop-button {
+    padding: 0.8rem;
+    font-size: 0.85rem;
     font-weight: 700;
-    font-size: 0.9rem;
+    border: none;
+    border-radius: 8px;
     cursor: pointer;
-    transition: all 0.2s ease;
-    text-transform: uppercase;
-    letter-spacing: 1px;
+    transition: all 0.2s;
   }
 
-  .btn-execute {
-    background: #10b981;
-    color: #062016;
-  }
+  .run-button { background: #22c55e; color: #052e16; }
+  .run-button.dim { background: rgba(34, 197, 94, 0.2); color: rgba(255, 255, 255, 0.3); cursor: default; }
+  .stop-button { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); }
+  .stop-button.dim { background: transparent; color: rgba(221, 233, 255, 0.2); border-color: rgba(255, 255, 255, 0.05); cursor: default; }
 
-  .btn-stop {
-    background: #ef4444;
-    color: #fff;
-  }
-
-  .btn-execute.dim, .btn-stop.dim {
-    opacity: 0.2;
-    cursor: default;
-    filter: grayscale(0.5);
-  }
-
-  .btn-execute:not(.dim):hover { background: #34d399; transform: translateY(-1px); }
-  .btn-stop:not(.dim):hover { background: #f87171; transform: translateY(-1px); }
-
-  .strat-footer {
+  .strat-meta {
     display: flex;
-    gap: 16px;
-    margin-top: auto;
-    padding-top: 10px;
+    gap: 1rem;
     border-top: 1px solid rgba(255, 255, 255, 0.05);
+    padding-top: 1rem;
   }
 
   .ghost-link {
     background: none;
     border: none;
-    color: rgba(221, 233, 255, 0.66);
+    color: rgba(221, 233, 255, 0.4);
     font-size: 0.75rem;
     cursor: pointer;
     padding: 0;
@@ -898,61 +828,21 @@
 
   .ghost-link:hover { color: white; }
 
-  .agent-detail {
-    display: grid;
-    gap: 1rem;
-    align-content: start;
-  }
+  .log-panel-wrapper { grid-column: 1 / -1; margin-top: 2rem; }
+  .log-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1rem; }
+  .text-xs { font-size: 0.7rem; }
 
-  .detail-header,
-  .detail-block {
-    padding: 1.1rem;
-    border-radius: 28px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: linear-gradient(180deg, rgba(16, 24, 21, 0.96), rgba(9, 13, 11, 0.92));
-  }
+  .config-form { display: grid; gap: 1rem; }
+  label { display: grid; gap: 0.35rem; }
+  label span { color: rgba(221, 233, 255, 0.6); font-size: 0.75rem; }
+  input, select { background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: white; padding: 0.5rem; font-size: 0.8rem; }
+  .config-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.5rem; }
+  .save-button { background: #22c55e; color: #052e16; border: none; padding: 0.4rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+  .cancel-button { background: transparent; color: white; border: none; cursor: pointer; font-size: 0.8rem; }
 
-  .trade-feed {
-    display: grid;
-    gap: 0.75rem;
-  }
-
-  .trade-feed article {
-    padding: 0.8rem 0.9rem;
-    border-radius: 16px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.07);
-  }
-
-  .trade-feed header {
-    display: flex;
-    justify-content: space-between;
-    gap: 0.5rem;
-    color: white;
-  }
-
-  .trade-feed p,
-  .trade-feed small,
-  .empty {
-    margin: 0;
-    color: rgba(231, 239, 255, 0.78);
-    line-height: 1.45;
-  }
-
-  .empty--small {
-    padding: 0.8rem 0.9rem;
-  }
-
-  @media (max-width: 1200px) {
-    .agents-layout {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  @media (max-width: 720px) {
-    .create-grid,
-    .detail-grid {
-      grid-template-columns: 1fr;
-    }
-  }
+  .create-agent { background: rgba(34, 197, 94, 0.03); border: 1px solid rgba(34, 197, 94, 0.1); border-radius: 16px; padding: 2rem; margin-bottom: 3rem; display: grid; gap: 2rem; }
+  .create-copy h3 { font-size: 1.4rem; margin: 0.25rem 0; }
+  .create-copy span { font-size: 0.85rem; color: rgba(221, 233, 255, 0.6); }
+  .create-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem; }
+  .create-button { background: linear-gradient(135deg, #22c55e, #16a34a); color: white; border: none; padding: 1rem; border-radius: 8px; font-weight: 700; cursor: pointer; }
 </style>
