@@ -112,7 +112,6 @@ pub enum StrategyKind {
     PutCallParity,
     ParitySniper,
     VwapReversion,
-    JarrodVwap,
 }
 
 impl StrategyKind {
@@ -125,7 +124,6 @@ impl StrategyKind {
             Self::PutCallParity => "put_call_parity",
             Self::ParitySniper => "parity_sniper",
             Self::VwapReversion => "vwap_reversion",
-            Self::JarrodVwap => "jarrod_vwap",
         }
     }
 }
