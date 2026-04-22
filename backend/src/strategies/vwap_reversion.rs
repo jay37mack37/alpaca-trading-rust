@@ -1,8 +1,9 @@
 use crate::logger::{SystemEvent, SystemSource, SystemEventType};
 use crate::agents::broadcast_audit_log;
-use crate::models::{SignalAction, StrategySignal, Candle};
+use crate::models::{SignalAction, StrategySignal};
 use crate::AppState;
 
+#[allow(dead_code)]
 pub fn evaluate_vwap(prices: &[f64], volumes: &[f64]) -> (f64, f64) {
     if prices.is_empty() { return (0.0, 0.0); }
     let mut pv_sum = 0.0;

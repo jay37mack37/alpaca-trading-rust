@@ -3,6 +3,7 @@ use crate::agents::broadcast_audit_log;
 use crate::models::{SignalAction, StrategySignal, OptionContractSnapshot};
 use crate::AppState;
 
+#[allow(dead_code)]
 pub fn evaluate_parity(spot: f64, call: f64, put: f64, strike: f64) -> f64 {
     ((spot + put - call) - strike).abs() / strike
 }

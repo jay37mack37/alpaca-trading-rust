@@ -10,7 +10,6 @@ use crate::agents::broadcast_system_event;
 use crate::models::telemetry::StrategyType;
 use crate::AppState;
 use chrono::{Local, NaiveDate};
-use serde::{Deserialize, Serialize};
 
 const SPY_SYMBOL: &str = "SPY";
 
@@ -25,7 +24,7 @@ pub async fn evaluate_listing_arbitrage_v2(
     position: Option<&PositionRecord>,
     kronos_score: Option<f64>,
 ) -> StrategySignal {
-    let symbol = &option.contract_symbol;
+    let _symbol = &option.contract_symbol;
     // 1. Quality Filters
     if option.underlying_symbol != SPY_SYMBOL {
         return hold("Non-SPY contracts ignored");

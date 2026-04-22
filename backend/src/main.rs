@@ -143,8 +143,6 @@ async fn main() -> anyhow::Result<()> {
 
             // 2. Audit Alpaca (Get Buying Power from first enabled strategy)
             let mut buying_power = 0.0;
-            // 2. Audit Alpaca (Get Buying Power from first enabled strategy)
-            let mut buying_power = 0.0;
             let mut alpaca_status = "STBY".to_string();
             
             if state_hb.config.mock_alpaca {

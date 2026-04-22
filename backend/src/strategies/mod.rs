@@ -3,7 +3,7 @@ pub mod parity_sniper;
 pub mod vwap_reversion;
 
 use crate::models::{
-    AssetClassTarget, Candle, DataProvider, ExecutionMode, OptionEntryStyle, OptionStructurePreset,
+    Candle,
     PositionRecord, Quote, SignalAction, StrategyKind, StrategyRecord, StrategySignal,
 };
 use async_trait::async_trait;

@@ -6,7 +6,7 @@ use std::{
 
 use axum::{
     extract::{Query, Request, State},
-    http::{header, StatusCode},
+    http::header,
     middleware::Next,
     response::Response,
 };

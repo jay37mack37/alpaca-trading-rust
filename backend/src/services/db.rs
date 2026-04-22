@@ -498,8 +498,7 @@ impl Database {
                 |row| row.get(0),
             ).optional()?;
 
-            if let Some(old_kind) = existing_kind {
-                // If it exists but kind is different, or we just want to ensure the name is right
+            if let Some(_old_kind) = existing_kind {
                 // If it exists but kind is different, or we just want to ensure the name is right
                 self.conn.execute(
                     "UPDATE strategies SET name = ?1, kind = ?2, enabled = CASE WHEN id IN ('parity-sniper', 'vwap-reversion') THEN 1 ELSE enabled END WHERE id = ?3",
@@ -1147,7 +1146,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
     }
 
-    pub fn store_market_snapshot(&self, quote: &Quote, raw_json: &Value) -> AppResult<()> {
+    pub fn store_market_snapshot(&self, quote: &Quote, _raw_json: &Value) -> AppResult<()> {
         self.conn.execute(
             "INSERT INTO market_snapshots (
                 id, symbol, provider, price, bid, ask, volume, vwap, day_high, day_low, captured_at, raw_json
@@ -1176,7 +1175,7 @@ impl Database {
         raw_json: &Value,
     ) -> AppResult<()> {
         let captured_at = now();
-        let raw_json_str = serde_json::to_string(raw_json)?;
+        let _raw_json_str = serde_json::to_string(raw_json)?;
 
         let tx = self.conn.transaction()?;
 
