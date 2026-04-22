@@ -17,11 +17,10 @@ use crate::{
     models::{
         AssetClassTarget, BrokerAccountSummary, BrokerOrderSummary, BrokerPositionSummary,
         BrokerSyncState, CreateCredentialRequest, CreateStrategyRequest, CredentialEnvironment,
-        CredentialSummary, DataProvider, ExecutionMode, OptionContractSnapshot,
-        OptionEntryStyle, OptionStructurePreset, PositionLeg, PositionRecord, PositionSummary,
-        Quote, SignalAction, StoredCredential, StrategyDetailResponse, StrategyKind,
-        StrategyRecord, StrategySignal, StrategySummary, TradeLeg, TradeRecord, TradeSide,
-        UpdateStrategyRequest,
+        CredentialSummary, DataProvider, ExecutionMode, OptionContractSnapshot, OptionEntryStyle,
+        OptionStructurePreset, PositionLeg, PositionRecord, PositionSummary, Quote, SignalAction,
+        StoredCredential, StrategyDetailResponse, StrategyKind, StrategyRecord, StrategySignal,
+        StrategySummary, TradeLeg, TradeRecord, TradeSide, UpdateStrategyRequest,
     },
 };
 
@@ -50,11 +49,7 @@ pub struct LocalTradeInput {
 }
 
 impl Database {
-    pub fn open(
-        path: &Path,
-        default_watchlist: &[String],
-        master_key: &str,
-    ) -> AppResult<Self> {
+    pub fn open(path: &Path, default_watchlist: &[String], master_key: &str) -> AppResult<Self> {
         if master_key.trim().is_empty() {
             return Err(AppError::Internal(
                 "AUTO_STONKS_MASTER_KEY is required; set it to a strong, unique secret before starting the backend".to_string(),
@@ -356,8 +351,14 @@ impl Database {
             "ALTER TABLE strategy_positions ADD COLUMN option_structure_preset TEXT",
             [],
         );
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN option_type TEXT", []);
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN expiration TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN option_type TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN expiration TEXT",
+            [],
+        );
         let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN strike REAL", []);
         let _ = conn.execute(
             "ALTER TABLE strategy_positions ADD COLUMN stale_quote INTEGER NOT NULL DEFAULT 0",
@@ -383,7 +384,10 @@ impl Database {
             "ALTER TABLE trade_log ADD COLUMN multiplier REAL NOT NULL DEFAULT 1.0",
             [],
         );
-        let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN option_structure_preset TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE trade_log ADD COLUMN option_structure_preset TEXT",
+            [],
+        );
         let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN option_type TEXT", []);
         let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN expiration TEXT", []);
         let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN strike REAL", []);
@@ -701,7 +705,9 @@ impl Database {
                 execution_mode: execution_mode_from_str(&row.get::<_, String>(4)?)?,
                 asset_class_target: asset_class_target_from_str(&row.get::<_, String>(5)?)?,
                 option_entry_style: option_entry_style_from_str(&row.get::<_, String>(6)?)?,
-                option_structure_preset: option_structure_preset_from_str(&row.get::<_, String>(7)?)?,
+                option_structure_preset: option_structure_preset_from_str(
+                    &row.get::<_, String>(7)?,
+                )?,
                 option_spread_width: row.get(8)?,
                 option_target_delta: row.get(9)?,
                 option_dte_min: row.get(10)?,
@@ -831,13 +837,19 @@ impl Database {
         })
     }
 
-    pub fn set_strategy_enabled(&self, strategy_id: &str, enabled: bool) -> AppResult<StrategySummary> {
+    pub fn set_strategy_enabled(
+        &self,
+        strategy_id: &str,
+        enabled: bool,
+    ) -> AppResult<StrategySummary> {
         let changes = self.conn.execute(
             "UPDATE strategies SET enabled = ? WHERE id = ?",
             rusqlite::params![enabled as i64, strategy_id],
         )?;
         if changes == 0 {
-            return Err(crate::error::AppError::NotFound(format!("strategy {strategy_id}")));
+            return Err(crate::error::AppError::NotFound(format!(
+                "strategy {strategy_id}"
+            )));
         }
         self.list_strategies()?
             .into_iter()
@@ -1450,7 +1462,6 @@ impl Database {
         self.broker_sync_state(&credential_id)
     }
 
-
     pub fn insert_watchlist(&self, id: &str, name: &str, symbols: &[String]) -> AppResult<()> {
         let normalized = normalize_symbols(symbols);
         let symbols_json = serde_json::to_string(&normalized)?;
@@ -1462,7 +1473,9 @@ impl Database {
     }
 
     pub fn list_watchlists(&self) -> AppResult<Vec<crate::models::Watchlist>> {
-        let mut stmt = self.conn.prepare("SELECT id, name, symbols FROM watchlists ORDER BY name ASC")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, name, symbols FROM watchlists ORDER BY name ASC")?;
         let rows = stmt.query_map([], |row| {
             Ok(crate::models::Watchlist {
                 id: row.get(0)?,
@@ -1478,18 +1491,25 @@ impl Database {
         Ok(results)
     }
 
-    pub fn update_watchlist(&self, id: &str, req: &crate::models::UpdateWatchlistRequest) -> AppResult<()> {
-        let current: crate::models::Watchlist = self.conn.query_row(
-            "SELECT id, name, symbols FROM watchlists WHERE id = ?1",
-            params![id],
-            |row| {
-                Ok(crate::models::Watchlist {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    symbols: parse_symbols(&row.get::<_, String>(2)?),
-                })
-            },
-        ).map_err(|_| AppError::NotFound(format!("watchlist {}", id)))?;
+    pub fn update_watchlist(
+        &self,
+        id: &str,
+        req: &crate::models::UpdateWatchlistRequest,
+    ) -> AppResult<()> {
+        let current: crate::models::Watchlist = self
+            .conn
+            .query_row(
+                "SELECT id, name, symbols FROM watchlists WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok(crate::models::Watchlist {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        symbols: parse_symbols(&row.get::<_, String>(2)?),
+                    })
+                },
+            )
+            .map_err(|_| AppError::NotFound(format!("watchlist {}", id)))?;
 
         let new_name = req.name.as_deref().unwrap_or(&current.name);
         let new_symbols = req.symbols.as_ref().unwrap_or(&current.symbols);
@@ -1504,7 +1524,9 @@ impl Database {
     }
 
     pub fn delete_watchlist(&self, id: &str) -> AppResult<()> {
-        let deleted = self.conn.execute("DELETE FROM watchlists WHERE id = ?1", params![id])?;
+        let deleted = self
+            .conn
+            .execute("DELETE FROM watchlists WHERE id = ?1", params![id])?;
         if deleted == 0 {
             return Err(AppError::NotFound(format!("watchlist {}", id)));
         }
@@ -1527,10 +1549,8 @@ impl Database {
 
         let mut stmt = self.conn.prepare("SELECT symbol FROM watchlist")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        for symbol in rows {
-            if let Ok(symbol) = symbol {
-                all_symbols.insert(symbol.to_uppercase());
-            }
+        for symbol in rows.flatten() {
+            all_symbols.insert(symbol.to_uppercase());
         }
 
         for strategy in self.list_strategy_records()? {
@@ -1605,7 +1625,9 @@ impl Database {
              WHERE strategy_id = ?1 AND underlying_symbol = ?2 AND asset_type IN ('option', 'option_spread')",
         )?;
         let position_symbols = stmt
-            .query_map(params![strategy_id, underlying_symbol], |row| row.get::<_, String>(0))?
+            .query_map(params![strategy_id, underlying_symbol], |row| {
+                row.get::<_, String>(0)
+            })?
             .collect::<Result<Vec<_>, _>>()?;
 
         if position_symbols.is_empty() {
@@ -1628,7 +1650,11 @@ impl Database {
                         .and_then(option_contract_mark_price)
                         .unwrap_or(leg.market_price);
                     let leg_stale = snapshot.and_then(option_contract_mark_price).is_none();
-                    let sign = if leg.position_side == "short" { -1.0 } else { 1.0 };
+                    let sign = if leg.position_side == "short" {
+                        -1.0
+                    } else {
+                        1.0
+                    };
                     total_mark += sign * leg_mark;
                     any_stale |= leg_stale;
                     updated_legs.push(PositionLeg {
@@ -1662,7 +1688,11 @@ impl Database {
                     position
                         .legs
                         .into_iter()
-                        .map(|leg| PositionLeg { market_price, stale_quote, ..leg })
+                        .map(|leg| PositionLeg {
+                            market_price,
+                            stale_quote,
+                            ..leg
+                        })
                         .collect()
                 };
                 (market_price, stale_quote, legs)
@@ -1689,7 +1719,11 @@ impl Database {
         Self::mark_strategy_run_internal(&self.conn, strategy_id, signal)
     }
 
-    fn mark_strategy_run_internal(conn: &Connection, strategy_id: &str, signal: &str) -> AppResult<()> {
+    fn mark_strategy_run_internal(
+        conn: &Connection,
+        strategy_id: &str,
+        signal: &str,
+    ) -> AppResult<()> {
         conn.execute(
             "UPDATE strategies SET last_signal = ?2, last_run_at = ?3 WHERE id = ?1",
             params![strategy_id, signal, now()],
@@ -1721,7 +1755,8 @@ impl Database {
             Self::mark_symbol_price_internal(&tx, &trade.instrument_symbol, trade.price)?;
         }
 
-        let existing = Self::get_position_record_internal(&tx, strategy_id, &trade.instrument_symbol)?;
+        let existing =
+            Self::get_position_record_internal(&tx, strategy_id, &trade.instrument_symbol)?;
         let trade_id = Uuid::new_v4().to_string();
         let executed_at = now();
         let mut cash_balance = strategy.cash_balance;
@@ -1747,7 +1782,11 @@ impl Database {
 
                 let position_cost = quantity * price * multiplier;
                 if position_cost > cash_balance {
-                    Self::mark_strategy_run_internal(&tx, strategy_id, "Buy signal skipped: insufficient cash")?;
+                    Self::mark_strategy_run_internal(
+                        &tx,
+                        strategy_id,
+                        "Buy signal skipped: insufficient cash",
+                    )?;
                     tx.commit()?;
                     return Ok(None);
                 }
@@ -1795,13 +1834,21 @@ impl Database {
             }
             SignalAction::Sell => {
                 let Some(current) = existing else {
-                    Self::mark_strategy_run_internal(&tx, strategy_id, "Sell signal skipped: no open position")?;
+                    Self::mark_strategy_run_internal(
+                        &tx,
+                        strategy_id,
+                        "Sell signal skipped: no open position",
+                    )?;
                     tx.commit()?;
                     return Ok(None);
                 };
 
                 if quantity <= 0.0 {
-                    Self::mark_strategy_run_internal(&tx, strategy_id, "Sell signal skipped: zero quantity")?;
+                    Self::mark_strategy_run_internal(
+                        &tx,
+                        strategy_id,
+                        "Sell signal skipped: zero quantity",
+                    )?;
                     tx.commit()?;
                     return Ok(None);
                 }
@@ -1816,7 +1863,8 @@ impl Database {
                     losses += 1;
                 }
 
-                let remaining = round_position_quantity(current.quantity - quantity, &trade.asset_type);
+                let remaining =
+                    round_position_quantity(current.quantity - quantity, &trade.asset_type);
                 if remaining <= 0.0 {
                     Self::delete_position_internal(&tx, strategy_id, &trade.instrument_symbol)?;
                 } else {
@@ -1966,8 +2014,8 @@ impl Database {
                 cash_balance -= position_cost;
                 let updated = if let Some(current) = existing {
                     let new_quantity = current.quantity + fill_quantity;
-                    let new_average = ((current.quantity * current.average_price) + position_cost)
-                        / new_quantity;
+                    let new_average =
+                        ((current.quantity * current.average_price) + position_cost) / new_quantity;
                     PositionRecord {
                         underlying_symbol: symbol.to_string(),
                         instrument_symbol: symbol.to_string(),
@@ -2119,7 +2167,6 @@ impl Database {
         }))
     }
 
-
     fn upsert_position_internal(
         conn: &Connection,
         strategy_id: &str,
@@ -2166,7 +2213,6 @@ impl Database {
         Ok(())
     }
 
-
     fn delete_position_internal(
         conn: &Connection,
         strategy_id: &str,
@@ -2178,7 +2224,6 @@ impl Database {
         )?;
         Ok(())
     }
-
 
     fn recompute_strategy_equity_internal(conn: &Connection, strategy_id: &str) -> AppResult<()> {
         let cash_balance: f64 = conn.query_row(
@@ -2584,7 +2629,9 @@ fn deserialize_position_legs(json_text: &str) -> Result<Vec<PositionLeg>, rusqli
         rusqlite::Error::FromSqlConversionFailure(
             0,
             rusqlite::types::Type::Text,
-            Box::new(AppError::Internal(format!("invalid position legs json: {err}"))),
+            Box::new(AppError::Internal(format!(
+                "invalid position legs json: {err}"
+            ))),
         )
     })
 }
@@ -2594,7 +2641,9 @@ fn deserialize_trade_legs(json_text: &str) -> Result<Vec<TradeLeg>, rusqlite::Er
         rusqlite::Error::FromSqlConversionFailure(
             0,
             rusqlite::types::Type::Text,
-            Box::new(AppError::Internal(format!("invalid trade legs json: {err}"))),
+            Box::new(AppError::Internal(format!(
+                "invalid trade legs json: {err}"
+            ))),
         )
     })
 }
@@ -2711,9 +2760,7 @@ fn option_entry_style_from_str(value: &str) -> Result<OptionEntryStyle, rusqlite
     }
 }
 
-fn option_structure_preset_from_str(
-    value: &str,
-) -> Result<OptionStructurePreset, rusqlite::Error> {
+fn option_structure_preset_from_str(value: &str) -> Result<OptionStructurePreset, rusqlite::Error> {
     match value {
         "single" => Ok(OptionStructurePreset::Single),
         "bull_call_spread" => Ok(OptionStructurePreset::BullCallSpread),
@@ -2863,9 +2910,6 @@ mod tests {
 
         // Empty input
         let empty: Vec<String> = vec![];
-        assert_eq!(
-            normalize_symbols(&empty),
-            empty
-        );
+        assert_eq!(normalize_symbols(&empty), empty);
     }
 }

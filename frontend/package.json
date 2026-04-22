@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run src/lib/api.test.ts src/lib/validation.test.ts"
   },
   "dependencies": {
     "@humanspeak/svelte-virtual-list": "^0.4.6",

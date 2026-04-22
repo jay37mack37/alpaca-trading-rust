@@ -55,7 +55,12 @@ impl VwapTracker {
             return 0.0;
         }
         let mean = self.price_history.iter().sum::<f64>() / self.price_history.len() as f64;
-        let variance = self.price_history.iter().map(|p| (p - mean).powi(2)).sum::<f64>() / self.price_history.len() as f64;
+        let variance = self
+            .price_history
+            .iter()
+            .map(|p| (p - mean).powi(2))
+            .sum::<f64>()
+            / self.price_history.len() as f64;
         variance.sqrt()
     }
 }

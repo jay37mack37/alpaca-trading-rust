@@ -1,5 +1,12 @@
 /// Black-Scholes formula for European options
-pub fn black_scholes(spot: f64, strike: f64, time: f64, rate: f64, volatility: f64, is_call: bool) -> f64 {
+pub fn black_scholes(
+    spot: f64,
+    strike: f64,
+    time: f64,
+    rate: f64,
+    volatility: f64,
+    is_call: bool,
+) -> f64 {
     if time <= 0.0 || volatility <= 0.0 {
         return if is_call {
             (spot - strike).max(0.0)

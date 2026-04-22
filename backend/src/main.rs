@@ -85,7 +85,13 @@ async fn main() -> anyhow::Result<()> {
     }
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::list(cors_origins))
-        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE, Method::OPTIONS])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
         .allow_headers([
             axum::http::header::AUTHORIZATION,
             axum::http::header::CONTENT_TYPE,
@@ -214,8 +220,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/health", get(handlers::misc::health))
         .route("/api/dashboard", get(handlers::market::dashboard))
         .route("/api/stream", get(handlers::stream::realtime_stream))
-        .route("/api/market/quote/:symbol", get(handlers::market::market_quote))
-        .route("/api/market/candles/:symbol", get(handlers::market::market_candles))
+        .route(
+            "/api/market/quote/:symbol",
+            get(handlers::market::market_quote),
+        )
+        .route(
+            "/api/market/candles/:symbol",
+            get(handlers::market::market_candles),
+        )
         .route("/api/options/:symbol", get(handlers::market::options_chain))
         .route(
             "/api/watchlists",
@@ -223,11 +235,13 @@ async fn main() -> anyhow::Result<()> {
         )
         .route(
             "/api/watchlists/:id",
-            axum::routing::put(handlers::watchlist::update_watchlist).delete(handlers::watchlist::delete_watchlist),
+            axum::routing::put(handlers::watchlist::update_watchlist)
+                .delete(handlers::watchlist::delete_watchlist),
         )
         .route(
             "/api/credentials",
-            get(handlers::credentials::list_credentials).post(handlers::credentials::create_credential),
+            get(handlers::credentials::list_credentials)
+                .post(handlers::credentials::create_credential),
         )
         .route(
             "/api/strategies",
@@ -241,15 +255,36 @@ async fn main() -> anyhow::Result<()> {
             "/api/strategies/:strategy_id/alpaca-sync",
             post(handlers::misc::sync_strategy_broker),
         )
-        .route("/api/strategies/:strategy_id/run", post(handlers::agents::run_strategy))
-        .route("/api/strategies/:strategy_id/start", post(handlers::agents::start_strategy))
-        .route("/api/strategies/:strategy_id/stop", post(handlers::agents::stop_strategy))
+        .route(
+            "/api/strategies/:strategy_id/run",
+            post(handlers::agents::run_strategy),
+        )
+        .route(
+            "/api/strategies/:strategy_id/start",
+            post(handlers::agents::start_strategy),
+        )
+        .route(
+            "/api/strategies/:strategy_id/stop",
+            post(handlers::agents::stop_strategy),
+        )
         .route("/api/panic", post(handlers::agents::panic_all))
-        .route("/api/watchlist", post(handlers::watchlist::add_watchlist_symbol))
-        .route("/api/watchlist/:symbol", delete(handlers::watchlist::remove_watchlist_symbol))
+        .route(
+            "/api/watchlist",
+            post(handlers::watchlist::add_watchlist_symbol),
+        )
+        .route(
+            "/api/watchlist/:symbol",
+            delete(handlers::watchlist::remove_watchlist_symbol),
+        )
         .route("/api/collect", post(handlers::misc::collect_now))
-        .route("/api/robinhood/ingest", post(handlers::misc::ingest_robinhood_data))
-        .route("/api/analytics/patterns", get(handlers::analytics::run_pattern_analysis))
+        .route(
+            "/api/robinhood/ingest",
+            post(handlers::misc::ingest_robinhood_data),
+        )
+        .route(
+            "/api/analytics/patterns",
+            get(handlers::analytics::run_pattern_analysis),
+        )
         .layer(middleware::from_fn_with_state(
             api_token.clone(),
             require_token,
