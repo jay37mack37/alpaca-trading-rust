@@ -1,4 +1,5 @@
 use std::time::Duration;
+use crate::models::telemetry::{StrategyType, SystemEvent};
 
 use chrono::Utc;
 use futures_util::stream::{FuturesUnordered, StreamExt};
@@ -8,11 +9,13 @@ use crate::models::{
     AssetClassTarget, DataProvider, ExecutionMode, RealtimeEvent, SignalAction,
 };
 use crate::services::broker::{resolve_alpaca_credential, sync_strategy_broker_state};
+use crate::services::kronos::fetch_kronos_score;
 use crate::services::providers::{
     fetch_candles, fetch_options, fetch_quote, poll_alpaca_order_until_filled,
     submit_alpaca_order,
 };
 use crate::services::trading::{prepare_trade, TradePreparationOutcome};
+use crate::logger::{SystemEvent as AuditEvent, SystemSource, SystemEventType};
 use crate::AppState;
 use tracing::warn;
 
@@ -104,7 +107,7 @@ pub async fn run_strategy_once(
                     {
                         Ok(fetched) => {
                             option_contracts = fetched.contracts;
-                            let db = state.db.lock().await;
+                            let mut db = state.db.lock().await;
                             db.store_option_snapshots(&option_contracts, &fetched.raw_json)?;
                             db.refresh_option_position_quotes(
                                 &strategy_id,
@@ -126,11 +129,17 @@ pub async fn run_strategy_once(
                     )?
                 };
 
+                let kronos_result = fetch_kronos_score(&state.http, &symbol).await;
+                let kronos_score = kronos_result.as_ref().map(|s| s.confidence).ok();
+
                 let signal = crate::strategies::evaluate_strategy(
+                    &state,
                     &latest_strategy,
                     &candles.candles,
                     &quote.quote,
+                    &option_contracts,
                     current_position.as_ref(),
+                    kronos_score,
                 )
                 .await;
 
@@ -138,9 +147,9 @@ pub async fn run_strategy_once(
                     &state,
                     &strategy_id,
                     &symbol,
-                    signal.log_type.as_deref().unwrap_or("HEARTBEAT"),
+                    signal.source.as_deref().unwrap_or("HEARTBEAT"),
                     &format!("Price: ${:.2}", quote.quote.price),
-                    "N/A",
+                    &kronos_score.map(|s| format!("{:.2}", s)).unwrap_or_else(|| "N/A".to_string()),
                     signal.action.as_str(),
                     &signal.reason,
                 );
@@ -151,6 +160,13 @@ pub async fn run_strategy_once(
                     let Some(credential) = trading_credential.as_ref() else {
                         let db = state.db.lock().await;
                         db.mark_strategy_run(&strategy_id, "Missing Alpaca trading credential", signal.new_state.clone())?;
+                        RealtimeEvent::broadcast_notification(
+                            &state.streams,
+                            Some(strategy_id.as_str()),
+                            "error",
+                            "Missing Trading Credential",
+                            "Alpaca trading credential is required for this execution mode.",
+                        );
                         return Ok(None);
                     };
 
@@ -163,6 +179,13 @@ pub async fn run_strategy_once(
                             "Live mode selected but credential is not live",
                             signal.new_state.clone(),
                         )?;
+                        RealtimeEvent::broadcast_notification(
+                            &state.streams,
+                            Some(strategy_id.as_str()),
+                            "error",
+                            "Invalid Credential",
+                            "Live mode selected but credential is not live.",
+                        );
                         return Ok(None);
                     }
 
@@ -223,9 +246,28 @@ pub async fn run_strategy_once(
                                         &format!("Alpaca order submission failed: {err}"),
                                         signal.new_state.clone(),
                                     )?;
+                                    RealtimeEvent::broadcast_notification(
+                                        &state.streams,
+                                        Some(strategy_id.as_str()),
+                                        "error",
+                                        "Order Submission Failed",
+                                        &format!("Alpaca order submission failed for {symbol}: {err}"),
+                                    );
                                     return Ok(None);
                                 }
                             };
+
+                            broadcast_audit_log(
+                                &state,
+                                AuditEvent::now(
+                                    SystemSource::System,
+                                    symbol.to_string(),
+                                    SystemEventType::Haggle,
+                                    format!("Order:{}", submitted.order_id),
+                                    kronos_score.unwrap_or(0.5),
+                                    "THE HAGGLER | Order submitted. Walking price to mid for optimal fill.".to_string(),
+                                )
+                            );
 
                             let fill = match poll_alpaca_order_until_filled(
                                 &state.http,
@@ -246,6 +288,13 @@ pub async fn run_strategy_once(
                                         &format!("Alpaca fill reconciliation failed: {err}"),
                                         signal.new_state.clone(),
                                     )?;
+                                    RealtimeEvent::broadcast_notification(
+                                        &state.streams,
+                                        Some(strategy_id.as_str()),
+                                        "error",
+                                        "Fill Reconciliation Failed",
+                                        &format!("Alpaca fill reconciliation failed for {symbol}: {err}"),
+                                    );
                                     return Ok(None);
                                 }
                             };
@@ -254,8 +303,38 @@ pub async fn run_strategy_once(
                             reconciled_trade.quantity = fill.filled_qty;
                             reconciled_trade.price = fill.filled_avg_price;
 
+                            // HAGGLER LOGGING: Slippage Audit
+                            let slippage = (fill.filled_avg_price - prepared_trade.local.price).abs();
+                            let slippage_pct = (slippage / prepared_trade.local.price) * 100.0;
+                            broadcast_audit_log(
+                                &state,
+                                AuditEvent::now(
+                                    SystemSource::System,
+                                    symbol.to_string(),
+                                    SystemEventType::Exit,
+                                    format!("Exp:${:.2} Act:${:.2}", prepared_trade.local.price, fill.filled_avg_price),
+                                    kronos_score.unwrap_or(0.5),
+                                    format!("FILL COMPLETE | Slippage: ${:.2} ({:.2}%)", slippage, slippage_pct),
+                                )
+                            );
+
+                            // RAZOR LOGGING: Stop Loss Initialization
+                            if let Some(stop) = signal.stop_loss {
+                                broadcast_audit_log(
+                                    &state,
+                                    AuditEvent::now(
+                                        SystemSource::System,
+                                        symbol.to_string(),
+                                        SystemEventType::Protection,
+                                        format!("Stop:${:.2}", stop),
+                                        kronos_score.unwrap_or(0.5),
+                                        format!("RAZOR ACTIVE | Protective stop set at ${:.2}", stop),
+                                    )
+                                );
+                            }
+
                             let trade = {
-                                let db = state.db.lock().await;
+                                let mut db = state.db.lock().await;
                                 db.store_market_snapshot(&quote.quote, &quote.raw_json)?;
                                 db.execute_local_trade(
                                     &strategy_id,
@@ -277,7 +356,7 @@ pub async fn run_strategy_once(
                 }
 
                 let trade = {
-                    let db = state.db.lock().await;
+                    let mut db = state.db.lock().await;
                     db.store_market_snapshot(&quote.quote, &quote.raw_json)?;
                     if let Some(prepared_trade) = prepared_trade.as_ref() {
                         db.execute_local_trade(
@@ -323,22 +402,46 @@ pub fn broadcast_strategy_log(
     state: &AppState,
     strategy_id: &str,
     symbol: &str,
-    log_type: &str,
+    source: &str,
     math_edge: &str,
-    kronos_score: &str,
+    ai_score: &str,
     decision: &str,
-    reasoning: &str,
+    narrative: &str,
 ) {
     let _ = state.streams.send_event(RealtimeEvent::Log {
         strategy_id: strategy_id.to_string(),
         symbol: symbol.to_string(),
-        log_type: log_type.to_string(),
+        source: source.to_string(),
         math_edge: math_edge.to_string(),
-        kronos_score: kronos_score.to_string(),
+        ai_score: ai_score.to_string(),
         decision: decision.to_string(),
-        reasoning: reasoning.to_string(),
+        narrative: narrative.to_string(),
         time: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
     });
+}
+
+pub fn broadcast_system_event(
+    state: &crate::AppState,
+    strategy: StrategyType,
+    symbol: &str,
+    edge: f64,
+    ai_confirmation: f64,
+    message: &str,
+) {
+    let event = SystemEvent {
+        timestamp: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        strategy,
+        symbol: symbol.to_string(),
+        edge,
+        ai_confirmation,
+        message: message.to_string(),
+    };
+    let _ = state.streams.send_event(crate::models::RealtimeEvent::System { event });
+}
+
+
+pub fn broadcast_audit_log(state: &AppState, event: crate::logger::SystemEvent) {
+    let _ = state.streams.send_event(RealtimeEvent::SystemLog { event });
 }
 
 pub async fn spawn_agent_loop(state: AppState, strategy_id: String) {
@@ -370,6 +473,13 @@ pub async fn spawn_agent_loop(state: AppState, strategy_id: String) {
 
             if let Err(err) = run_strategy_once(&state_clone, &strategy_id_clone, None).await {
                 tracing::error!("Agent {strategy_id_clone} failed its task run: {err}");
+                RealtimeEvent::broadcast_notification(
+                    &state_clone.streams,
+                    Some(strategy_id_clone.as_str()),
+                    "error",
+                    "Agent Task Failed",
+                    &format!("Strategy run failed: {err}"),
+                );
             }
 
             tokio::time::sleep(Duration::from_millis(interval_ms)).await;

@@ -1,7 +1,7 @@
-pub mod market;
 pub mod agents;
-pub mod watchlist;
+pub mod analytics;
 pub mod credentials;
+pub mod market;
 pub mod misc;
 pub mod stream;
-pub mod analytics;
+pub mod watchlist;

@@ -1,32 +1,30 @@
 use crate::math::black_scholes_call;
 use crate::models::{
-    Candle, OptionContractSnapshot, PositionRecord, Quote, SignalAction, StrategyRecord,
-    StrategySignal,
+    OptionContractSnapshot, PositionRecord, Quote, SignalAction, StrategyRecord,
+    StrategySignal, Candle,
 };
 use crate::options::parse_expiration_from_occ;
 use crate::strategies::{hold, TradingStrategy};
 use async_trait::async_trait;
+use crate::agents::broadcast_system_event;
+use crate::models::telemetry::StrategyType;
+use crate::AppState;
 use chrono::{Local, NaiveDate};
-use serde::{Deserialize, Serialize};
 
-const KRONOS_URL: &str = "http://localhost:8000";
 const SPY_SYMBOL: &str = "SPY";
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct KronosSentiment {
-    pub score: f64,
-    pub latency_ms: u64,
-}
 
 /// Professional Listing Arbitrage Strategy
 /// 
 /// Phase 1: Selective Sniper & Drift Hunter
 pub async fn evaluate_listing_arbitrage_v2(
+    state: &AppState,
     _strategy: &StrategyRecord,
     option: &OptionContractSnapshot,
     underlying_quote: &Quote,
     position: Option<&PositionRecord>,
+    kronos_score: Option<f64>,
 ) -> StrategySignal {
+    let _symbol = &option.contract_symbol;
     // 1. Quality Filters
     if option.underlying_symbol != SPY_SYMBOL {
         return hold("Non-SPY contracts ignored");
@@ -40,7 +38,7 @@ pub async fn evaluate_listing_arbitrage_v2(
     let mid = (bid + ask) / 2.0;
 
     // 2. Intelligence Check (Kronos AI)
-    let kronos = get_kronos_sentiment(&option.contract_symbol).await.unwrap_or(KronosSentiment { score: 0.5, latency_ms: 0 });
+    let kronos_val = kronos_score.unwrap_or(0.5);
     
     // 3. Fair Value Calculation (Black-Scholes)
     let expiration = match parse_expiration_from_occ(&option.contract_symbol) {
@@ -62,14 +60,24 @@ pub async fn evaluate_listing_arbitrage_v2(
     // 4. Alpha Calculation
     let edge = (mid - fair_value) / fair_value;
     
+    // Telemetry
+    broadcast_system_event(
+        state,
+        StrategyType::Listing,
+        &option.underlying_symbol,
+        edge.abs(),
+        kronos_val,
+        &format!("Analyzed {} at strike {:.0}. Black-Scholes edge: {:.2}%", option.contract_symbol, option.strike, edge * 100.0),
+    );
+    
     // 5. Entry Logic
     if position.is_none() {
         // Snipe Condition: Edge > 2% + Kronos > 0.8
-        if edge < -0.02 && kronos.score > 0.8 {
+        if edge < -0.02 && kronos_val > 0.8 {
             return StrategySignal {
                 action: SignalAction::Buy,
                 allocation_fraction: 0.1,
-                reason: format!("SNIPE: Edge {:.1}% | Kronos {:.2}", edge * 100.0, kronos.score),
+                reason: format!("SNIPE: Edge {:.1}% | Kronos {:.2}", edge * 100.0, kronos_val),
                 limit_price: Some(bid), // Start at Bid
                 walk_to_mid: Some(true), // Walk if not filled
                 stop_loss: Some(mid * 0.98), // 2% Hard Stop
@@ -78,15 +86,18 @@ pub async fn evaluate_listing_arbitrage_v2(
                 split_exit: Some(true), // 50/50 Scalp/Runner
                 log_type: Some("NEW".to_string()),
                 new_state: None,
+                source: Some("PARITY_SNIPER".to_string()),
+                math_edge: Some(format!("{:.1}%", edge * 100.0)),
+                ai_score: Some(format!("{:.2}", kronos_val)),
             };
         }
 
         // Drift Condition: Kronos > 0.6 + Positive Drift
-        if edge < -0.01 && kronos.score > 0.6 {
+        if edge < -0.01 && kronos_val > 0.6 {
              return StrategySignal {
                 action: SignalAction::Buy,
                 allocation_fraction: 0.05,
-                reason: format!("DRIFT: Edge {:.1}% | Kronos {:.2}", edge * 100.0, kronos.score),
+                reason: format!("DRIFT: Edge {:.1}% | Kronos {:.2}", edge * 100.0, kronos_val),
                 limit_price: Some(mid),
                 walk_to_mid: Some(false),
                 stop_loss: Some(mid * 0.98),
@@ -95,6 +106,9 @@ pub async fn evaluate_listing_arbitrage_v2(
                 split_exit: Some(true),
                 log_type: Some("DRIFT".to_string()),
                 new_state: None,
+                source: Some("PARITY_SNIPER".to_string()),
+                math_edge: Some(format!("{:.1}%", edge * 100.0)),
+                ai_score: Some(format!("{:.2}", kronos_val)),
             };
         }
     }
@@ -113,11 +127,11 @@ pub async fn evaluate_listing_arbitrage_v2(
         }
 
         // Sentiment Exit
-        if kronos.score < 0.4 {
+        if kronos_val < 0.4 {
             return StrategySignal {
                 action: SignalAction::Sell,
                 allocation_fraction: 1.0,
-                reason: format!("ALPHA: Kronos Sentiment Flipped ({:.2})", kronos.score),
+                reason: format!("ALPHA: Kronos Sentiment Flipped ({:.2})", kronos_val),
                 ..default_signal()
             };
         }
@@ -133,7 +147,7 @@ pub async fn evaluate_listing_arbitrage_v2(
         }
     }
 
-    hold(&format!("Monitoring | Edge: {:.1}% | Kronos: {:.2}", edge * 100.0, kronos.score))
+    hold(&format!("Monitoring | Edge: {:.1}% | Kronos: {:.2}", edge * 100.0, kronos_val))
 }
 
 fn default_signal() -> StrategySignal {
@@ -149,16 +163,10 @@ fn default_signal() -> StrategySignal {
         split_exit: None,
         log_type: None,
         new_state: None,
+        source: None,
+        math_edge: None,
+        ai_score: None,
     }
-}
-
-async fn get_kronos_sentiment(symbol: &str) -> Option<KronosSentiment> {
-    // Placeholder for real bridge
-    // In production, this calls the local Kronos inference engine
-    Some(KronosSentiment {
-        score: (symbol.len() % 10) as f64 / 10.0, // Stable mock
-        latency_ms: 12,
-    })
 }
 
 fn days_until_expiration(exp: &str) -> Option<i64> {
@@ -173,27 +181,49 @@ pub struct ListingArbitrageStrategy;
 impl TradingStrategy for ListingArbitrageStrategy {
     async fn evaluate(
         &self,
+        state: &AppState,
         strategy: &StrategyRecord,
         candles: &[Candle],
         quote: &Quote,
+        options: &[OptionContractSnapshot],
         position: Option<&PositionRecord>,
+        kronos_score: Option<f64>,
     ) -> StrategySignal {
-        evaluate_listing_arbitrage_wrapper(strategy, candles, quote, position).await
+        evaluate_listing_arbitrage_wrapper(state, strategy, candles, quote, options, position, kronos_score).await
     }
 }
 
 // Wrapper for the engine
 pub async fn evaluate_listing_arbitrage_wrapper(
-    _strategy: &StrategyRecord,
+    state: &AppState,
+    strategy: &StrategyRecord,
     _candles: &[Candle],
-    _quote: &Quote,
-    _position: Option<&PositionRecord>,
+    underlying_quote: &Quote,
+    options: &[OptionContractSnapshot],
+    position: Option<&PositionRecord>,
+    kronos_score: Option<f64>,
 ) -> StrategySignal {
-    // Top 20 active options sweep logic would normally go here, 
-    // but the engine calls this per-symbol in its current loop.
-    // For now, we evaluate the first tracked symbol.
-    
-    // In a real run, we'd iterate the option chain.
-    // This is a simplified per-contract implementation.
-    hold("Interactive chain analysis required")
+    if options.is_empty() {
+        return hold("No option contracts available for evaluation");
+    }
+
+    let mut best_signal = hold("Scanning option chain...");
+
+    for option in options {
+        let signal = evaluate_listing_arbitrage_v2(
+            state,
+            strategy,
+            option,
+            underlying_quote,
+            position,
+            kronos_score,
+        ).await;
+
+        if signal.action != SignalAction::Hold {
+            return signal; // Found an opportunity
+        }
+        best_signal = signal;
+    }
+
+    best_signal
 }

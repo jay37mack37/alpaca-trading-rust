@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git pull *)",
+      "Bash(cargo build *)",
+      "Bash(npm install *)",
+      "Bash(npx vite *)",
+      "Bash(cargo run *)",
+      "Bash(AUTO_STONKS_MASTER_KEY=test-master-key-strong-unique-string-123 cargo run --manifest-path backend/Cargo.toml)",
+      "Bash(npx playwright *)",
+      "Bash(npx vitest *)",
+      "Bash(start chrome *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(gh pr *)",
+      "Bash(git fetch *)",
+      "Bash(git checkout *)",
+      "Bash(git stash *)",
+      "Bash(git merge *)",
+      "Bash(cargo check *)"
+    ]
+  }
+}

@@ -30,14 +30,16 @@ pub async fn sync_strategy_broker_state(
         ));
     }
 
-    let credential: Option<crate::models::StoredCredential> = resolve_alpaca_credential(state, strategy.credential_id.as_deref(), false)
-        .await?;
-    let credential = credential.ok_or_else(|| AppError::Validation("missing Alpaca credential".to_string()))?;
+    let credential: Option<crate::models::StoredCredential> =
+        resolve_alpaca_credential(state, strategy.credential_id.as_deref(), false).await?;
+    let credential =
+        credential.ok_or_else(|| AppError::Validation("missing Alpaca credential".to_string()))?;
 
-    let fetched = fetch_alpaca_broker_sync(&state.http, &credential, state.config.mock_alpaca).await?;
+    let fetched =
+        fetch_alpaca_broker_sync(&state.http, &credential, state.config.mock_alpaca).await?;
 
     {
-        let db = state.db.lock().await;
+        let mut db = state.db.lock().await;
         db.store_broker_sync(
             &credential.id,
             credential.environment,
@@ -90,8 +92,22 @@ pub fn stream_matches(
             "broker" => credential_id.is_some(),
             _ => true,
         },
-        RealtimeEvent::Log { strategy_id: event_strategy_id, .. } => {
-            strategy_ids.contains(event_strategy_id)
+        RealtimeEvent::Log {
+            strategy_id: event_strategy_id,
+            ..
+        } => strategy_ids.contains(event_strategy_id),
+        RealtimeEvent::Notification {
+            strategy_id: event_strategy_id,
+            ..
+        } => {
+            if let Some(sid) = event_strategy_id {
+                strategy_ids.contains(sid)
+            } else {
+                true
+            }
         }
+        RealtimeEvent::Heartbeat { .. } => true,
+        RealtimeEvent::System { .. } => true,
+        RealtimeEvent::SystemLog { .. } => true,
     }
 }

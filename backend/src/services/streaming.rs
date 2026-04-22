@@ -3,10 +3,7 @@ use std::{collections::HashSet, sync::Arc, time::Duration};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use tokio::sync::{broadcast, Mutex};
-use tokio_tungstenite::{
-    connect_async,
-    tungstenite::Message,
-};
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::warn;
 
 use crate::{
@@ -37,7 +34,10 @@ impl StreamHub {
         self.tx.subscribe()
     }
 
-    pub fn send_event(&self, event: RealtimeEvent) -> Result<usize, broadcast::error::SendError<RealtimeEvent>> {
+    pub fn send_event(
+        &self,
+        event: RealtimeEvent,
+    ) -> Result<usize, broadcast::error::SendError<RealtimeEvent>> {
         self.tx.send(event)
     }
 
@@ -76,6 +76,16 @@ impl StreamHub {
                         state: "reconnecting".to_string(),
                         message: err.to_string(),
                     });
+                    RealtimeEvent::broadcast_notification(
+                        &state.streams,
+                        None,
+                        "warning",
+                        "Market Stream Error",
+                        &format!(
+                            "Market stream for {symbol} ({:?}) failed: {err}. Retrying...",
+                            provider
+                        ),
+                    );
                 } else {
                     break;
                 }
@@ -105,7 +115,10 @@ impl StreamHub {
         tokio::spawn(async move {
             loop {
                 if let Err(err) = alpaca_broker_loop(&state, &credential, &tx).await {
-                    warn!("Broker stream {} failed: {err}; retrying in 10s", credential.id);
+                    warn!(
+                        "Broker stream {} failed: {err}; retrying in 10s",
+                        credential.id
+                    );
                     let _ = tx.send(RealtimeEvent::Status {
                         channel: "broker".to_string(),
                         provider: Some(DataProvider::Alpaca),
@@ -113,6 +126,16 @@ impl StreamHub {
                         state: "reconnecting".to_string(),
                         message: err.to_string(),
                     });
+                    RealtimeEvent::broadcast_notification(
+                        &state.streams,
+                        None,
+                        "warning",
+                        "Broker Stream Error",
+                        &format!(
+                            "Broker stream for {} failed: {err}. Retrying...",
+                            credential.id
+                        ),
+                    );
                 } else {
                     break;
                 }
@@ -147,7 +170,7 @@ async fn yahoo_market_loop(
 
         let strategies = {
             let db = state.db.lock().await;
-            let db: &crate::services::db::Database = &*db;
+            let db: &crate::services::db::Database = &db;
             db.list_strategies()?
         };
 
@@ -174,7 +197,9 @@ async fn alpaca_market_loop(
     tx: &broadcast::Sender<RealtimeEvent>,
 ) -> AppResult<()> {
     let Some(cred) = credential else {
-        return Err(AppError::Validation("Missing Alpaca credential".to_string()));
+        return Err(AppError::Validation(
+            "Missing Alpaca credential".to_string(),
+        ));
     };
 
     let ws_url = match cred.environment {
@@ -241,7 +266,16 @@ async fn alpaca_market_loop(
                             timestamp,
                         };
 
-                        broadcast_market_event(state, tx, DataProvider::Alpaca, symbol, quote, None, &json!({})).await?;
+                        broadcast_market_event(
+                            state,
+                            tx,
+                            DataProvider::Alpaca,
+                            symbol,
+                            quote,
+                            None,
+                            &json!({}),
+                        )
+                        .await?;
                     }
                     Some("b") => {
                         // Bar message
@@ -271,7 +305,16 @@ async fn alpaca_market_loop(
                             timestamp: candle.timestamp.clone(),
                         };
 
-                        broadcast_market_event(state, tx, DataProvider::Alpaca, symbol, quote, Some(candle), &m).await?;
+                        broadcast_market_event(
+                            state,
+                            tx,
+                            DataProvider::Alpaca,
+                            symbol,
+                            quote,
+                            Some(candle),
+                            &m,
+                        )
+                        .await?;
                     }
                     _ => {}
                 }
@@ -335,11 +378,12 @@ async fn alpaca_broker_loop(
 
                 // When an order is filled, we want to trigger a full broker sync
                 // to reconcile our local paper account with reality.
-                let fetched = fetch_alpaca_broker_sync(&state.http, credential, state.config.mock_alpaca).await?;
+                let fetched =
+                    fetch_alpaca_broker_sync(&state.http, credential, state.config.mock_alpaca)
+                        .await?;
 
                 let (strategies, strategy_ids) = {
-                    let db = state.db.lock().await;
-                    let db: &crate::services::db::Database = &*db;
+                    let mut db = state.db.lock().await;
                     db.store_broker_sync(
                         &credential.id,
                         credential.environment,
@@ -351,7 +395,8 @@ async fn alpaca_broker_loop(
                         &fetched.raw_orders,
                     )?;
                     let strategies = db.list_strategies()?;
-                    let ids = db.list_strategy_records()?
+                    let ids = db
+                        .list_strategy_records()?
                         .into_iter()
                         .filter(|s| s.credential_id.as_deref() == Some(&credential.id))
                         .map(|s| s.id)
@@ -361,18 +406,22 @@ async fn alpaca_broker_loop(
 
                 let sync_state = {
                     let db = state.db.lock().await;
-                    let db: &crate::services::db::Database = &*db;
-                    db.broker_sync_state(&credential.id)?
-                        .ok_or_else(|| AppError::Internal("Broker sync failed to persist".to_string()))?
+                    let db: &crate::services::db::Database = &db;
+                    db.broker_sync_state(&credential.id)?.ok_or_else(|| {
+                        AppError::Internal("Broker sync failed to persist".to_string())
+                    })?
                 };
 
-                if tx.send(RealtimeEvent::BrokerSync {
-                    credential_id: credential.id.clone(),
-                    strategy_ids,
-                    broker_sync: sync_state,
-                    strategies,
-                    event,
-                }).is_err() {
+                if tx
+                    .send(RealtimeEvent::BrokerSync {
+                        credential_id: credential.id.clone(),
+                        strategy_ids,
+                        broker_sync: sync_state,
+                        strategies,
+                        event,
+                    })
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -393,7 +442,7 @@ async fn broadcast_market_event(
 ) -> AppResult<()> {
     let strategies = {
         let db = state.db.lock().await;
-        let db: &crate::services::db::Database = &*db;
+        let db: &crate::services::db::Database = &db;
         db.store_market_snapshot(&quote, raw_json)?;
         db.list_strategies()?
     };

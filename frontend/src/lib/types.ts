@@ -4,7 +4,7 @@ export type ExecutionMode = "local_paper" | "alpaca_paper" | "alpaca_live";
 export type AssetClassTarget = "equity" | "options";
 export type OptionEntryStyle = "long_call" | "long_put";
 export type OptionStructurePreset = "single" | "bull_call_spread" | "bear_put_spread";
-export type StrategyKind = "vwap_reflexive" | "rsi_mean_reversion" | "sma_trend" | "listing_arbitrage" | "put_call_parity";
+export type StrategyKind = "vwap_reflexive" | "rsi_mean_reversion" | "sma_trend" | "listing_arbitrage" | "put_call_parity" | "parity_sniper" | "vwap_reversion";
 export type TradeSide = "buy" | "sell";
 
 export interface Quote {
@@ -306,6 +306,7 @@ export interface CreateStrategyRequest {
   tracked_symbols: string[];
   credential_id?: string | null;
   enabled?: boolean;
+  live_confirmation?: string;
   risk_parameters?: RiskParameters | null;
   run_interval_ms?: number;
 }
@@ -348,18 +349,56 @@ export interface LogRealtimeEvent {
   type: "log";
   strategy_id: string;
   symbol: string;
+  source: string;
   math_edge: string;
-  kronos_score: string;
+  ai_score: string;
   decision: string;
-  reasoning: string;
+  narrative: string;
   time: string;
+}
+
+export interface HeartbeatRealtimeEvent {
+  type: "heartbeat";
+  timestamp: number;
+  buying_power: number;
+  kronos_active: boolean;
+  alpaca_active: boolean;
+  options_active: boolean;
+}
+
+export interface SystemRealtimeEvent {
+  type: "system";
+  event: {
+    timestamp: string;
+    strategy: "PARITY" | "VWAP" | "SYSTEM";
+    symbol: string;
+    edge: number;
+    ai_confirmation: number;
+    message: string;
+  };
+}
+
+export interface SystemLogRealtimeEvent {
+  type: "system_log";
+  event: {
+    timestamp: string;
+    source: "PARITY" | "VWAP" | "SYSTEM";
+    symbol: string;
+    event_type: "SCAN" | "SIGNAL" | "HAGGLE" | "PROTECTION" | "EXIT";
+    math_context: string;
+    ai_confidence: number;
+    narrative: string;
+  };
 }
 
 export type RealtimeEvent =
   | MarketRealtimeEvent
   | BrokerSyncRealtimeEvent
   | StatusRealtimeEvent
-  | LogRealtimeEvent;
+  | LogRealtimeEvent
+  | HeartbeatRealtimeEvent
+  | SystemRealtimeEvent
+  | SystemLogRealtimeEvent;
 
 export interface Watchlist {
   id: string;

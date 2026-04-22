@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+pub mod telemetry;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -18,7 +19,9 @@ pub fn normalize_symbol(symbol: &str) -> String {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum DataProvider {
+    #[default]
     Yahoo,
     Alpaca,
 }
@@ -29,12 +32,6 @@ impl DataProvider {
             Self::Yahoo => "yahoo",
             Self::Alpaca => "alpaca",
         }
-    }
-}
-
-impl Default for DataProvider {
-    fn default() -> Self {
-        Self::Yahoo
     }
 }
 
@@ -70,7 +67,9 @@ impl ExecutionMode {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum AssetClassTarget {
+    #[default]
     Equity,
     Options,
 }
@@ -84,37 +83,23 @@ impl AssetClassTarget {
     }
 }
 
-impl Default for AssetClassTarget {
-    fn default() -> Self {
-        Self::Equity
-    }
-}
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum OptionEntryStyle {
+    #[default]
     LongCall,
     LongPut,
 }
 
-impl Default for OptionEntryStyle {
-    fn default() -> Self {
-        Self::LongCall
-    }
-}
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum OptionStructurePreset {
+    #[default]
     Single,
     BullCallSpread,
     BearPutSpread,
-}
-
-impl Default for OptionStructurePreset {
-    fn default() -> Self {
-        Self::Single
-    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -125,6 +110,8 @@ pub enum StrategyKind {
     SmaTrend,
     ListingArbitrage,
     PutCallParity,
+    ParitySniper,
+    VwapReversion,
 }
 
 impl StrategyKind {
@@ -135,6 +122,8 @@ impl StrategyKind {
             Self::SmaTrend => "sma_trend",
             Self::ListingArbitrage => "listing_arbitrage",
             Self::PutCallParity => "put_call_parity",
+            Self::ParitySniper => "parity_sniper",
+            Self::VwapReversion => "vwap_reversion",
         }
     }
 }
@@ -446,6 +435,7 @@ pub struct CreateStrategyRequest {
     pub tracked_symbols: Vec<String>,
     pub credential_id: Option<String>,
     pub enabled: Option<bool>,
+    pub live_confirmation: Option<String>,
     pub run_interval_ms: Option<u64>,
 }
 
@@ -507,12 +497,31 @@ pub enum RealtimeEvent {
     Log {
         strategy_id: String,
         symbol: String,
-        log_type: String, // NEW/DRIFT/HEARTBEAT
+        source: String, // PARITY_SNIPER, VWAP_REVERSION, SYSTEM
         math_edge: String,
-        kronos_score: String,
+        ai_score: String,
         decision: String,
-        reasoning: String,
+        narrative: String,
         time: String,
+    },
+    Notification {
+        strategy_id: Option<String>,
+        level: String, // info, warning, error
+        title: String,
+        message: String,
+    },
+    Heartbeat {
+        timestamp: u64,
+        buying_power: f64,
+        kronos_active: bool,
+        alpaca_active: bool,
+        options_active: bool,
+    },
+    System {
+        event: telemetry::SystemEvent,
+    },
+    SystemLog {
+        event: crate::logger::SystemEvent,
     },
 }
 
@@ -523,7 +532,26 @@ impl RealtimeEvent {
             Self::BrokerSync { .. } => "broker_sync",
             Self::Status { .. } => "status",
             Self::Log { .. } => "log",
+            Self::Notification { .. } => "notification",
+            Self::Heartbeat { .. } => "heartbeat",
+            Self::System { .. } => "system",
+            Self::SystemLog { .. } => "system_log",
         }
+    }
+
+    pub fn broadcast_notification(
+        streams: &crate::services::streaming::StreamHub,
+        strategy_id: Option<&str>,
+        level: &str,
+        title: &str,
+        message: &str,
+    ) {
+        let _ = streams.send_event(Self::Notification {
+            strategy_id: strategy_id.map(|s| s.to_string()),
+            level: level.to_string(),
+            title: title.to_string(),
+            message: message.to_string(),
+        });
     }
 }
 
@@ -604,6 +632,9 @@ pub struct StrategySignal {
     pub split_exit: Option<bool>, // for 50/50 scalp/runner
     pub log_type: Option<String>, // NEW/DRIFT/HEARTBEAT
     pub new_state: Option<serde_json::Value>,
+    pub source: Option<String>,
+    pub math_edge: Option<String>,
+    pub ai_score: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

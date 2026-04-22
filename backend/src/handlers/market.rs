@@ -1,13 +1,13 @@
-use axum::{
-    extract::{Path, Query, State},
+use crate::error::{ApiResponse, AppResult};
+use crate::models::{
+    normalize_symbol, CandleQuery, DashboardQuery, DashboardResponse, DataProvider, ProviderQuery,
 };
-use crate::models::{DashboardResponse, DashboardQuery, DataProvider, normalize_symbol, ProviderQuery, CandleQuery};
-use crate::error::{AppResult, ApiResponse};
-use crate::AppState;
 use crate::services::broker::resolve_alpaca_credential;
-use crate::services::trading::top_option_contracts;
-use crate::services::providers::{fetch_quote, fetch_candles, fetch_options};
 use crate::services::db::Database;
+use crate::services::providers::{fetch_candles, fetch_options, fetch_quote};
+use crate::services::trading::top_option_contracts;
+use crate::AppState;
+use axum::extract::{Path, Query, State};
 use serde_json::json;
 use tracing::warn;
 
@@ -35,7 +35,7 @@ pub async fn dashboard(
     let options = match fetch_options(&state.http, provider, &symbol, credential.as_ref()).await {
         Ok(options) => options,
         Err(err) => {
-            warn!("options fetch failed for {symbol}: {err}");
+            warn!("CRITICAL: Options fetch failed for {symbol} via {:?}: {err}", provider);
             crate::services::providers::FetchedOptions {
                 contracts: Vec::new(),
                 raw_json: json!({}),
@@ -44,8 +44,7 @@ pub async fn dashboard(
     };
 
     let (strategies, recent_trades, credentials, tracked_symbols, watchlists) = {
-        let db = state.db.lock().await;
-        let db: &Database = &*db;
+        let mut db = state.db.lock().await;
         db.store_market_snapshot(&quote.quote, &quote.raw_json)?;
         db.store_option_snapshots(&options.contracts, &options.raw_json)?;
 
@@ -100,7 +99,7 @@ pub async fn market_quote(
     let fetched = fetch_quote(&state.http, provider, &symbol, credential.as_ref()).await?;
     {
         let db = state.db.lock().await;
-        let db: &Database = &*db;
+        let db: &Database = &db;
         db.store_market_snapshot(&fetched.quote, &fetched.raw_json)?;
     }
     Ok(ApiResponse {
@@ -150,8 +149,7 @@ pub async fn options_chain(
     };
     let fetched = fetch_options(&state.http, provider, &symbol, credential.as_ref()).await?;
     {
-        let db = state.db.lock().await;
-        let db: &Database = &*db;
+        let mut db = state.db.lock().await;
         db.store_option_snapshots(&fetched.contracts, &fetched.raw_json)?;
     }
     Ok(ApiResponse {

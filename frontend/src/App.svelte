@@ -2,7 +2,6 @@
   import { onMount } from "svelte";
   import DiagnosticHeader from "./components/DiagnosticHeader.svelte";
   import AgentsWorkspace from "./components/AgentsWorkspace.svelte";
-  import CredentialsPanel from "./components/CredentialsPanel.svelte";
   import InteractiveTicker from "./components/InteractiveTicker.svelte";
   import MetricTile from "./components/MetricTile.svelte";
   import OptionsPanel from "./components/OptionsPanel.svelte";
@@ -40,11 +39,19 @@
   let strategyLogs: Array<{
     time: string;
     symbol: string;
+    source: string;
     math_edge: string;
-    kronos_score: string;
+    ai_score: string;
     decision: string;
-    reasoning: string;
+    narrative: string;
   }> = [];
+  let heartbeatBuyingPower: number = 0;
+  let heartbeatsProcessed: number = 0;
+  let lastHeartbeatAt: number = 0;
+  let kronosLatency: number = 0;
+  let kronosActive: boolean = false;
+  let alpacaActive: boolean = false;
+  let optionsActive: boolean = false;
 
   function computeIntradayVwapGap() {
     if (!dashboard) return null;
@@ -100,53 +107,92 @@
   }
 
   function handleRealtimeEvent(event: RealtimeEvent) {
-    if (event.type === "market") {
-      if (!dashboard || dashboard.symbol !== event.symbol || dashboard.provider !== event.provider) return;
-      dashboard = {
-        ...dashboard,
-        quote: event.quote,
-        candles: upsertCandle(dashboard.candles, event.candle),
-        strategies: event.strategies,
-      };
-      patchSelectedStrategy(event.strategies);
-      return;
-    }
-
-    if (event.type === "broker_sync") {
-      if (dashboard) {
+    switch (event.type) {
+      case "market":
+        if (!dashboard || dashboard.symbol !== event.symbol || dashboard.provider !== event.provider) return;
         dashboard = {
           ...dashboard,
+          quote: event.quote,
+          candles: upsertCandle(dashboard.candles, event.candle),
           strategies: event.strategies,
         };
-      }
-      patchSelectedStrategy(event.strategies);
-      if (
-        selectedStrategyDetail &&
-        (event.strategy_ids.includes(selectedStrategyDetail.strategy.id) ||
-          selectedStrategyDetail.strategy.credential_id === event.credential_id)
-      ) {
-        selectedStrategyDetail = {
-          ...selectedStrategyDetail,
-          strategy:
-            event.strategies.find((strategy) => strategy.id === selectedStrategyDetail?.strategy.id) ??
-            selectedStrategyDetail.strategy,
-          broker_sync: event.broker_sync,
-        };
-      }
-      if (event.event) {
-        status = `Broker update: ${event.event.replaceAll("_", " ")}`;
-      }
-      return;
-    }
+        patchSelectedStrategy(event.strategies);
+        break;
 
-    if (event.type === "log") {
-      strategyLogs = [event, ...strategyLogs].slice(0, 200);
-      return;
-    }
+      case "broker_sync":
+        if (dashboard) {
+          dashboard = {
+            ...dashboard,
+            strategies: event.strategies,
+          };
+        }
+        patchSelectedStrategy(event.strategies);
+        if (
+          selectedStrategyDetail &&
+          (event.strategy_ids.includes(selectedStrategyDetail.strategy.id) ||
+            selectedStrategyDetail.strategy.credential_id === event.credential_id)
+        ) {
+          selectedStrategyDetail = {
+            ...selectedStrategyDetail,
+            strategy:
+              event.strategies.find((strategy) => strategy.id === selectedStrategyDetail?.strategy.id) ??
+              selectedStrategyDetail.strategy,
+            broker_sync: event.broker_sync,
+          };
+        }
+        if (event.event) {
+          status = `Broker update: ${event.event.replaceAll("_", " ")}`;
+        }
+        break;
 
-    streamState = event.state === "live" ? "live" : event.state === "connecting" ? "connecting" : "reconnecting";
-    if (event.state === "failed") {
-      error = event.message;
+      case "log":
+        strategyLogs = [event, ...strategyLogs].slice(0, 200);
+        break;
+
+      case "heartbeat":
+        heartbeatBuyingPower = event.buying_power;
+        lastHeartbeatAt = Date.now();
+        kronosLatency = Math.max(0, lastHeartbeatAt - event.timestamp);
+        kronosActive = event.kronos_active;
+        alpacaActive = event.alpaca_active;
+        optionsActive = event.options_active;
+        heartbeatsProcessed++;
+        break;
+
+      case "status":
+        streamState = event.state === "live" ? "live" : event.state === "connecting" ? "connecting" : "reconnecting";
+        if (event.state === "failed") {
+          error = event.message;
+        }
+        break;
+
+      case "system": {
+        const { timestamp, strategy, symbol, edge, ai_confirmation, message } = event.event;
+        strategyLogs = [{
+          time: timestamp,
+          symbol,
+          source: strategy,
+          math_edge: `${(edge * 100).toFixed(1)}%`,
+          ai_score: ai_confirmation.toFixed(2),
+          decision: edge > 0.01 ? "Opportunity" : "Scanning",
+          narrative: message
+        }, ...strategyLogs].slice(0, 200);
+        break;
+      }
+
+      case "system_log": {
+        const { timestamp, source, symbol, event_type, math_context, ai_confidence, narrative } = event.event;
+        strategyLogs = [{
+          time: timestamp,
+          symbol,
+          source: source,
+          math_edge: math_context,
+          ai_score: ai_confidence.toFixed(2),
+          decision: event_type,
+          narrative: narrative
+        }, ...strategyLogs].slice(0, 200);
+        break;
+      }
     }
   }
 
@@ -178,6 +224,15 @@
       handleRealtimeEvent(JSON.parse(message.data) as RealtimeEvent);
     });
     stream.addEventListener("log", (message) => {
+      handleRealtimeEvent(JSON.parse(message.data) as RealtimeEvent);
+    });
+    stream.addEventListener("system", (message) => {
+      handleRealtimeEvent(JSON.parse(message.data) as RealtimeEvent);
+    });
+    stream.addEventListener("heartbeat", (message) => {
+      handleRealtimeEvent(JSON.parse(message.data) as RealtimeEvent);
+    });
+    stream.addEventListener("system_log", (message) => {
       handleRealtimeEvent(JSON.parse(message.data) as RealtimeEvent);
     });
     stream.onopen = () => {
@@ -333,7 +388,7 @@
   let totalBuyingPower = 0;
   $: {
     if (dashboard) {
-      totalBuyingPower = dashboard.strategies.reduce((acc, s) => acc + (s.broker_buying_power ?? 0), 0);
+      totalBuyingPower = heartbeatBuyingPower || dashboard.strategies.reduce((acc, s) => acc + (s.broker_buying_power ?? 0), 0);
     }
   }
 </script>
@@ -345,10 +400,11 @@
 
 <main class="shell">
   <DiagnosticHeader 
-    alpacaStatus={streamState} 
-    buyingPower={totalBuyingPower} 
-    kronosStatus="active" 
-    kronosLatency={12} 
+    alpacaActive={alpacaActive} 
+    kronosActive={kronosActive} 
+    optionsActive={optionsActive}
+    buyingPower={heartbeatBuyingPower || totalBuyingPower} 
+    kronosLatency={kronosLatency} 
   />
   <header class="topbar">
     <div>
@@ -502,7 +558,8 @@
           selectedStrategyId={selectedStrategyId}
           selectedStrategyDetail={selectedStrategyDetail}
           detailLoading={detailLoading}
-          collectorIntervalSeconds={dashboard.collector_interval_seconds}
+          logs={strategyLogs}
+          viewMode="active"
           on:create={createStrategy}
           on:save={saveStrategy}
           on:run={runStrategy}
@@ -511,10 +568,6 @@
           on:start={async () => { await loadDashboard(true); }}
           on:stop={async () => { await loadDashboard(true); }}
         />
-        <div class="workstation-feed">
-          <StrategyLogTable logs={strategyLogs} />
-        </div>
-        <CredentialsPanel credentials={dashboard.credentials} on:submit={storeCredential} />
       </section>
     {:else if page === "analytics"}
       <section class="analytics-page">
