@@ -71,6 +71,11 @@
   let createKind: StrategyKind = "vwap_reflexive";
   let createErrors: ValidationErrors = {};
 
+  $: if (createKind === "jarrod_vwap" && createDraft.tracked_symbols === "AAPL, SPY") {
+    createDraft.tracked_symbols = "SPY";
+    createDraft.asset_class_target = "options";
+  }
+
   $: createErrors = validateStrategyDraft(createDraft);
 
   $: {
@@ -210,7 +215,7 @@
       case "put_call_parity": return "Put-Call Parity: Arbitraging discrepancies between synthesized and market option prices.";
       case "parity_sniper": return "Parity Sniper: Specialized $S + P - C = K$ gap detector for exploitable option pricing discrepancies.";
       case "vwap_reversion": return "VWAP Reversion: Standard deviation 'Snap Back' strategy for over-extended price action.";
-      case "jarrod_vwap": return "Jarrod VWAP Reclaim: Intraday VWAP cross with relative volume confirmation.";
+      case "jarrod_vwap": return "Jarrod VWAP Options: SPY calls/puts on VWAP reclaim/breakdown with 5% profit target.";
       default: return "Automated algorithmic execution strategy.";
     }
   }

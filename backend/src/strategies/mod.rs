@@ -170,8 +170,7 @@ impl TradingStrategy for JarrodVwapStrategy {
     ) -> StrategySignal {
         jarrod_vwap::evaluate_jarrod_vwap(
             state,
-            &strategy.id,
-            &strategy.tracked_symbols.first().unwrap_or(&String::new()),
+            strategy,
             candles,
             position,
             kronos_score,
