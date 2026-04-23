@@ -454,6 +454,9 @@ impl Database {
         // Risk engine columns
         let _ = conn.execute("ALTER TABLE strategies ADD COLUMN risk_parameters_json TEXT", []);
 
+        // Fix auto-enabled strategies: disable parity-sniper and vwap-reversion
+        let _ = conn.execute("UPDATE strategies SET enabled = 0 WHERE id IN ('parity-sniper', 'vwap-reversion')", []);
+
         Ok(())
     }
 
@@ -524,7 +527,6 @@ impl Database {
         ];
 
         for (id, name, kind, symbols) in defaults {
-            let enabled = if id == "parity-sniper" || id == "vwap-reversion" { 1 } else { 0 };
             // Check if ID already exists
             let existing_kind: Option<String> = self.conn.query_row(
                 "SELECT kind FROM strategies WHERE id = ?1",
@@ -533,9 +535,8 @@ impl Database {
             ).optional()?;
 
             if let Some(_old_kind) = existing_kind {
-                // If it exists but kind is different, or we just want to ensure the name is right
                 self.conn.execute(
-                    "UPDATE strategies SET name = ?1, kind = ?2, enabled = CASE WHEN id IN ('parity-sniper', 'vwap-reversion') THEN 1 ELSE enabled END WHERE id = ?3",
+                    "UPDATE strategies SET name = ?1, kind = ?2 WHERE id = ?3",
                     params![name, kind.as_str(), id],
                 )?;
             } else {
@@ -552,7 +553,7 @@ impl Database {
                         id,
                         name,
                         kind.as_str(),
-                        enabled,
+                        0, // disabled by default
                         execution_mode_to_str(if std::env::var("ALPACA_API_KEY").is_ok() { ExecutionMode::AlpacaPaper } else { ExecutionMode::LocalPaper }),
                         asset_class_target_to_str(AssetClassTarget::Options),
                         option_entry_style_to_str(OptionEntryStyle::LongCall),
