@@ -2565,7 +2565,7 @@ impl Database {
 
     fn map_strategy_summary(&self, record: StrategyRecord) -> AppResult<StrategySummary> {
         let open_positions: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM strategy_positions WHERE strategy_id = ?1",
+            "SELECT COUNT(*) FROM strategy_positions WHERE strategy_id = ?1 AND quantity > 0",
             params![record.id],
             |row| row.get(0),
         )?;
