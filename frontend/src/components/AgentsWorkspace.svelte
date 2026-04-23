@@ -28,7 +28,6 @@
   export let credentials: CredentialSummary[] = [];
   export let positions: PositionSummary[] = [];
   export let recentTrades: any[] = [];
-  export let viewMode: "active" | "remodeling" = "active";
   export let logs: any[] = [];
 
   const dispatch = createEventDispatcher<{
@@ -266,11 +265,8 @@
 </script>
 
 <section class="workspace">
-  <div class="workspace-header">
-    <p>AutoStonks Command Center</p>
-    <h2>Multi-Strategy Workstation</h2>
-  </div>
-
+  <!-- Open Combat Positions at the very top -->
+  <PositionsSection {positions} />
 
   <section class="agents-layout">
     <div class="section-header">
@@ -278,7 +274,6 @@
       <p>Hardened strategies certified for production trading.</p>
     </div>
 
-    <PositionsSection {positions} />
     <RecentTradesSection trades={recentTrades} />
     <div class="workstation-grid">
       {#each workingStrats as strategy}
@@ -514,12 +509,6 @@
     </div>
 
     <div class="log-panel-wrapper">
-      <div class="log-header">
-        <h2>Intelligence Feed</h2>
-        <div class="log-controls">
-          <button class="ghost-link text-xs" on:click={() => logs = []}>Clear</button>
-        </div>
-      </div>
       <StrategyLogTable {logs} />
     </div>
   </section>
@@ -527,29 +516,17 @@
 
 <style>
   .workspace {
-    padding: 1.5rem;
+    padding: 1rem 1.5rem 1.5rem;
     max-width: 1400px;
     margin: 0 auto;
     color: white;
   }
 
-  .workspace-header {
-    margin-bottom: 1rem;
+  .agents-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
   }
-
-  .workspace-header p {
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: rgba(34, 197, 94, 0.8);
-    margin-bottom: 0.25rem;
-  }
-
-  .workspace-header h2 {
-    font-size: 1.4rem;
-    font-weight: 700;
-  }
-
 
   .config-form {
     display: flex;
@@ -694,9 +671,7 @@
 
   .ghost-link:hover { color: white; }
 
-  .log-panel-wrapper { grid-column: 1 / -1; margin-top: 2rem; }
-  .log-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1rem; }
-  .text-xs { font-size: 0.7rem; }
+  .log-panel-wrapper { grid-column: 1 / -1; flex: 1; display: flex; flex-direction: column; min-height: 0; }
 
   .config-form { display: grid; gap: 1rem; }
   label { display: grid; gap: 0.35rem; }
