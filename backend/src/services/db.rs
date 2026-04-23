@@ -457,6 +457,9 @@ impl Database {
         // Fix auto-enabled strategies: disable parity-sniper and vwap-reversion
         let _ = conn.execute("UPDATE strategies SET enabled = 0 WHERE id IN ('parity-sniper', 'vwap-reversion')", []);
 
+        // Clean up orphaned positions from previous Alpaca paper sessions
+        let _ = conn.execute("UPDATE strategy_positions SET quantity = 0 WHERE quantity > 0 AND strategy_id IN (SELECT id FROM strategies WHERE execution_mode LIKE 'alpaca%' AND broker_open_positions = 0 AND broker_synced_at IS NOT NULL)", []);
+
         Ok(())
     }
 
