@@ -511,6 +511,12 @@ impl Database {
                 vec!["SPY"],
             ),
             (
+                "jarrod-vwap",
+                "Jarrod VWAP Reclaim",
+                StrategyKind::JarrodVwap,
+                vec!["SPY"],
+            ),
+            (
                 "gamma-scalping",
                 "Gamma Scalping",
                 StrategyKind::RsiMeanReversion,

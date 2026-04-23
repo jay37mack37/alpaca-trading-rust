@@ -110,8 +110,8 @@
     draftErrors = nextErrors;
   }
 
-  $: workingStrats = strategies.filter(s => s.id === 'parity-sniper' || s.id === 'vwap-reversion');
-  $: researchStrats = strategies.filter(s => s.id !== 'parity-sniper' && s.id !== 'vwap-reversion');
+  $: workingStrats = strategies.filter(s => s.id === 'parity-sniper' || s.id === 'vwap-reversion' || s.id === 'jarrod-vwap');
+  $: researchStrats = strategies.filter(s => s.id !== 'parity-sniper' && s.id !== 'vwap-reversion' && s.id !== 'jarrod-vwap');
 
   function createAgent() {
     dispatch("create", {
