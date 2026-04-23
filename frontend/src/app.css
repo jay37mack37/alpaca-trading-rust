@@ -87,6 +87,29 @@ button:active {
   letter-spacing: -0.02em;
 }
 
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.breadcrumb-brand {
+  font-weight: 700;
+  color: rgba(221, 233, 255, 0.9);
+  letter-spacing: 0.02em;
+}
+
+.breadcrumb-sep {
+  color: rgba(221, 233, 255, 0.3);
+  font-size: 0.7rem;
+}
+
+.breadcrumb-page {
+  color: rgba(221, 233, 255, 0.5);
+  text-transform: capitalize;
+}
+
 .tab-strip {
   display: flex;
   gap: 0.6rem;

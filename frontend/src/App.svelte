@@ -152,7 +152,7 @@
         break;
 
       case "log":
-        strategyLogs = [event, ...strategyLogs].slice(0, 200);
+        strategyLogs = [event, ...strategyLogs].slice(0, 500);
         break;
 
       case "heartbeat":
@@ -182,7 +182,7 @@
           ai_score: ai_confirmation.toFixed(2),
           decision: edge > 0.01 ? "Opportunity" : "Scanning",
           narrative: message
-        }, ...strategyLogs].slice(0, 200);
+        }, ...strategyLogs].slice(0, 500);
         break;
       }
 
@@ -196,7 +196,7 @@
           ai_score: ai_confidence.toFixed(2),
           decision: event_type,
           narrative: narrative
-        }, ...strategyLogs].slice(0, 200);
+        }, ...strategyLogs].slice(0, 500);
         break;
       }
     }
@@ -442,9 +442,10 @@
     kronosLatency={kronosLatency}
   />
   <header class="topbar">
-    <div>
-      <p class="eyebrow">AutoStonks Control Room</p>
-      <h1>Live ticker center stage. Agents on their own deck.</h1>
+    <div class="breadcrumb">
+      <span class="breadcrumb-brand">AutoStonks</span>
+      <span class="breadcrumb-sep">›</span>
+      <span class="breadcrumb-page">{page === "market" ? "Market" : page === "workstation" ? "Workstation" : "Analytics"}</span>
     </div>
     <div class="header-controls">
       <nav class="tab-strip" aria-label="Primary">
