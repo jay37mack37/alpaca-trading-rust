@@ -2515,7 +2515,7 @@ impl Database {
                     option_type, expiration, strike, stale_quote, legs_json,
                     razor_stop, stagnation_timestamp, kronos_sentiment,
                     take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai
-             FROM strategy_positions"
+             FROM strategy_positions WHERE quantity > 0"
         )?;
         
         let position_rows = stmt.query_map([], |row| {
