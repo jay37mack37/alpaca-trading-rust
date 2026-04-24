@@ -1,7 +1,26 @@
 use crate::logger::{SystemEvent, SystemSource, SystemEventType};
 use crate::agents::broadcast_audit_log;
-use crate::models::{SignalAction, StrategySignal, OptionContractSnapshot};
+use crate::models::{SignalAction, StrategySignal, OptionContractSnapshot, Candle, PositionRecord, Quote, StrategyRecord};
 use crate::AppState;
+use async_trait::async_trait;
+
+pub struct ParitySniperStrategy;
+
+#[async_trait]
+impl crate::strategies::TradingStrategy for ParitySniperStrategy {
+    async fn evaluate(
+        &self,
+        state: &AppState,
+        strategy: &StrategyRecord,
+        _candles: &[Candle],
+        quote: &Quote,
+        options: &[crate::models::OptionContractSnapshot],
+        _position: Option<&PositionRecord>,
+        kronos_score: Option<f64>,
+    ) -> StrategySignal {
+        evaluate_parity_sniper(state, &strategy.id, &quote.symbol, quote.price, options, kronos_score)
+    }
+}
 
 #[allow(dead_code)]
 pub fn evaluate_parity(spot: f64, call: f64, put: f64, strike: f64) -> f64 {
@@ -74,6 +93,7 @@ pub fn evaluate_parity_sniper(
         state,
         SystemEvent::now(
             SystemSource::Parity,
+            Some(_strategy_id.to_string()),
             symbol.to_string(),
             event_type,
             best_context,

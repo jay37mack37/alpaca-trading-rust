@@ -161,6 +161,7 @@ pub async fn run_strategy_once(
                             &state,
                             AuditEvent::now(
                                 SystemSource::System,
+                                Some(strategy_id.clone()),
                                 symbol.to_string(),
                                 SystemEventType::Protection,
                                 format!("Price: ${:.2}", quote.quote.price),
@@ -249,6 +250,16 @@ pub async fn run_strategy_once(
                         let credential = trading_credential.as_ref().ok_or_else(|| {
                             AppError::Validation("missing Alpaca trading credential".to_string())
                         })?;
+                        
+                        // LIQUIDITY BRIDGE: If this is a high-conviction signal (GammaFlip or ParitySniper),
+                        // and we need funding, check for SGOV liquidation.
+                        if matches!(latest_strategy.kind, crate::models::StrategyKind::GammaFlip | crate::models::StrategyKind::ParitySniper) {
+                             let notional = prepared_trade.local.quantity * prepared_trade.local.price;
+                             if let Err(e) = crate::services::broker::liquidate_for_funding(&state, credential, notional).await {
+                                 tracing::warn!("Liquidity bridge failed to secure funding: {:?}", e);
+                             }
+                        }
+
                         if let Some(order) = prepared_trade.broker_order.as_ref() {
                             let submitted = match submit_alpaca_order(
                                 &state.http,
@@ -281,6 +292,7 @@ pub async fn run_strategy_once(
                                 &state,
                                 AuditEvent::now(
                                     SystemSource::System,
+                                    Some(strategy_id.clone()),
                                     symbol.to_string(),
                                     SystemEventType::Haggle,
                                     format!("Order:{}", submitted.order_id),
@@ -330,6 +342,7 @@ pub async fn run_strategy_once(
                                 &state,
                                 AuditEvent::now(
                                     SystemSource::System,
+                                    Some(strategy_id.clone()),
                                     symbol.to_string(),
                                     SystemEventType::Exit,
                                     format!("Exp:${:.2} Act:${:.2}", prepared_trade.local.price, fill.filled_avg_price),
@@ -344,6 +357,7 @@ pub async fn run_strategy_once(
                                     &state,
                                     AuditEvent::now(
                                         SystemSource::System,
+                                        Some(strategy_id.clone()),
                                         symbol.to_string(),
                                         SystemEventType::Protection,
                                         format!("Stop:${:.2}", stop),

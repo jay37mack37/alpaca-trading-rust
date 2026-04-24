@@ -23,6 +23,7 @@ pub enum SystemEventType {
 pub struct SystemEvent {
     pub timestamp: String,
     pub source: SystemSource,
+    pub strategy_id: Option<String>,
     pub symbol: String,
     pub event_type: SystemEventType,
     pub math_context: String,
@@ -33,6 +34,7 @@ pub struct SystemEvent {
 impl SystemEvent {
     pub fn now(
         source: SystemSource,
+        strategy_id: Option<String>,
         symbol: String,
         event_type: SystemEventType,
         math_context: String,
@@ -42,6 +44,7 @@ impl SystemEvent {
         Self {
             timestamp: Local::now().format("%Y-%m-%dT%H:%M:%S%.3f").to_string(),
             source,
+            strategy_id,
             symbol,
             event_type,
             math_context,

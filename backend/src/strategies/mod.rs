@@ -2,6 +2,9 @@ pub mod listing_arb;
 pub mod parity_sniper;
 pub mod vwap_reversion;
 pub mod jarrod_vwap;
+pub mod yield_rotation;
+pub mod gamma_flip;
+pub mod distribution_sniper;
 
 use crate::models::{
     Candle, PositionRecord, Quote, SignalAction, StrategyKind, StrategyRecord, StrategySignal,
@@ -41,10 +44,13 @@ fn get_strategy_registry() -> &'static HashMap<StrategyKind, Box<dyn TradingStra
             StrategyKind::ListingArbitrage,
             Box::new(listing_arb::ListingArbitrageStrategy),
         );
-        m.insert(StrategyKind::PutCallParity, Box::new(ParitySniperStrategy));
-        m.insert(StrategyKind::ParitySniper, Box::new(ParitySniperStrategy));
-        m.insert(StrategyKind::VwapReversion, Box::new(VwapReversionStrategy));
-        m.insert(StrategyKind::JarrodVwap, Box::new(JarrodVwapStrategy));
+        m.insert(StrategyKind::PutCallParity, Box::new(parity_sniper::ParitySniperStrategy));
+        m.insert(StrategyKind::ParitySniper, Box::new(parity_sniper::ParitySniperStrategy));
+        m.insert(StrategyKind::VwapReversion, Box::new(vwap_reversion::VwapReversionStrategy));
+        m.insert(StrategyKind::JarrodVwap, Box::new(jarrod_vwap::JarrodVwapStrategy));
+        m.insert(StrategyKind::YieldRotation, Box::new(yield_rotation::YieldRotationStrategy));
+        m.insert(StrategyKind::GammaFlip, Box::new(gamma_flip::GammaFlipStrategy));
+        m.insert(StrategyKind::DistributionSniper, Box::new(distribution_sniper::DistributionSniperStrategy));
         m
     })
 }
@@ -278,7 +284,7 @@ async fn evaluate_sma_trend(
     }
 }
 
-pub(crate) fn hold(reason: impl Into<String>) -> StrategySignal {
+pub fn hold(reason: impl Into<String>) -> StrategySignal {
     StrategySignal {
         action: SignalAction::Hold,
         allocation_fraction: 0.0,
@@ -294,6 +300,16 @@ pub(crate) fn hold(reason: impl Into<String>) -> StrategySignal {
         source: None,
         math_edge: None,
         ai_score: None,
+        ..Default::default()
+    }
+}
+
+pub fn buy(reason: impl Into<String>, allocation: f64, price: Option<f64>) -> StrategySignal {
+    StrategySignal {
+        action: SignalAction::Buy,
+        allocation_fraction: allocation,
+        reason: reason.into(),
+        limit_price: price,
         ..Default::default()
     }
 }

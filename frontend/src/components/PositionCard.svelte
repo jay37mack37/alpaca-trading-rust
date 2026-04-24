@@ -92,79 +92,91 @@
     </div>
   </div>
 
-  <div class="alpaca-summary">
-    <div class="summary-item">
-      <span class="label">Price</span>
+  <!-- Alpaca Core Metrics -->
+  <div class="metrics-grid">
+    <div class="metric-item">
+      <span class="label">MARKET PRICE</span>
       <span class="value main">{prettyMoney(position.market_price)}</span>
     </div>
-    <div class="summary-item">
-      <span class="label">Qty</span>
+    <div class="metric-item">
+      <span class="label">QUANTITY</span>
       <span class="value main">{position.quantity}</span>
     </div>
-    <div class="summary-item">
-      <span class="label">Market Value</span>
-      <span class="value main">{prettyMoney(marketValue)}</span>
-    </div>
-    <div class="summary-item">
-      <span class="label">Total P/L ($)</span>
+    <div class="metric-item">
+      <span class="label">TOTAL P/L ($)</span>
       <span class="value pnl main" style="color: {getPnlColor(pnlPercent)}">
         {pnlCash >= 0 ? '+' : '-'}{prettyMoney(Math.abs(pnlCash))}
       </span>
     </div>
-  </div>
-
-  <div class="exit-strategy-banner" class:danger={isStagnant || isNearStop}>
-    <div class="banner-top">
-      <span class="banner-label">EXIT STRATEGY: {position.exit_logic ?? 'SMART DISCONNECT'}</span>
-      <span class="banner-timer" class:pulse={isStagnant}>
-        {isStagnant ? 'DEADLINE REACHED' : (stagnationSeconds !== null ? `T-MINUS ${Math.floor(stagnationSeconds / 60)}:${(stagnationSeconds % 60).toString().padStart(2, '0')}` : 'STABLE')}
-      </span>
-    </div>
-    <div class="planned-action">{plannedExitMessage}</div>
-  </div>
-
-  <div class="pnl-section">
-    <div class="pnl-header">
-      <span class="label">Live P&L (%)</span>
+    <div class="metric-item">
+      <span class="label">P/L (%)</span>
       <span class="value" style="color: {getPnlColor(pnlPercent)}">
         {pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%
       </span>
     </div>
-    <div class="pnl-bar-container">
-      <div class="pnl-bar" style="width: {Math.min(100, Math.abs(pnlPercent) * 2)}%; background: {getPnlColor(pnlPercent)}; margin-left: {pnlPercent >= 0 ? '50%' : 'calc(50% - ' + Math.min(50, Math.abs(pnlPercent) * 2) + '%)'}"></div>
-      <div class="center-line"></div>
+  </div>
+
+  <!-- Trade Intelligence: Foundation -->
+  <div class="intel-section foundation">
+    <div class="section-label">TRADE FOUNDATION</div>
+    <div class="intel-grid">
+      <div class="intel-item">
+        <span class="sub-label">BUY LOGIC</span>
+        <span class="intel-value">{position.buy_logic || 'Manual / Initialized'}</span>
+      </div>
+      <div class="intel-item">
+        <span class="sub-label">HOLD INTENTION</span>
+        <span class="intel-value">{position.hold_intent || 'Standard Risk Adjusted'}</span>
+      </div>
+      <div class="intel-item">
+        <span class="sub-label">MATH EDGE / AI</span>
+        <span class="intel-value">
+          {position.entry_math || 'N/A'} 
+          {position.entry_ai ? `(AI: ${position.entry_ai.toFixed(2)})` : ''}
+        </span>
+      </div>
     </div>
   </div>
 
-  <div class="target-section">
-    <!-- Price Tracker Bar -->
-    <div class="tracker-shell">
-      <div class="tracker-line">
-        <div class="marker stop" style="left: {stopPos}%"></div>
-        <div class="marker entry" style="left: {entryPos}%"></div>
-        <div class="marker target" style="left: {targetPos}%"></div>
-        <div class="marker current" style="left: {markerPos}%"></div>
-      </div>
-      <div class="tracker-labels">
-        <span>STOP LOSS</span>
-        <span>ENTRY</span>
-        <span>TAKE PROFIT</span>
-      </div>
+  <!-- Live Telemetry: Kronos -->
+  <div class="telemetry-bar">
+    <div class="kronos-info">
+      <span class="label">LIVE KRONOS SCORE</span>
+      <span class="value" style="color: {getSentimentColor(position.kronos_sentiment ?? 0.5)}">
+        {(position.kronos_sentiment ?? 0.0).toFixed(4)}
+      </span>
+    </div>
+    <div class="gauge">
+      <div class="gauge-fill" style="width: {(position.kronos_sentiment ?? 0.5) * 100}%; background: {getSentimentColor(position.kronos_sentiment ?? 0.5)}"></div>
     </div>
   </div>
 
-  <div class="risk-sentiment-grid">
-    <div class="risk-box">
-      <span class="label">STAGNATION PROGRESS</span>
-      <div class="stagnation-bar">
-        <div class="fill" style="width: {stagnationProgress}%"></div>
+  <!-- Exit Strategy & Intelligence -->
+  <div class="intel-section exit" class:danger={isStagnant || isNearStop}>
+    <div class="section-label">EXIT INTELLIGENCE</div>
+    <div class="exit-banner">
+      <div class="exit-info">
+        <span class="sub-label">EXIT LOGIC: {position.exit_logic ?? 'SMART DISCONNECT'}</span>
+        <span class="banner-timer" class:pulse={isStagnant}>
+          {isStagnant ? 'DEADLINE REACHED' : (stagnationSeconds !== null ? `T-MINUS ${Math.floor(stagnationSeconds / 60)}:${(stagnationSeconds % 60).toString().padStart(2, '0')}` : 'STABLE')}
+        </span>
       </div>
+      <div class="planned-action">{position.planned_exit || plannedExitMessage}</div>
     </div>
-    <div class="sentiment-box">
-       <span class="label">AI CONFIDENCE / SENTIMENT</span>
-       <div class="gauge">
-         <div class="gauge-fill" style="width: {(position.kronos_sentiment ?? 0.5) * 100}%; background: {getSentimentColor(position.kronos_sentiment ?? 0.5)}"></div>
-       </div>
+  </div>
+
+  <!-- Price Tracker Bar -->
+  <div class="tracker-shell">
+    <div class="tracker-line">
+      <div class="marker stop" style="left: {stopPos}%"></div>
+      <div class="marker entry" style="left: {entryPos}%"></div>
+      <div class="marker target" style="left: {targetPos}%"></div>
+      <div class="marker current" style="left: {markerPos}%"></div>
+    </div>
+    <div class="tracker-labels">
+      <span>STOP LOSS</span>
+      <span>ENTRY</span>
+      <span>TAKE PROFIT</span>
     </div>
   </div>
 
@@ -181,29 +193,27 @@
 
 <style>
   .pos-card {
-    background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%);
+    background: linear-gradient(135deg, rgba(30, 41, 59, 1) 0%, rgba(15, 23, 42, 1) 100%);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 16px;
-    padding: 1.5rem;
-    min-width: 320px;
+    border-radius: 12px;
+    padding: 1.25rem;
+    min-width: 340px;
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
     position: relative;
     overflow: hidden;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
   }
 
   .pos-card:hover {
     border-color: rgba(96, 165, 250, 0.4);
-    transform: translateY(-4px);
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    transform: translateY(-2px);
   }
 
   .pos-card.danger {
     border-color: #ef4444;
-    box-shadow: 0 0 30px rgba(239, 68, 68, 0.15);
   }
 
   .card-header {
@@ -212,184 +222,164 @@
     align-items: flex-start;
   }
 
-  .symbol-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-  }
-
   .symbol {
-    font-size: 1.5rem;
+    font-size: 1.4rem;
     font-weight: 800;
-    letter-spacing: -0.03em;
-    background: linear-gradient(to right, #fff, #94a3b8);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: #f8fafc;
+    letter-spacing: -0.02em;
   }
 
   .strategy-type {
-    font-size: 0.65rem;
+    display: block;
+    font-size: 0.6rem;
     color: #60a5fa;
     text-transform: uppercase;
     font-weight: 700;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.05em;
   }
 
   .side {
     font-size: 0.6rem;
     font-weight: 900;
-    padding: 0.25rem 0.6rem;
-    border-radius: 6px;
-    letter-spacing: 0.1em;
-    box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.05);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
   }
 
   .long { background: rgba(34, 197, 94, 0.1); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.2); }
   .short { background: rgba(239, 68, 68, 0.1); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.2); }
 
-  .alpaca-summary {
+  .metrics-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 0.75rem;
     padding: 1rem;
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.02);
     border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
   }
 
-  .summary-item {
+  .metric-item {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: 0.2rem;
   }
 
-  .summary-item .label {
-    font-size: 0.5rem;
-    color: rgba(255, 255, 255, 0.3);
-    font-weight: 700;
-    text-transform: uppercase;
-  }
+  .label { font-size: 0.55rem; color: rgba(255, 255, 255, 0.3); font-weight: 700; text-transform: uppercase; }
+  .value { font-weight: 800; font-size: 0.9rem; color: white; }
+  .value.main { font-size: 1rem; color: #f1f5f9; }
+  .value.pnl { font-family: 'JetBrains Mono', monospace; }
 
-  .summary-item .value.main {
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: #f8fafc;
-  }
-
-  .summary-item .value.pnl {
-    font-family: 'JetBrains Mono', monospace;
-  }
-
-  .exit-strategy-banner {
-    background: rgba(30, 41, 59, 0.5);
-    border: 1px solid rgba(96, 165, 250, 0.2);
-    border-radius: 10px;
+  .intel-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
     padding: 0.75rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    position: relative;
-    overflow: hidden;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    border-left: 3px solid #3b82f6;
   }
 
-  .exit-strategy-banner::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    background: #3b82f6;
+  .intel-section.exit {
+    border-left-color: #f59e0b;
   }
 
-  .exit-strategy-banner.danger {
-    border-color: rgba(249, 115, 22, 0.4);
-    background: rgba(249, 115, 22, 0.05);
+  .intel-section.exit.danger {
+    border-left-color: #ef4444;
+    background: rgba(239, 68, 68, 0.05);
   }
 
-  .exit-strategy-banner.danger::before {
-    background: #f97316;
-  }
-
-  .banner-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .banner-label {
-    font-size: 0.55rem;
+  .section-label {
+    font-size: 0.5rem;
     font-weight: 800;
-    color: rgba(255, 255, 255, 0.5);
-    letter-spacing: 0.05em;
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 0.1em;
   }
 
-  .banner-timer {
-    font-size: 0.6rem;
-    font-weight: 900;
-    color: #60a5fa;
-    font-family: 'JetBrains Mono', monospace;
-  }
-
-  .banner-timer.pulse {
-    color: #f97316;
-    animation: blink 1s infinite;
-  }
-
-  @keyframes blink {
-    50% { opacity: 0.5; }
-  }
-
-  .planned-action {
-    font-size: 0.8rem;
-    color: #f1f5f9;
-    font-weight: 700;
-  }
-
-  .pnl-section {
-    display: flex;
-    flex-direction: column;
+  .intel-grid {
+    display: grid;
+    grid-template-columns: 1fr;
     gap: 0.5rem;
   }
 
-  .pnl-header {
+  .intel-item {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sub-label {
+    font-size: 0.5rem;
+    color: rgba(255, 255, 255, 0.3);
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .intel-value {
+    font-size: 0.7rem;
+    color: #e2e8f0;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  .telemetry-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .kronos-info {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
   }
 
-  .label { color: rgba(221, 233, 255, 0.4); font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
-  .value { font-weight: 800; font-size: 0.9rem; color: white; }
-
-  .pnl-bar-container {
-    height: 6px;
+  .gauge {
+    height: 4px;
     background: rgba(255, 255, 255, 0.05);
-    border-radius: 3px;
-    position: relative;
+    border-radius: 2px;
     overflow: hidden;
   }
 
-  .center-line {
-    position: absolute;
-    left: 50%;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: rgba(255, 255, 255, 0.2);
-    z-index: 1;
+  .gauge-fill {
+    height: 100%;
+    transition: all 1s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  .pnl-bar {
-    height: 100%;
-    position: absolute;
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  .exit-banner {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .exit-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .banner-timer {
+    font-size: 0.6rem;
+    font-weight: 900;
+    color: #3b82f6;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .banner-timer.pulse {
+    color: #ef4444;
+    animation: blink 1s infinite;
+  }
+
+  .planned-action {
+    font-size: 0.75rem;
+    color: #f8fafc;
+    font-weight: 700;
   }
 
   .tracker-shell {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.4rem;
+    padding: 0.5rem 0;
   }
 
   .tracker-line {
@@ -421,66 +411,28 @@
   .tracker-labels {
     display: flex;
     justify-content: space-between;
-    font-size: 0.5rem;
+    font-size: 0.45rem;
     font-weight: 800;
     color: rgba(255, 255, 255, 0.2);
-  }
-
-  .risk-sentiment-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1.25rem;
-    padding-top: 1rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
-  }
-
-  .risk-box, .sentiment-box {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .stagnation-bar, .gauge {
-    height: 4px;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 2px;
-    overflow: hidden;
-  }
-
-  .fill, .gauge-fill {
-    height: 100%;
-    transition: all 0.5s ease;
   }
 
   .button-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-top: 0.5rem;
-  }
-
-  .entry-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-  }
-
-  .sub-label {
-    font-size: 0.55rem;
-    color: rgba(255, 255, 255, 0.3);
-    font-weight: 600;
-    letter-spacing: 0.05em;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    padding-top: 1rem;
   }
 
   .flatten-btn {
-    background: rgba(239, 68, 68, 0.08);
+    background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.3);
     color: #f87171;
-    padding: 0.5rem 1.25rem;
-    border-radius: 8px;
-    font-size: 0.65rem;
+    padding: 0.4rem 1rem;
+    border-radius: 6px;
+    font-size: 0.6rem;
     font-weight: 900;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.05em;
     cursor: pointer;
     transition: all 0.2s;
   }
@@ -488,9 +440,9 @@
   .flatten-btn:hover {
     background: #ef4444;
     color: white;
-    border-color: #ef4444;
-    box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
   }
+
+  @keyframes blink { 50% { opacity: 0.5; } }
 
   .shake {
     animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;

@@ -4,7 +4,7 @@ export type ExecutionMode = "local_paper" | "alpaca_paper" | "alpaca_live";
 export type AssetClassTarget = "equity" | "options";
 export type OptionEntryStyle = "long_call" | "long_put";
 export type OptionStructurePreset = "single" | "bull_call_spread" | "bear_put_spread";
-export type StrategyKind = "vwap_reflexive" | "rsi_mean_reversion" | "sma_trend" | "listing_arbitrage" | "put_call_parity" | "parity_sniper" | "vwap_reversion" | "jarrod_vwap";
+export type StrategyKind = "vwap_reflexive" | "rsi_mean_reversion" | "sma_trend" | "listing_arbitrage" | "put_call_parity" | "parity_sniper" | "vwap_reversion" | "jarrod_vwap" | "yield_rotation" | "distribution_sniper" | "gamma_flip";
 export type TradeSide = "buy" | "sell";
 
 export interface Quote {
@@ -132,6 +132,11 @@ export interface PositionSummary {
   take_profit?: number;
   exit_logic?: string;
   entry_time?: string;
+  buy_logic?: string;
+  entry_math?: string;
+  entry_ai?: number;
+  hold_intent?: string;
+  planned_exit?: string;
 }
 
 export interface PositionLeg {
@@ -167,6 +172,13 @@ export interface TradeRecord {
   execution_mode: ExecutionMode;
   realized_pnl: number | null;
   executed_at: string;
+  hidden: boolean;
+  hold_intent?: string;
+  exit_logic?: string;
+  planned_exit?: string;
+  buy_logic?: string;
+  entry_math?: string;
+  entry_ai?: number;
 }
 
 export interface TradeLeg {
@@ -380,6 +392,7 @@ export interface SystemRealtimeEvent {
   event: {
     timestamp: string;
     strategy: "PARITY" | "VWAP" | "SYSTEM";
+    strategy_id?: string;
     symbol: string;
     edge: number;
     ai_confirmation: number;
@@ -392,6 +405,7 @@ export interface SystemLogRealtimeEvent {
   event: {
     timestamp: string;
     source: "PARITY" | "VWAP" | "SYSTEM";
+    strategy_id?: string;
     symbol: string;
     event_type: "SCAN" | "SIGNAL" | "HAGGLE" | "PROTECTION" | "EXIT";
     math_context: string;

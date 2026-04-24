@@ -6,3 +6,5 @@ pub mod providers;
 pub mod streaming;
 pub mod trading;
 pub mod risk;
+pub mod greeks;
+pub mod corporate_actions;

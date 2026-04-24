@@ -51,6 +51,8 @@ pub struct LocalTradeInput {
     pub buy_logic: Option<String>,
     pub entry_math: Option<String>,
     pub entry_ai: Option<f64>,
+    pub hold_intent: Option<String>,
+    pub planned_exit: Option<String>,
 }
 
 impl Database {
@@ -175,6 +177,8 @@ impl Database {
                 buy_logic TEXT,
                 entry_math TEXT,
                 entry_ai REAL,
+                hold_intent TEXT,
+                planned_exit TEXT,
                 PRIMARY KEY (strategy_id, symbol),
                 FOREIGN KEY (strategy_id) REFERENCES strategies(id) ON DELETE CASCADE
             );
@@ -200,6 +204,13 @@ impl Database {
                 reason TEXT NOT NULL,
                 realized_pnl REAL,
                 executed_at TEXT NOT NULL,
+                hidden INTEGER NOT NULL DEFAULT 0,
+                hold_intent TEXT,
+                exit_logic TEXT,
+                planned_exit TEXT,
+                buy_logic TEXT,
+                entry_math TEXT,
+                entry_ai REAL,
                 FOREIGN KEY (strategy_id) REFERENCES strategies(id) ON DELETE CASCADE
             );
 
@@ -315,6 +326,11 @@ impl Database {
             "ALTER TABLE strategies ADD COLUMN asset_class_target TEXT NOT NULL DEFAULT 'options'",
             [],
         );
+        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN hold_intent TEXT", []);
+        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN planned_exit TEXT", []);
+        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN buy_logic TEXT", []);
+        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN entry_math TEXT", []);
+        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN entry_ai REAL", []);
         let _ = conn.execute(
             "ALTER TABLE strategies ADD COLUMN run_interval_ms INTEGER NOT NULL DEFAULT 30000",
             [],
@@ -327,6 +343,15 @@ impl Database {
             "ALTER TABLE strategies ADD COLUMN option_structure_preset TEXT NOT NULL DEFAULT 'single'",
             [],
         );
+
+        // trade_log expansions
+        let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0", []);
+        let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN hold_intent TEXT", []);
+        let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN exit_logic TEXT", []);
+        let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN planned_exit TEXT", []);
+        let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN buy_logic TEXT", []);
+        let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN entry_math TEXT", []);
+        let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN entry_ai REAL", []);
         let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN take_profit REAL", []);
         let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN exit_logic TEXT", []);
         let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN entry_time TEXT", []);
@@ -524,9 +549,28 @@ impl Database {
                 StrategyKind::ParitySniper,
                 vec!["SPY"],
             ),
+            (
+                "yield-rotation",
+                "Yield Rotation",
+                StrategyKind::YieldRotation,
+                vec!["SGOV"],
+            ),
+            (
+                "distribution-sniper",
+                "Distribution Sniper",
+                StrategyKind::DistributionSniper,
+                vec!["O", "VICI"],
+            ),
+            (
+                "gamma-flip",
+                "Gamma Flip",
+                StrategyKind::GammaFlip,
+                vec!["SPY"],
+            ),
         ];
 
         for (id, name, kind, symbols) in defaults {
+            println!("DB Seeding: Checking strategy {} ({})", name, id);
             // Check if ID already exists
             let existing_kind: Option<String> = self.conn.query_row(
                 "SELECT kind FROM strategies WHERE id = ?1",
@@ -534,12 +578,14 @@ impl Database {
                 |row| row.get(0),
             ).optional()?;
 
-            if let Some(_old_kind) = existing_kind {
+            if let Some(old_kind) = existing_kind {
+                println!("DB Seeding: Updating existing strategy {} (old kind: {})", id, old_kind);
                 self.conn.execute(
                     "UPDATE strategies SET name = ?1, kind = ?2 WHERE id = ?3",
                     params![name, kind.as_str(), id],
                 )?;
             } else {
+                println!("DB Seeding: Inserting new strategy {} ({})", name, id);
                 // Insert new
                 self.conn.execute(
                     "INSERT INTO strategies (
@@ -1081,11 +1127,13 @@ impl Database {
                 take_profit: row.get(16)?,
                 exit_logic: row.get(17)?,
                 entry_time: row.get(18)?,
-                    buy_logic: row.get(19)?,
-                    entry_math: row.get(20)?,
-                    entry_ai: row.get(21)?,
-                })
-            })?;
+                buy_logic: row.get(19)?,
+                entry_math: row.get(20)?,
+                entry_ai: row.get(21)?,
+                hold_intent: row.get(22)?,
+                planned_exit: row.get(23)?,
+            })
+        })?;
 
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
     }
@@ -1107,7 +1155,7 @@ impl Database {
             "SELECT underlying_symbol, instrument_symbol, asset_type, quantity, average_price,
                     market_price, multiplier, option_structure_preset, option_type, expiration,
                     strike, stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment,
-                    take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai
+                    take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai, hold_intent, planned_exit
              FROM strategy_positions WHERE strategy_id = ?1 AND instrument_symbol = ?2",
             params![strategy_id, instrument_symbol],
             |row| {
@@ -1138,6 +1186,8 @@ impl Database {
                     buy_logic: row.get(19)?,
                     entry_math: row.get(20)?,
                     entry_ai: row.get(21)?,
+                    hold_intent: row.get(22)?,
+                    planned_exit: row.get(23)?,
                 })
             },
         )
@@ -1156,7 +1206,7 @@ impl Database {
                 "SELECT underlying_symbol, instrument_symbol, asset_type, quantity, average_price,
                         market_price, multiplier, option_structure_preset, option_type, expiration,
                         strike, stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment,
-                        take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai
+                        take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai, hold_intent, planned_exit
                  FROM strategy_positions
                  WHERE strategy_id = ?1 AND instrument_symbol = ?2
                  LIMIT 1"
@@ -1165,7 +1215,7 @@ impl Database {
                 "SELECT underlying_symbol, instrument_symbol, asset_type, quantity, average_price,
                         market_price, multiplier, option_structure_preset, option_type, expiration,
                         strike, stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment,
-                        take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai
+                        take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai, hold_intent, planned_exit
                  FROM strategy_positions
                  WHERE strategy_id = ?1 AND underlying_symbol = ?2 AND asset_type IN ('option', 'option_spread')
                  ORDER BY expiration ASC, instrument_symbol ASC
@@ -1202,6 +1252,8 @@ impl Database {
                     buy_logic: row.get(19)?,
                     entry_math: row.get(20)?,
                     entry_ai: row.get(21)?,
+                    hold_intent: row.get(22)?,
+                    planned_exit: row.get(23)?,
                 })
             })
             .optional()
@@ -1216,12 +1268,14 @@ impl Database {
         let sql = if strategy_id.is_some() {
             "SELECT id, strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type, side,
                     quantity, price, multiplier, option_structure_preset, option_type, expiration, strike,
-                    legs_json, provider, execution_mode, reason, realized_pnl, executed_at
+                    legs_json, provider, execution_mode, reason, realized_pnl, executed_at,
+                    hidden, hold_intent, exit_logic, planned_exit, buy_logic, entry_math, entry_ai
              FROM trade_log WHERE strategy_id = ?1 ORDER BY executed_at DESC LIMIT ?2"
         } else {
             "SELECT id, strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type, side,
                     quantity, price, multiplier, option_structure_preset, option_type, expiration, strike,
-                    legs_json, provider, execution_mode, reason, realized_pnl, executed_at
+                    legs_json, provider, execution_mode, reason, realized_pnl, executed_at,
+                    hidden, hold_intent, exit_logic, planned_exit, buy_logic, entry_math, entry_ai
              FROM trade_log ORDER BY executed_at DESC LIMIT ?1"
         };
 
@@ -1426,6 +1480,103 @@ impl Database {
                     orders_json,
                 ],
             )?;
+        }
+
+        // --- RECONCILE STRATEGY POSITIONS ---
+        // If a strategy is running in Alpaca mode and has a symbol open locally but missing from 
+        // the broker's response, it was closed manually. We must update the local ledger.
+        let broker_symbols: BTreeSet<String> = positions.iter().map(|p| p.symbol.clone()).collect();
+        let strategies_to_sync: Vec<String> = tx.prepare(
+            "SELECT id FROM strategies WHERE credential_id = ?1 AND execution_mode IN ('alpaca_paper', 'alpaca_live')"
+        )?
+        .query_map(params![credential_id], |row| row.get(0))?
+        .collect::<Result<Vec<String>, _>>()?;
+
+        for strategy_id in strategies_to_sync {
+            let mut stmt = tx.prepare("SELECT instrument_symbol, underlying_symbol, asset_type, quantity, average_price, market_price, multiplier, option_structure_preset, option_type, expiration, strike, legs_json, hold_intent, exit_logic, planned_exit, buy_logic, entry_math, entry_ai FROM strategy_positions WHERE strategy_id = ?1")?;
+            let positions_to_reconcile: Vec<PositionRecord> = stmt.query_map(params![strategy_id], |row| {
+                let legs_json: String = row.get(11)?;
+                Ok(PositionRecord {
+                    underlying_symbol: row.get(1)?,
+                    instrument_symbol: row.get(0)?,
+                    asset_type: row.get(2)?,
+                    quantity: row.get(3)?,
+                    average_price: row.get(4)?,
+                    market_price: row.get(5)?,
+                    multiplier: row.get(6)?,
+                    option_structure_preset: row.get::<_, Option<String>>(7)?.as_deref().map(option_structure_preset_from_str).transpose().unwrap_or_default(),
+                    option_type: row.get(8)?,
+                    expiration: row.get(9)?,
+                    strike: row.get(10)?,
+                    stale_quote: false,
+                    legs: serde_json::from_str(&legs_json).unwrap_or_default(),
+                    hold_intent: row.get(12)?,
+                    exit_logic: row.get(13)?,
+                    planned_exit: row.get(14)?,
+                    buy_logic: row.get(15)?,
+                    entry_math: row.get(16)?,
+                    entry_ai: row.get(17)?,
+                    ..Default::default()
+                })
+            })?
+            .collect::<Result<Vec<PositionRecord>, _>>()?;
+
+            for local_pos in positions_to_reconcile {
+                let local_symbol = &local_pos.instrument_symbol;
+                if !broker_symbols.contains(local_symbol) {
+                    // Closed on broker! 
+                    // Record the closure in trade_log
+                    let trade_id = Uuid::new_v4().to_string();
+                    let executed_at = now();
+                    let realized_pnl = (local_pos.market_price - local_pos.average_price) * local_pos.quantity * local_pos.multiplier;
+                    
+                    tx.execute(
+                        "INSERT INTO trade_log (
+                            id, strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type, side,
+                            quantity, price, multiplier, option_structure_preset, option_type, expiration, strike,
+                            legs_json, provider, execution_mode, reason, realized_pnl, executed_at,
+                            hold_intent, exit_logic, planned_exit, buy_logic, entry_math, entry_ai
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+                        params![
+                            trade_id,
+                            strategy_id,
+                            local_pos.instrument_symbol,
+                            local_pos.underlying_symbol,
+                            local_pos.instrument_symbol,
+                            local_pos.asset_type,
+                            "sell", // Assume sell for closure, or use a more descriptive "close" if we add it
+                            local_pos.quantity,
+                            local_pos.market_price,
+                            local_pos.multiplier,
+                            local_pos.option_structure_preset.map(option_structure_preset_to_str),
+                            local_pos.option_type,
+                            local_pos.expiration,
+                            local_pos.strike,
+                            serde_json::to_string(&local_pos.legs).unwrap_or_else(|_| "[]".to_string()),
+                            "alpaca",
+                            "alpaca_reconciliation",
+                            "MANUAL DISCONNECT / BROKER SYNC RECONCILIATION",
+                            realized_pnl,
+                            executed_at,
+                            local_pos.hold_intent,
+                            local_pos.exit_logic,
+                            local_pos.planned_exit,
+                            local_pos.buy_logic,
+                            local_pos.entry_math,
+                            local_pos.entry_ai,
+                        ],
+                    )?;
+
+                    tx.execute("DELETE FROM strategy_positions WHERE strategy_id = ?1 AND instrument_symbol = ?2", params![strategy_id, local_symbol])?;
+                } else if let Some(bp) = positions.iter().find(|p| p.symbol == *local_symbol) {
+                    // Update market price from sync
+                    if let Some(price) = bp.current_price {
+                        tx.execute("UPDATE strategy_positions SET market_price = ?1 WHERE strategy_id = ?2 AND instrument_symbol = ?3", 
+                            params![price, strategy_id, local_symbol])?;
+                    }
+                }
+            }
+            Self::recompute_strategy_equity_internal(&tx, &strategy_id)?;
         }
 
         tx.commit()?;
@@ -1923,6 +2074,8 @@ impl Database {
                         buy_logic: current.buy_logic.clone(),
                         entry_math: current.entry_math.clone(),
                         entry_ai: current.entry_ai,
+                        hold_intent: current.hold_intent.clone(),
+                        planned_exit: current.planned_exit.clone(),
                     }
                 } else {
                     PositionRecord {
@@ -1945,6 +2098,8 @@ impl Database {
                         buy_logic: trade.buy_logic.clone(),
                         entry_math: trade.entry_math.clone(),
                         entry_ai: trade.entry_ai,
+                        hold_intent: trade.hold_intent.clone(),
+                        planned_exit: trade.planned_exit.clone(),
                         ..Default::default()
                     }
                 };
@@ -2015,6 +2170,8 @@ impl Database {
                             buy_logic: current.buy_logic.clone(),
                             entry_math: current.entry_math.clone(),
                             entry_ai: current.entry_ai,
+                            hold_intent: current.hold_intent.clone(),
+                            planned_exit: current.planned_exit.clone(),
                         },
                     )?;
                 }
@@ -2068,8 +2225,9 @@ impl Database {
             "INSERT INTO trade_log (
                 id, strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type, side,
                 quantity, price, multiplier, option_structure_preset, option_type, expiration, strike,
-                legs_json, provider, execution_mode, reason, realized_pnl, executed_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+                legs_json, provider, execution_mode, reason, realized_pnl, executed_at,
+                hold_intent, exit_logic, planned_exit, buy_logic, entry_math, entry_ai
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
             params![
                 trade_id,
                 strategy_id,
@@ -2091,6 +2249,12 @@ impl Database {
                 signal.reason,
                 realized_pnl,
                 executed_at,
+                trade.hold_intent,
+                trade.exit_logic,
+                trade.planned_exit,
+                trade.buy_logic,
+                trade.entry_math,
+                trade.entry_ai,
             ],
         )?;
 
@@ -2118,6 +2282,13 @@ impl Database {
             execution_mode,
             realized_pnl,
             executed_at,
+            hidden: false,
+            hold_intent: trade.hold_intent.clone(),
+            exit_logic: trade.exit_logic.clone(),
+            planned_exit: trade.planned_exit.clone(),
+            buy_logic: trade.buy_logic.clone(),
+            entry_math: trade.entry_math.clone(),
+            entry_ai: trade.entry_ai,
         }))
     }
 
@@ -2193,6 +2364,8 @@ impl Database {
                         buy_logic: current.buy_logic.clone(),
                         entry_math: current.entry_math.clone(),
                         entry_ai: current.entry_ai,
+                        hold_intent: current.hold_intent.clone(),
+                        planned_exit: current.planned_exit.clone(),
                     }
                 } else {
                     PositionRecord {
@@ -2218,6 +2391,8 @@ impl Database {
                         buy_logic: None,
                         entry_math: None,
                         entry_ai: None,
+                        hold_intent: None,
+                        planned_exit: None,
                     }
                 };
                 Self::upsert_position_internal(&tx, strategy_id, &updated)?;
@@ -2273,6 +2448,8 @@ impl Database {
                             buy_logic: current.buy_logic.clone(),
                             entry_math: current.entry_math.clone(),
                             entry_ai: current.entry_ai,
+                            hold_intent: current.hold_intent.clone(),
+                            planned_exit: current.planned_exit.clone(),
                         },
                     )?;
                 }
@@ -2369,6 +2546,13 @@ impl Database {
             execution_mode,
             realized_pnl,
             executed_at,
+            hidden: false,
+            hold_intent: None,
+            exit_logic: None,
+            planned_exit: None,
+            buy_logic: None,
+            entry_math: None,
+            entry_ai: None,
         }))
     }
 
@@ -2382,8 +2566,8 @@ impl Database {
                 strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type, quantity,
                 average_price, market_price, multiplier, option_structure_preset, option_type, expiration,
                 strike, stale_quote, legs_json, razor_stop, stagnation_timestamp, kronos_sentiment,
-                take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
+                take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai, hold_intent, planned_exit
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
              ON CONFLICT(strategy_id, symbol) DO UPDATE SET
                 underlying_symbol = excluded.underlying_symbol,
                 instrument_symbol = excluded.instrument_symbol,
@@ -2406,7 +2590,9 @@ impl Database {
                 entry_time = excluded.entry_time,
                 buy_logic = excluded.buy_logic,
                 entry_math = excluded.entry_math,
-                entry_ai = excluded.entry_ai",
+                entry_ai = excluded.entry_ai,
+                hold_intent = excluded.hold_intent,
+                planned_exit = excluded.planned_exit",
             params![
                 strategy_id,
                 position.instrument_symbol,
@@ -2432,6 +2618,8 @@ impl Database {
                 position.buy_logic,
                 position.entry_math,
                 position.entry_ai,
+                position.hold_intent,
+                position.planned_exit,
             ],
         )?;
         Ok(())
@@ -2508,13 +2696,69 @@ impl Database {
         Ok(())
     }
 
+    pub fn set_trade_hidden(&self, trade_id: &str, hidden: bool) -> AppResult<()> {
+        self.conn.execute(
+            "UPDATE trade_log SET hidden = ?1 WHERE id = ?2",
+            params![hidden as i64, trade_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn reconcile_all_to_history(&self) -> AppResult<()> {
+        let positions = self.list_all_open_positions()?;
+        let now = now();
+        
+        for pos in positions {
+            let trade_id = Uuid::new_v4().to_string();
+            // Create the record in trade_log
+            self.conn.execute(
+                "INSERT INTO trade_log (
+                    id, strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type, side,
+                    quantity, price, multiplier, option_structure_preset, option_type, expiration, strike,
+                    legs_json, provider, execution_mode, reason, realized_pnl, executed_at,
+                    hold_intent, exit_logic, planned_exit, buy_logic, entry_math, entry_ai
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'sell', ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 'alpaca', 'manual_reconciliation', 'BULK RECONCILIATION', ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+                params![
+                    trade_id,
+                    pos.strategy_id,
+                    pos.instrument_symbol,
+                    pos.underlying_symbol,
+                    pos.instrument_symbol,
+                    pos.asset_type,
+                    pos.quantity,
+                    pos.market_price,
+                    pos.multiplier,
+                    pos.option_structure_preset.map(option_structure_preset_to_str),
+                    pos.option_type,
+                    pos.expiration,
+                    pos.strike,
+                    serde_json::to_string(&pos.legs).unwrap_or_else(|_| "[]".to_string()),
+                    pos.unrealized_pnl,
+                    now,
+                    pos.hold_intent,
+                    pos.exit_logic,
+                    pos.planned_exit,
+                    pos.buy_logic,
+                    pos.entry_math,
+                    pos.entry_ai,
+                ],
+            )?;
+            // Remove from open positions
+            self.conn.execute(
+                "DELETE FROM strategy_positions WHERE strategy_id = ?1 AND instrument_symbol = ?2",
+                params![pos.strategy_id, pos.instrument_symbol],
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn list_all_open_positions(&self) -> AppResult<Vec<PositionSummary>> {
         let mut stmt = self.conn.prepare(
             "SELECT strategy_id, underlying_symbol, instrument_symbol, asset_type, quantity,
                     average_price, market_price, multiplier, option_structure_preset,
                     option_type, expiration, strike, stale_quote, legs_json,
                     razor_stop, stagnation_timestamp, kronos_sentiment,
-                    take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai
+                    take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai, hold_intent, planned_exit
              FROM strategy_positions"
         )?;
         
@@ -2553,6 +2797,8 @@ impl Database {
                 buy_logic: row.get(20)?,
                 entry_math: row.get(21)?,
                 entry_ai: row.get(22)?,
+                hold_intent: row.get(23)?,
+                planned_exit: row.get(24)?,
              })
         })?;
 
@@ -2670,6 +2916,13 @@ fn map_trade_record(row: &rusqlite::Row<'_>) -> Result<TradeRecord, rusqlite::Er
         reason: row.get(17)?,
         realized_pnl: row.get(18)?,
         executed_at: row.get(19)?,
+        hidden: row.get::<_, i64>(20)? != 0,
+        hold_intent: row.get(21)?,
+        exit_logic: row.get(22)?,
+        planned_exit: row.get(23)?,
+        buy_logic: row.get(24)?,
+        entry_math: row.get(25)?,
+        entry_ai: row.get(26)?,
     })
 }
 
@@ -3103,6 +3356,9 @@ fn strategy_kind_from_str(value: &str) -> Result<StrategyKind, rusqlite::Error> 
         "parity_sniper" => Ok(StrategyKind::ParitySniper),
         "vwap_reversion" => Ok(StrategyKind::VwapReversion),
         "jarrod_vwap" => Ok(StrategyKind::JarrodVwap),
+        "yield_rotation" => Ok(StrategyKind::YieldRotation),
+        "distribution_sniper" => Ok(StrategyKind::DistributionSniper),
+        "gamma_flip" => Ok(StrategyKind::GammaFlip),
         other => Err(rusqlite::Error::FromSqlConversionFailure(
             0,
             rusqlite::types::Type::Text,

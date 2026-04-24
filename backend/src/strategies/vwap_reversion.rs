@@ -1,7 +1,30 @@
 use crate::logger::{SystemEvent, SystemSource, SystemEventType};
 use crate::agents::broadcast_audit_log;
-use crate::models::{SignalAction, StrategySignal};
+use crate::models::{SignalAction, StrategySignal, Candle, PositionRecord, Quote, StrategyRecord};
 use crate::AppState;
+use async_trait::async_trait;
+
+pub struct VwapReversionStrategy;
+
+#[async_trait]
+impl crate::strategies::TradingStrategy for VwapReversionStrategy {
+    async fn evaluate(
+        &self,
+        state: &AppState,
+        strategy: &StrategyRecord,
+        candles: &[Candle],
+        quote: &Quote,
+        _options: &[crate::models::OptionContractSnapshot],
+        position: Option<&PositionRecord>,
+        kronos_score: Option<f64>,
+    ) -> StrategySignal {
+        let mut tracker = VwapTracker::new();
+        for candle in candles {
+            tracker.update(candle.close, candle.volume);
+        }
+        evaluate_vwap_reversion(state, &strategy.id, &quote.symbol, quote.price, &tracker, kronos_score)
+    }
+}
 
 #[allow(dead_code)]
 pub fn evaluate_vwap(prices: &[f64], volumes: &[f64]) -> (f64, f64) {
@@ -105,6 +128,7 @@ pub fn evaluate_vwap_reversion(
         state,
         SystemEvent::now(
             SystemSource::Vwap,
+            Some(_strategy_id.to_string()),
             symbol.to_string(),
             event_type,
             math_context,

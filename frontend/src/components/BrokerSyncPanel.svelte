@@ -16,7 +16,7 @@
       <h2>{detail?.strategy.name ?? "Select a strategy"}</h2>
     </div>
     {#if detail}
-      <button style="display: none;" type="button" on:click={() => dispatch("sync", { strategyId: detail.strategy.id })}>
+      <button type="button" on:click={() => dispatch("sync", { strategyId: detail.strategy.id })}>
         Sync now
       </button>
     {/if}

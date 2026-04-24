@@ -152,7 +152,10 @@
         break;
 
       case "log":
-        strategyLogs = [event, ...strategyLogs].slice(0, 500);
+        strategyLogs = [{
+          ...event,
+          strategy_id: event.strategy_id
+        }, ...strategyLogs].slice(0, 500);
         break;
 
       case "heartbeat":
@@ -173,10 +176,11 @@
         break;
 
       case "system": {
-        const { timestamp, strategy, symbol, edge, ai_confirmation, message } = event.event;
+        const { timestamp, strategy, strategy_id, symbol, edge, ai_confirmation, message } = event.event;
         strategyLogs = [{
           time: timestamp,
           symbol,
+          strategy_id,
           source: strategy,
           math_edge: `${(edge * 100).toFixed(1)}%`,
           ai_score: ai_confirmation.toFixed(2),
@@ -187,10 +191,11 @@
       }
 
       case "system_log": {
-        const { timestamp, source, symbol, event_type, math_context, ai_confidence, narrative } = event.event;
+        const { timestamp, source, strategy_id, symbol, event_type, math_context, ai_confidence, narrative } = event.event;
         strategyLogs = [{
           time: timestamp,
           symbol,
+          strategy_id,
           source: source,
           math_edge: math_context,
           ai_score: ai_confidence.toFixed(2),

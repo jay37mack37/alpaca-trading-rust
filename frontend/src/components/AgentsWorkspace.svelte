@@ -43,6 +43,7 @@
   let drafts: Record<string, StrategyDraft> = {};
   let draftErrors: Record<string, ValidationErrors> = {};
   let flipped: Record<string, boolean> = {};
+  let consoleOpen: Record<string, boolean> = {};
 
   let createDraft: StrategyDraft = {
     name: "",
@@ -109,8 +110,8 @@
     draftErrors = nextErrors;
   }
 
-  $: workingStrats = strategies.filter(s => s.id === 'parity-sniper' || s.id === 'vwap-reversion');
-  $: researchStrats = strategies.filter(s => s.id !== 'parity-sniper' && s.id !== 'vwap-reversion');
+  $: workingStrats = strategies.filter(s => ['parity-sniper', 'vwap-reversion', 'yield-rotation', 'distribution-sniper', 'gamma-flip'].includes(s.id));
+  $: researchStrats = strategies.filter(s => !['parity-sniper', 'vwap-reversion', 'yield-rotation', 'distribution-sniper', 'gamma-flip'].includes(s.id));
 
   function createAgent() {
     dispatch("create", {
@@ -211,6 +212,9 @@
       case "parity_sniper": return "Parity Sniper: Specialized $S + P - C = K$ gap detector for exploitable option pricing discrepancies.";
       case "vwap_reversion": return "VWAP Reversion: Standard deviation 'Snap Back' strategy for over-extended price action.";
       case "jarrod_vwap": return "Jarrod VWAP Reclaim: Intraday VWAP cross with relative volume confirmation.";
+      case "yield_rotation": return "Yield Rotation: Harvesting risk-free yield in $SGOV during periods of strategy inactivity.";
+      case "distribution_sniper": return "Distribution Sniper: Delta-neutral dividend capture strategy for REITs with ITM put hedging.";
+      case "gamma_flip": return "Gamma Flip: High-convexity 0DTE option strategy triggered by zero-gamma crossovers.";
       default: return "Automated algorithmic execution strategy.";
     }
   }
@@ -225,6 +229,9 @@
       case "rsi_mean_reversion": return "Gamma Scalping";
       case "sma_trend": return "0DTE Delta-Neutral";
       case "put_call_parity": return "Put-Call Parity";
+      case "yield_rotation": return "Yield Rotation";
+      case "distribution_sniper": return "Distribution Sniper";
+      case "gamma_flip": return "Gamma Flip";
       default: return (kind as string).replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
     }
   }
@@ -262,20 +269,45 @@
   function getEffectiveEnabled(strategy: StrategySummary) {
     return pendingStatus[strategy.id] ?? strategy.enabled;
   }
+
+  function getLogsForStrategy(strategy: StrategySummary) {
+    return logs.filter(log => log.strategy_id === strategy.id);
+  }
+  let activeView: "engines" | "positions" | "archive" = "engines";
 </script>
 
 <section class="workspace">
-  <!-- Open Combat Positions at the very top -->
-  <PositionsSection {positions} />
+  <nav class="workstation-nav">
+    <button class:active={activeView === 'engines'} on:click={() => activeView = 'engines'}>
+      <span class="icon">🚀</span> Live Engines
+    </button>
+    <button class:active={activeView === 'positions'} on:click={() => activeView = 'positions'}>
+      <span class="icon">🎯</span> Open Positions
+      {#if positions.length > 0}
+        <span class="badge">{positions.length}</span>
+      {/if}
+    </button>
+    <button class:active={activeView === 'archive'} on:click={() => activeView = 'archive'}>
+      <span class="icon">📜</span> Trade Archive
+    </button>
+  </nav>
 
-  <section class="agents-layout">
-    <div class="section-header">
-      <h2>Live Execution Engines</h2>
-      <p>Hardened strategies certified for production trading.</p>
+  {#if activeView === "positions"}
+    <div class="view-stage fade-in">
+      <div class="section-header">
+        <h2>Open Combat Positions</h2>
+        <p>Active risk currently deployed in the market.</p>
+      </div>
+      <PositionsSection {positions} />
     </div>
+  {:else if activeView === "engines"}
+    <section class="agents-layout fade-in">
+      <div class="section-header">
+        <h2>Live Execution Engines</h2>
+        <p>Hardened strategies certified for production trading.</p>
+      </div>
 
-    <RecentTradesSection trades={recentTrades} />
-    <div class="workstation-grid">
+      <div class="workstation-grid">
       {#each workingStrats as strategy}
         <article class="strat-card" class:active={getEffectiveEnabled(strategy)}>
           {#if flipped[strategy.id]}
@@ -431,14 +463,31 @@
             </div>
 
             <div class="strat-meta">
-              <button class="ghost-link" on:click={() => dispatch("inspect", { strategyId: strategy.id })}>Activity</button>
+              <button class="ghost-link" class:active={consoleOpen[strategy.id]} on:click={() => consoleOpen[strategy.id] = !consoleOpen[strategy.id]}>Console</button>
+              <button class="ghost-link" on:click={() => dispatch("inspect", { strategyId: strategy.id })}>Analytics</button>
               <button class="ghost-link" on:click={() => { flipped[strategy.id] = !flipped[strategy.id] }}>Config</button>
             </div>
+
+            {#if consoleOpen[strategy.id]}
+              <div class="strat-console fade-in">
+                <div class="console-header">System Feedback</div>
+                <div class="console-flow">
+                  {#each getLogsForStrategy(strategy).slice(0, 5) as log}
+                    <div class="console-line">
+                      <span class="line-time">{new Date(log.time).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                      <span class="line-type">{log.decision}</span>
+                      <span class="line-msg">{log.narrative}</span>
+                    </div>
+                  {:else}
+                    <div class="console-empty">Awaiting live telemetry...</div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
           {/if}
         </article>
       {/each}
     </div>
-
     <div class="section-header mt-4">
       <h2>R&D / Experimental Lab</h2>
       <p>Strategies currently in testing or simulation mode.</p>
@@ -500,32 +549,116 @@
             </div>
 
             <div class="strat-meta">
-              <button class="ghost-link" on:click={() => dispatch("inspect", { strategyId: strategy.id })}>Activity</button>
+              <button class="ghost-link" class:active={consoleOpen[strategy.id]} on:click={() => consoleOpen[strategy.id] = !consoleOpen[strategy.id]}>Console</button>
+              <button class="ghost-link" on:click={() => dispatch("inspect", { strategyId: strategy.id })}>Analytics</button>
               <button class="ghost-link" on:click={() => { flipped[strategy.id] = !flipped[strategy.id] }}>Config</button>
             </div>
+
+            {#if consoleOpen[strategy.id]}
+              <div class="strat-console fade-in">
+                <div class="console-header">System Feedback</div>
+                <div class="console-flow">
+                  {#each getLogsForStrategy(strategy).slice(0, 5) as log}
+                    <div class="console-line">
+                      <span class="line-time">{new Date(log.time).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                      <span class="line-type">{log.decision}</span>
+                      <span class="line-msg">{log.narrative}</span>
+                    </div>
+                  {:else}
+                    <div class="console-empty">Awaiting live telemetry...</div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
           {/if}
         </article>
       {/each}
     </div>
-
-    <div class="log-panel-wrapper">
+    <div class="section-header mt-4">
+      <h2>Intelligence Feed</h2>
+      <p>Unified telemetry across all active execution engines.</p>
+    </div>
+    <div class="log-panel-wrapper mb-4">
       <StrategyLogTable {logs} />
     </div>
   </section>
+  {:else if activeView === "archive"}
+    <section class="archive-layout fade-in">
+      <div class="section-header">
+        <h2>Trade Archive</h2>
+        <p>Historical execution logs and system audit trail.</p>
+      </div>
+      <RecentTradesSection trades={recentTrades} />
+    </section>
+  {/if}
 </section>
 
 <style>
   .workspace {
-    padding: 1rem 1.5rem 1.5rem;
+    padding: 0.5rem 1.5rem 1.5rem;
     max-width: 1400px;
     margin: 0 auto;
     color: white;
   }
 
-  .agents-layout {
+  .workstation-nav {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding-bottom: 0.5rem;
+  }
+
+  .workstation-nav button {
+    background: none;
+    border: none;
+    color: rgba(221, 233, 255, 0.4);
+    font-size: 0.9rem;
+    font-weight: 500;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 8px;
+    transition: all 0.2s;
+  }
+
+  .workstation-nav button:hover {
+    color: white;
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .workstation-nav button.active {
+    color: #22c55e;
+    background: rgba(34, 197, 94, 0.05);
+  }
+
+  .icon { font-size: 1.1rem; }
+  
+  .badge {
+    background: #22c55e;
+    color: #052e16;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-left: 4px;
+  }
+
+  .view-stage, .agents-layout, .archive-layout {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+  }
+
+  .fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 
   .config-form {
@@ -608,6 +741,45 @@
 
   .strat-card:hover { border-color: rgba(255, 255, 255, 0.15); }
   .strat-card.active { border-color: rgba(34, 197, 94, 0.3); box-shadow: 0 0 20px rgba(34, 197, 94, 0.05); }
+
+  .strat-console {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 0.75rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    margin-top: 0.5rem;
+  }
+
+  .console-header {
+    color: rgba(221, 233, 255, 0.4);
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    padding-bottom: 0.25rem;
+  }
+
+  .console-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+
+  .console-line {
+    display: flex;
+    gap: 0.75rem;
+    line-height: 1.4;
+  }
+
+  .line-time { color: rgba(221, 233, 255, 0.3); flex-shrink: 0; }
+  .line-type { color: #22c55e; font-weight: 600; flex-shrink: 0; }
+  .line-msg { color: rgba(221, 233, 255, 0.8); word-break: break-all; }
+  .console-empty { color: rgba(221, 233, 255, 0.2); text-align: center; padding: 0.5rem; }
 
   .strat-header {
     display: flex;

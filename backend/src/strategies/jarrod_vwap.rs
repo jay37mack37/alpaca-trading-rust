@@ -1,5 +1,24 @@
-use crate::models::{SignalAction, StrategySignal, Candle, PositionRecord};
+use crate::models::{SignalAction, StrategySignal, Candle, PositionRecord, Quote, StrategyRecord};
 use crate::AppState;
+use async_trait::async_trait;
+
+pub struct JarrodVwapStrategy;
+
+#[async_trait]
+impl crate::strategies::TradingStrategy for JarrodVwapStrategy {
+    async fn evaluate(
+        &self,
+        state: &AppState,
+        strategy: &StrategyRecord,
+        candles: &[Candle],
+        _quote: &Quote,
+        _options: &[crate::models::OptionContractSnapshot],
+        position: Option<&PositionRecord>,
+        kronos_score: Option<f64>,
+    ) -> StrategySignal {
+        evaluate_jarrod_vwap(state, &strategy.id, "SPY", candles, position, kronos_score)
+    }
+}
 
 pub struct VwapCalculator {
     cumulative_pv: f64,

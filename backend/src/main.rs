@@ -61,6 +61,8 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    dotenvy::dotenv().ok();
+
     let config = AppConfig::from_env();
     let master_key = env::var("AUTO_STONKS_MASTER_KEY").unwrap_or_default();
     let db = Database::open(
@@ -116,7 +118,9 @@ async fn main() -> anyhow::Result<()> {
         db.list_strategy_records()
             .unwrap_or_default()
             .into_iter()
-            .filter(|s| s.enabled)
+            .filter(|s| {
+                s.enabled && !matches!(s.kind, crate::models::StrategyKind::ParitySniper | crate::models::StrategyKind::PutCallParity | crate::models::StrategyKind::VwapReversion | crate::models::StrategyKind::JarrodVwap)
+            })
             .map(|s| s.id)
             .collect()
     };
@@ -202,6 +206,7 @@ async fn main() -> anyhow::Result<()> {
                 &state_hb,
                 SystemEvent::now(
                     SystemSource::System,
+                    None,
                     "SYS".to_string(),
                     SystemEventType::Scan,
                     format!("BP:${:.0}", buying_power),
@@ -213,6 +218,14 @@ async fn main() -> anyhow::Result<()> {
             tokio::time::sleep(Duration::from_secs(5)).await;
         }
     });
+
+    // One-time reconciliation for "old" positions to move to history
+    {
+        let db = state.db.lock().await;
+        if let Err(e) = db.reconcile_all_to_history() {
+            tracing::error!("Bulk reconciliation failed: {:?}", e);
+        }
+    }
 
     // High-Frequency Position Update Loop (10Hz)
     let state_pos = state.clone();
@@ -288,7 +301,11 @@ async fn main() -> anyhow::Result<()> {
             "/api/strategies/:strategy_id/positions/:symbol/flatten",
             post(handlers::agents::flatten_strategy_position),
         )
-        .route("/api/panic", post(handlers::agents::panic_all))
+        .route(
+            "/api/strategies/trades/:trade_id/hide",
+            delete(handlers::agents::hide_trade),
+        )
+        .route("/api/strategies/panic", post(handlers::agents::panic_all))
         .route(
             "/api/watchlist",
             post(handlers::watchlist::add_watchlist_symbol),
