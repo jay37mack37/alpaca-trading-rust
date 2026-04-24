@@ -690,6 +690,7 @@ pub struct StrategySignal {
     pub log_type: Option<String>, // NEW/DRIFT/HEARTBEAT
     pub new_state: Option<serde_json::Value>,
     pub source: Option<String>,
+    pub option_entry_style: Option<OptionEntryStyle>,
     pub math_edge: Option<String>,
     pub ai_score: Option<String>,
     pub stagnation_timeout_ms: Option<u64>,
@@ -740,7 +741,6 @@ pub struct CandleQuery {
     pub provider: Option<DataProvider>,
     pub range: Option<String>,
     pub interval: Option<String>,
-    pub new_state: Option<serde_json::Value>,
 }
 
 #[derive(Debug, serde::Deserialize)]

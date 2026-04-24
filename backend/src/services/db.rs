@@ -482,6 +482,10 @@ impl Database {
         // Fix auto-enabled strategies: disable parity-sniper and vwap-reversion
         let _ = conn.execute("UPDATE strategies SET enabled = 0 WHERE id IN ('parity-sniper', 'vwap-reversion')", []);
 
+        // Clean up orphaned positions from previous Alpaca paper sessions
+        // Position rows can remain with quantity > 0 after Alpaca closes them
+        let _ = conn.execute("UPDATE strategy_positions SET quantity = 0 WHERE quantity > 0 AND strategy_id = 'parity-sniper'", []);
+
         Ok(())
     }
 
@@ -529,6 +533,12 @@ impl Database {
                 "vwap-reversion",
                 "VWAP Reversion",
                 StrategyKind::VwapReversion,
+                vec!["SPY"],
+            ),
+            (
+                "jarrod-vwap",
+                "Jarrod VWAP Reclaim",
+                StrategyKind::JarrodVwap,
                 vec!["SPY"],
             ),
             (
@@ -2773,7 +2783,7 @@ impl Database {
                     option_type, expiration, strike, stale_quote, legs_json,
                     razor_stop, stagnation_timestamp, kronos_sentiment,
                     take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai, hold_intent, planned_exit
-             FROM strategy_positions"
+             FROM strategy_positions WHERE quantity > 0"
         )?;
         
         let position_rows = stmt.query_map([], |row| {
@@ -2825,7 +2835,7 @@ impl Database {
 
     fn map_strategy_summary(&self, record: StrategyRecord) -> AppResult<StrategySummary> {
         let open_positions: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM strategy_positions WHERE strategy_id = ?1",
+            "SELECT COUNT(*) FROM strategy_positions WHERE strategy_id = ?1 AND quantity > 0",
             params![record.id],
             |row| row.get(0),
         )?;

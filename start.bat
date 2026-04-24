@@ -1,10 +1,14 @@
 @echo off
 setlocal enabledelayedexpansion
 
+:: Ensure we run from the script's directory regardless of where it was launched from
+cd /d "%~dp0"
+
 echo =============================================
 echo  AutoStonks Algo Suite - Overhaul Launcher
 echo =============================================
 
+:: --- Cleanup stale processes on our ports ---
 echo Cleaning up port 8080...
 powershell -Command "Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
 
@@ -17,17 +21,16 @@ powershell -Command "Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyC
 echo Cleaning up port 3001...
 powershell -Command "Get-NetTCPConnection -LocalPort 3001 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
 
-
-
 timeout /t 1 /nobreak >nul
 
+:: --- Load .env if present ---
 echo Loading environment from .env...
 if not exist ".env" goto no_env
 for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
     set "key=%%a"
     set "val=%%b"
     if defined key (
-        if not "!key:~0,1!"=="#" (
+        if not "!key:~0,1!=="#" (
             if not "!key!"==" " (
                 set "!key!=!val!"
             )
@@ -36,15 +39,28 @@ for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
 )
 :no_env
 
+:: --- Validate required env vars ---
+if "!AUTO_STONKS_MASTER_KEY!"=="" (
+    echo [ERROR] AUTO_STONKS_MASTER_KEY is not set. Please check your .env file.
+    pause
+    exit /b 1
+)
+if "!AUTO_STONKS_API_TOKEN!"=="" (
+    echo [ERROR] AUTO_STONKS_API_TOKEN is not set. Please check your .env file.
+    pause
+    exit /b 1
+)
+
 if not exist "data" mkdir data
 
+:: --- Backend ---
 echo.
 echo [1/2] Starting backend (port 8080)...
 set AUTO_STONKS_HOST=127.0.0.1
 set AUTO_STONKS_PORT=8080
 set AUTO_STONKS_ALLOWED_ORIGINS=http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:5173,http://localhost:5173,http://localhost:3001,http://127.0.0.1:3001
 
-start "AutoStonks Backend" powershell -NoExit -Command "$env:AUTO_STONKS_HOST='127.0.0.1'; $env:AUTO_STONKS_PORT='8080'; $env:AUTO_STONKS_ALLOWED_ORIGINS='http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:5173,http://localhost:5173,http://localhost:3001,http://127.0.0.1:3001'; $env:AUTO_STONKS_MASTER_KEY='%AUTO_STONKS_MASTER_KEY%'; $env:AUTO_STONKS_API_TOKEN='%AUTO_STONKS_API_TOKEN%'; cd backend; cargo run 2>&1 | Tee-Object -FilePath ..\data\backend.log"
+start "AutoStonks Backend" powershell -NoExit -Command "$env:AUTO_STONKS_HOST='127.0.0.1'; $env:AUTO_STONKS_PORT='8080'; $env:AUTO_STONKS_ALLOWED_ORIGINS='http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:5173,http://localhost:5173,http://localhost:3001,http://127.0.0.1:3001'; $env:AUTO_STONKS_MASTER_KEY='!AUTO_STONKS_MASTER_KEY!'; $env:AUTO_STONKS_API_TOKEN='!AUTO_STONKS_API_TOKEN!'; cd backend; cargo run 2>&1 | Tee-Object -FilePath ..\data\backend.log"
 
 echo Waiting for backend to initialize...
 set "retries=0"
@@ -62,17 +78,19 @@ timeout /t 2 /nobreak >nul
 goto wait_backend
 
 :backend_timeout
-echo [ERROR] Backend failed to start.
+echo [ERROR] Backend failed to start. Check data\backend.log for details.
 pause
 exit /b 1
 
 :backend_ready
 echo Backend is ready!
 
+:: --- Frontend ---
 if exist "frontend\.env" goto frontend_env_ok
 copy "frontend\.env.example" "frontend\.env" >nul
 :frontend_env_ok
 
+echo.
 echo [2/2] Starting frontend (port 5173)...
 if exist "frontend\node_modules" goto npm_ok
 echo [!] node_modules missing. Running npm install...
@@ -85,5 +103,8 @@ start "AutoStonks Frontend" cmd /c "cd frontend && npm run dev"
 echo.
 echo =============================================
 echo  Both services are running!
+echo =============================================
+echo   Backend:  http://127.0.0.1:8080
+echo   Frontend: http://localhost:5173
 echo =============================================
 pause

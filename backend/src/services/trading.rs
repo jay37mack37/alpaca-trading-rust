@@ -151,7 +151,7 @@ pub fn prepare_option_trade(
 
     match signal.action {
         SignalAction::Buy => {
-            let Some(contract) = resolve_option_contract(strategy, quote, option_contracts) else {
+            let Some(contract) = resolve_option_contract(strategy, signal, quote, option_contracts) else {
                 return Ok(TradePreparationOutcome::Skip(
                     "Signal skipped: no tradable option contract matched the selector".to_string(),
                 ));
@@ -451,13 +451,15 @@ pub fn prepare_option_trade(
 
 pub fn resolve_option_contract(
     strategy: &StrategyRecord,
+    signal: &StrategySignal,
     quote: &crate::models::Quote,
     option_contracts: &[OptionContractSnapshot],
 ) -> Option<ResolvedOptionContract> {
+    let entry_style = signal.option_entry_style.unwrap_or(strategy.option_entry_style);
     let target_type = match strategy.option_structure_preset {
         OptionStructurePreset::BullCallSpread => "call",
         OptionStructurePreset::BearPutSpread => "put",
-        OptionStructurePreset::Single => match strategy.option_entry_style {
+        OptionStructurePreset::Single => match entry_style {
             OptionEntryStyle::LongCall => "call",
             OptionEntryStyle::LongPut => "put",
         },

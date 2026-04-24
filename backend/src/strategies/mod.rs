@@ -129,7 +129,6 @@ async fn evaluate_vwap_reflexive(
 
 // Strategy logic delegated to modules below
 
-
 pub struct RsiMeanReversionStrategy;
 
 #[async_trait]
@@ -363,33 +362,6 @@ mod tests {
             session_high: None,
             session_low: None,
             timestamp: "2021-01-01T00:00:00Z".to_string(),
-        }
-    }
-
-    fn make_position() -> PositionRecord {
-        PositionRecord {
-            underlying_symbol: "AAPL".to_string(),
-            instrument_symbol: "AAPL".to_string(),
-            asset_type: "equity".to_string(),
-            quantity: 10.0,
-            average_price: 100.0,
-            market_price: 100.0,
-            multiplier: 1.0,
-            option_structure_preset: None,
-            option_type: None,
-            expiration: None,
-            strike: None,
-            stale_quote: false,
-            legs: Vec::new(),
-            razor_stop: None,
-            stagnation_timestamp: None,
-            kronos_sentiment: None,
-            take_profit: None,
-            buy_logic: None,
-            entry_math: None,
-            entry_ai: None,
-            entry_time: None,
-            exit_logic: None,
         }
     }
 
