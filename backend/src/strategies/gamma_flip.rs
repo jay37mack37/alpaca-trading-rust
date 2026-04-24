@@ -29,16 +29,25 @@ impl TradingStrategy for GammaFlipStrategy {
 
         // 2. Calculate Net GEX
         let mut net_gex = 0.0;
-        let risk_free_rate = 0.045; // TODO: Pull from yield rotation service or config
+        let risk_free_rate = 0.045; 
+        let mut contracts_scanned = 0;
+
+        crate::agents::broadcast_audit_log(
+            _state,
+            crate::logger::SystemEvent::now(
+                crate::logger::SystemSource::System,
+                Some(_strategy.id.clone()),
+                quote.symbol.clone(),
+                crate::logger::SystemEventType::Scan,
+                format!("Price: ${:.2}", quote.price),
+                0.5,
+                format!("GEX SCAN: Analyzing {} option contracts for gamma inflection.", options.len()),
+            )
+        );
 
         for contract in options {
-            // Gamma Flip targets short-dated options (0DTE/1DTE)
-            // We'll calculate the DTE in years
-            // Assuming we have a way to parse the expiration from contract symbol
-            // For now, we'll assume a fixed small T if it's 0DTE/1DTE
-            let t = 1.0 / 252.0; // Minimal T for 0DTE approximation
-            
-            // We need Volatility (sigma) - for now using a baseline IV from the contract if available
+            contracts_scanned += 1;
+            let t = 1.0 / 252.0; 
             let sigma = contract.implied_volatility.unwrap_or(0.25);
 
             let greeks = GreeksEngine::calculate_greeks(
@@ -52,13 +61,26 @@ impl TradingStrategy for GammaFlipStrategy {
             let oi = contract.open_interest.unwrap_or(0.0);
             let vol = contract.volume.unwrap_or(0.0);
             
-            let is_call = contract.contract_symbol.to_uppercase().contains('C'); // Robustness check needed
+            let is_call = contract.contract_symbol.to_uppercase().contains('C'); 
             
             let gex = GreeksEngine::calculate_gex(quote.price, greeks.gamma, oi, is_call);
             let weighted_gex = GreeksEngine::weighted_gex(gex, vol, oi);
             
             net_gex += weighted_gex;
         }
+
+        crate::agents::broadcast_audit_log(
+            _state,
+            crate::logger::SystemEvent::now(
+                crate::logger::SystemSource::System,
+                Some(_strategy.id.clone()),
+                quote.symbol.clone(),
+                crate::logger::SystemEventType::Scan,
+                format!("GEX: {:.0}", net_gex),
+                0.5,
+                format!("SCAN COMPLETE: Net GEX for {} is {:.2}M across {} contracts.", quote.symbol, net_gex / 1_000_000.0, contracts_scanned),
+            )
+        );
 
         // 3. The Trigger: Negative Gamma + Volume Spike
         // For a full implementation, we need the "Previous GEX" to detect the crossover

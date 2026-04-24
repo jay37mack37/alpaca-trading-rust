@@ -127,63 +127,8 @@ async fn evaluate_vwap_reflexive(
     }
 }
 
-pub struct VwapReversionStrategy;
+// Strategy logic delegated to modules below
 
-#[async_trait]
-impl TradingStrategy for VwapReversionStrategy {
-    async fn evaluate(
-        &self,
-        state: &AppState,
-        strategy: &StrategyRecord,
-        _candles: &[Candle],
-        quote: &Quote,
-        _options: &[crate::models::OptionContractSnapshot],
-        _position: Option<&PositionRecord>,
-        kronos_score: Option<f64>,
-    ) -> StrategySignal {
-        // Use the brain logic from vwap_reversion module
-        let mut tracker = vwap_reversion::VwapTracker::new();
-        // Since we don't persist tracker across evaluations in this stateful way yet,
-        // we'll bootstrap it from current candles for this run.
-        // In a production high-frequency setup, we would maintain this in AppState.
-        for candle in _candles {
-            tracker.update(candle.close, candle.volume);
-        }
-        vwap_reversion::evaluate_vwap_reversion(
-            state,
-            &strategy.id,
-            &quote.symbol,
-            quote.price,
-            &tracker,
-            kronos_score,
-        )
-    }
-}
-
-pub struct JarrodVwapStrategy;
-
-#[async_trait]
-impl TradingStrategy for JarrodVwapStrategy {
-    async fn evaluate(
-        &self,
-        state: &AppState,
-        strategy: &StrategyRecord,
-        candles: &[Candle],
-        _quote: &Quote,
-        _options: &[crate::models::OptionContractSnapshot],
-        position: Option<&PositionRecord>,
-        kronos_score: Option<f64>,
-    ) -> StrategySignal {
-        jarrod_vwap::evaluate_jarrod_vwap(
-            state,
-            &strategy.id,
-            &strategy.tracked_symbols.first().unwrap_or(&String::new()),
-            candles,
-            position,
-            kronos_score,
-        )
-    }
-}
 
 pub struct RsiMeanReversionStrategy;
 
@@ -585,29 +530,5 @@ mod tests {
         let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &[], &quote, &[], None, None));
         assert_eq!(signal.action, SignalAction::Hold);
         assert_eq!(signal.reason, "VWAP unavailable");
-    }
-}
-pub struct ParitySniperStrategy;
-
-#[async_trait]
-impl TradingStrategy for ParitySniperStrategy {
-    async fn evaluate(
-        &self,
-        state: &AppState,
-        strategy: &StrategyRecord,
-        _candles: &[Candle],
-        quote: &Quote,
-        options: &[crate::models::OptionContractSnapshot],
-        _position: Option<&PositionRecord>,
-        kronos_score: Option<f64>,
-    ) -> StrategySignal {
-        parity_sniper::evaluate_parity_sniper(
-            state,
-            &strategy.id,
-            &quote.symbol,
-            quote.price,
-            options,
-            kronos_score,
-        )
     }
 }

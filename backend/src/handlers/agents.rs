@@ -200,3 +200,15 @@ pub async fn flatten_strategy_position(
         error: None,
     })
 }
+pub async fn hide_trade(
+    State(state): State<AppState>,
+    Path(trade_id): Path<String>,
+) -> AppResult<ApiResponse<()>> {
+    let db = state.db.lock().await;
+    db.set_trade_hidden(&trade_id, true)?;
+    Ok(ApiResponse {
+        success: true,
+        data: Some(()),
+        error: None,
+    })
+}

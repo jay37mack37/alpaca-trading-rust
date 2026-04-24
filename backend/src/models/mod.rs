@@ -113,6 +113,9 @@ pub enum StrategyKind {
     ParitySniper,
     VwapReversion,
     JarrodVwap,
+    YieldRotation,
+    DistributionSniper,
+    GammaFlip,
 }
 
 impl StrategyKind {
@@ -126,6 +129,9 @@ impl StrategyKind {
             Self::ParitySniper => "parity_sniper",
             Self::VwapReversion => "vwap_reversion",
             Self::JarrodVwap => "jarrod_vwap",
+            Self::YieldRotation => "yield_rotation",
+            Self::DistributionSniper => "distribution_sniper",
+            Self::GammaFlip => "gamma_flip",
         }
     }
 }
@@ -353,6 +359,8 @@ pub struct PositionSummary {
     pub buy_logic: Option<String>,
     pub entry_math: Option<String>,
     pub entry_ai: Option<f64>,
+    pub hold_intent: Option<String>,
+    pub planned_exit: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -389,6 +397,13 @@ pub struct TradeRecord {
     pub execution_mode: ExecutionMode,
     pub realized_pnl: Option<f64>,
     pub executed_at: String,
+    pub hidden: bool,
+    pub hold_intent: Option<String>,
+    pub exit_logic: Option<String>,
+    pub planned_exit: Option<String>,
+    pub buy_logic: Option<String>,
+    pub entry_math: Option<String>,
+    pub entry_ai: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -436,6 +451,8 @@ pub struct RiskParameters {
     pub max_daily_loss: f64,
     #[serde(default)]
     pub blacklisted_symbols: Vec<String>,
+    #[serde(default)]
+    pub max_daily_trades: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -637,6 +654,8 @@ pub struct PositionRecord {
     pub buy_logic: Option<String>,
     pub entry_math: Option<String>,
     pub entry_ai: Option<f64>,
+    pub hold_intent: Option<String>,
+    pub planned_exit: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -674,7 +693,10 @@ pub struct StrategySignal {
     pub math_edge: Option<String>,
     pub ai_score: Option<String>,
     pub stagnation_timeout_ms: Option<u64>,
+    pub hold_intent: Option<String>,
+    pub planned_exit: Option<String>,
     pub exit_logic: Option<String>,
+    pub legs: Option<Vec<crate::models::TradeLeg>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

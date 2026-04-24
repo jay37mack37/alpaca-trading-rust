@@ -156,7 +156,7 @@ pub async fn run_strategy_once(
 
 
                 if !matches!(signal.action, SignalAction::Hold) && current_position.is_none() {
-                    if let Err(e) = state.risk_engine.validate(&latest_strategy, &signal).await {
+                    if let Err(e) = state.risk_engine.validate(state.db.clone(), &latest_strategy, &signal).await {
                         broadcast_audit_log(
                             &state,
                             AuditEvent::now(

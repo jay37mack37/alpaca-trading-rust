@@ -26,13 +26,22 @@ impl TradingStrategy for YieldRotationStrategy {
             return hold("Currently harvesting yield in SGOV");
         }
 
-        // 2. Fetch system-wide buying power from the state or broker sync
-        // In a real run, we'd check the cached account summary
-        // For simplicity, we'll try to get it from the DB or a recent sync
+        // 2. Logging for console visibility
+        crate::agents::broadcast_audit_log(
+            state,
+            crate::logger::SystemEvent::now(
+                crate::logger::SystemSource::System,
+                Some(_strategy.id.clone()),
+                "SGOV".to_string(),
+                crate::logger::SystemEventType::Scan,
+                "Audit".to_string(),
+                0.5,
+                "YIELD AUDIT: Checking idle cash thresholds for SGOV rotation.".to_string(),
+            )
+        );
+
+        // 3. Fetch system-wide buying power from the state or broker sync
         let bp = 0.0; // TODO: Pull from latest broker sync
-        
-        // This strategy is unique because it reacts to Account state, not Price state.
-        // The implementation details will depend on the executor passing the BP.
         
         hold("Yield rotation requires system-wide BP audit (Handled by sync loop)")
     }

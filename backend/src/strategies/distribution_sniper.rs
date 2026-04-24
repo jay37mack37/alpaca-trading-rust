@@ -27,9 +27,36 @@ impl TradingStrategy for DistributionSniperStrategy {
         }
 
         // 2. Fetch dividend info
+        crate::agents::broadcast_audit_log(
+            state,
+            crate::logger::SystemEvent::now(
+                crate::logger::SystemSource::System,
+                Some(_strategy.id.clone()),
+                quote.symbol.clone(),
+                crate::logger::SystemEventType::Scan,
+                format!("Price: ${:.2}", quote.price),
+                0.5,
+                format!("DIVIDEND SCAN: Checking yield capture feasibility for {}.", quote.symbol),
+            )
+        );
+
         let dividend_info = match CorporateActionsService::fetch_dividend_info(&state.http, &quote.symbol).await {
             Ok(Some(info)) => info,
-            _ => return hold("No upcoming dividend found"),
+            _ => {
+                crate::agents::broadcast_audit_log(
+                    state,
+                    crate::logger::SystemEvent::now(
+                        crate::logger::SystemSource::System,
+                        Some(_strategy.id.clone()),
+                        quote.symbol.clone(),
+                        crate::logger::SystemEventType::Scan,
+                        "N/A".to_string(),
+                        0.5,
+                        format!("NO DIVIDEND: {} has no upcoming payouts in database.", quote.symbol),
+                    )
+                );
+                return hold("No upcoming dividend found");
+            }
         };
 
         let now = Utc::now();

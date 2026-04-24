@@ -775,6 +775,20 @@ impl Database {
         Self::list_strategy_records_internal(&self.conn)
     }
 
+    pub fn get_count_trades_today(&self, strategy_id: &str) -> AppResult<u32> {
+        Self::get_count_trades_today_internal(&self.conn, strategy_id)
+    }
+
+    fn get_count_trades_today_internal(conn: &Connection, strategy_id: &str) -> AppResult<u32> {
+        let today_prefix = Utc::now().format("%Y-%m-%d").to_string();
+        let count: u32 = conn.query_row(
+            "SELECT COUNT(*) FROM trade_log WHERE strategy_id = ?1 AND executed_at LIKE ?2",
+            params![strategy_id, format!("{}%", today_prefix)],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
     fn list_strategy_records_internal(conn: &Connection) -> AppResult<Vec<StrategyRecord>> {
         let mut stmt = conn.prepare(
             "SELECT id, name, kind, enabled, execution_mode, asset_class_target,
