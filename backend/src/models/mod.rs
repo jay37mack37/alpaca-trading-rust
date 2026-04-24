@@ -57,6 +57,8 @@ pub enum ExecutionMode {
     LocalPaper,
     AlpacaPaper,
     AlpacaLive,
+    ManualReconciliation,
+    AlpacaReconciliation,
 }
 
 impl ExecutionMode {

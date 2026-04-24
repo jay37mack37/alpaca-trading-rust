@@ -256,11 +256,11 @@ pub fn prepare_option_trade(
                 legs: legs.clone(),
                 take_profit: signal.take_profit,
                 exit_logic: signal.exit_logic.clone(),
-                buy_logic: None,
-                entry_math: None,
-                entry_ai: None,
-                hold_intent: None,
-                planned_exit: None,
+                buy_logic: Some(signal.reason.clone()),
+                entry_math: signal.math_edge.clone(),
+                entry_ai: signal.ai_score.as_ref().and_then(|s| s.parse::<f64>().ok()),
+                hold_intent: signal.hold_intent.clone(),
+                planned_exit: signal.planned_exit.clone(),
             };
             let broker_order =
                 needs_broker_order.then_some(match strategy.option_structure_preset {

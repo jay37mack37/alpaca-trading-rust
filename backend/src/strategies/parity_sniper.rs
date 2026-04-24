@@ -1,3 +1,4 @@
+use chrono::Utc;
 use crate::logger::{SystemEvent, SystemSource, SystemEventType};
 use crate::agents::broadcast_audit_log;
 use crate::models::{SignalAction, StrategySignal, OptionContractSnapshot, Candle, PositionRecord, Quote, StrategyRecord};
@@ -15,10 +16,10 @@ impl crate::strategies::TradingStrategy for ParitySniperStrategy {
         _candles: &[Candle],
         quote: &Quote,
         options: &[crate::models::OptionContractSnapshot],
-        _position: Option<&PositionRecord>,
+        position: Option<&PositionRecord>,
         kronos_score: Option<f64>,
     ) -> StrategySignal {
-        evaluate_parity_sniper(state, &strategy.id, &quote.symbol, quote.price, options, kronos_score)
+        evaluate_parity_sniper(state, &strategy.id, &quote.symbol, quote.price, options, position, kronos_score)
     }
 }
 
@@ -41,8 +42,47 @@ pub fn evaluate_parity_sniper(
     symbol: &str,
     spot_price: f64,
     options: &[OptionContractSnapshot],
+    position: Option<&PositionRecord>,
     kronos_score: Option<f64>,
 ) -> StrategySignal {
+    // 1. Position Management Logic
+    if let Some(pos) = position {
+        // Find current parity gap for the held strike/expiry
+        let matching_call = options.iter().find(|o| o.contract_symbol == pos.instrument_symbol);
+        let matching_put = options.iter().find(|o| {
+            o.strike == pos.strike.unwrap_or(0.0) &&
+            o.expiration == pos.expiration.as_deref().unwrap_or("") &&
+            o.option_type.to_lowercase() == "put"
+        });
+
+        if let (Some(call), Some(put)) = (matching_call, matching_put) {
+            let cp = (call.bid.unwrap_or(0.0) + call.ask.unwrap_or(0.0)) / 2.0;
+            let pp = (put.bid.unwrap_or(0.0) + put.ask.unwrap_or(0.0)) / 2.0;
+            let strike = pos.strike.unwrap_or(0.0);
+            
+            let today = Utc::now().date_naive();
+            let exp_date = chrono::NaiveDate::parse_from_str(pos.expiration.as_deref().unwrap_or(""), "%Y-%m-%d").unwrap_or(today);
+            let dte = exp_date.signed_duration_since(today).num_days() as f64;
+            
+            let current_gap = calculate_parity_gap(spot_price, cp, pp, strike, dte);
+            let current_edge = if strike > 0.0 { current_gap / strike } else { 0.0 };
+
+            // EXIT CONDITION: Gap has closed (Edge < 0.5%)
+            if current_edge < 0.005 {
+                return StrategySignal {
+                    action: SignalAction::Sell,
+                    allocation_fraction: 1.0,
+                    reason: format!("PROACTIVE EXIT: Parity gap has converged (Edge: {:.2}%)", current_edge * 100.0),
+                    source: Some("PARITY_SNIPER".to_string()),
+                    exit_logic: Some("Gap Convergence".to_string()),
+                    ..default_signal()
+                };
+            }
+        }
+        return crate::strategies::hold("Monitoring parity gap for convergence");
+    }
+
+    // 2. Entry Scan Logic
     let mut best_gap = 0.0;
     let mut best_strike = 0.0;
     let mut best_context = String::new();
@@ -64,8 +104,8 @@ pub fn evaluate_parity_sniper(
                 let put_price = put.ask.unwrap_or(0.0);
 
                 if call_price > 0.0 && put_price > 0.0 {
-                    let today = chrono::Local::now().date_naive();
-                    let exp_date = chrono::NaiveDate::parse_from_str(&contract.expiration, "%Y-%m-%d").unwrap_or(today);
+                    let today = Utc::now().date_naive();
+                    let exp_date = chrono::DateTime::parse_from_rfc3339(&contract.expiration).map(|d| d.date_naive()).unwrap_or(today);
                     let dte = exp_date.signed_duration_since(today).num_days() as f64;
 
                     let gap = calculate_parity_gap(spot_price, call_price, put_price, contract.strike, dte);
@@ -110,6 +150,7 @@ pub fn evaluate_parity_sniper(
             source: Some("PARITY_SNIPER".to_string()),
             math_edge: Some(format!("{:.2}%", edge_pct * 100.0)),
             exit_logic: Some("Parity Mean".to_string()),
+            planned_exit: Some("Proactive selling upon gap convergence (<0.5%)".to_string()),
             ..default_signal()
         };
     }
@@ -119,20 +160,7 @@ pub fn evaluate_parity_sniper(
 
 fn default_signal() -> StrategySignal {
     StrategySignal {
-        action: SignalAction::Hold,
-        allocation_fraction: 0.0,
-        reason: "".to_string(),
-        limit_price: None,
-        stop_loss: None,
-        take_profit: None,
-        trailing_stop: None,
-        walk_to_mid: None,
-        split_exit: None,
-        log_type: None,
-        new_state: None,
         source: Some("PARITY_SNIPER".to_string()),
-        math_edge: None,
-        ai_score: None,
         ..Default::default()
     }
 }

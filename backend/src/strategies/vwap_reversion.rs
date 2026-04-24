@@ -15,7 +15,7 @@ impl crate::strategies::TradingStrategy for VwapReversionStrategy {
         candles: &[Candle],
         quote: &Quote,
         _options: &[crate::models::OptionContractSnapshot],
-        position: Option<&PositionRecord>,
+        _position: Option<&PositionRecord>,
         kronos_score: Option<f64>,
     ) -> StrategySignal {
         let mut tracker = VwapTracker::new();
@@ -159,20 +159,7 @@ pub fn evaluate_vwap_reversion(
 
 fn default_signal() -> StrategySignal {
     StrategySignal {
-        action: SignalAction::Hold,
-        allocation_fraction: 0.0,
-        reason: "".to_string(),
-        limit_price: None,
-        stop_loss: None,
-        take_profit: None,
-        trailing_stop: None,
-        walk_to_mid: None,
-        split_exit: None,
-        log_type: None,
-        new_state: None,
         source: Some("VWAP_REVERSION".to_string()),
-        math_edge: None,
-        ai_score: None,
         ..Default::default()
     }
 }

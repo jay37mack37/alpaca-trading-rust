@@ -332,9 +332,11 @@ async fn main() -> anyhow::Result<()> {
         .with_state(state.clone());
 
     let address = SocketAddr::new(state.config.host.parse()?, state.config.port);
-    info!("backend listening on http://{address}");
-
+    println!("🚀 AutoStonks Trade Engine is initializing...");
+    println!("📡 API Server listening on: http://{}", address);
+    
     let listener = tokio::net::TcpListener::bind(address).await?;
+    println!("✅ Web server is READY for requests!");
     axum::serve(listener, app).await?;
     Ok(())
 }

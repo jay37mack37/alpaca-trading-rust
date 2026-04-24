@@ -152,20 +152,7 @@ pub async fn evaluate_listing_arbitrage_v2(
 
 fn default_signal() -> StrategySignal {
     StrategySignal {
-        action: SignalAction::Hold,
-        allocation_fraction: 0.0,
-        reason: "".to_string(),
-        limit_price: None,
-        stop_loss: None,
-        take_profit: None,
-        trailing_stop: None,
-        walk_to_mid: None,
-        split_exit: None,
-        log_type: None,
-        new_state: None,
-        source: None,
-        math_edge: None,
-        ai_score: None,
+        source: Some("LISTING_ARB".to_string()),
         ..Default::default()
     }
 }

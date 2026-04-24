@@ -16,7 +16,7 @@ impl crate::strategies::TradingStrategy for JarrodVwapStrategy {
         position: Option<&PositionRecord>,
         kronos_score: Option<f64>,
     ) -> StrategySignal {
-        evaluate_jarrod_vwap(state, &strategy.id, "SPY", candles, position, kronos_score)
+        evaluate_jarrod_vwap(state, strategy, candles, position, kronos_score)
     }
 }
 
@@ -83,23 +83,8 @@ fn sma(values: &[f64], period: usize) -> Option<f64> {
 
 fn default_signal() -> StrategySignal {
     StrategySignal {
-        action: SignalAction::Hold,
-        allocation_fraction: 0.0,
-        reason: "".to_string(),
-        limit_price: None,
-        stop_loss: None,
-        take_profit: None,
-        trailing_stop: None,
-        walk_to_mid: None,
-        split_exit: None,
-        log_type: None,
-        new_state: None,
         source: Some("JARROD_VWAP".to_string()),
-        option_entry_style: None,
-        math_edge: None,
-        ai_score: None,
-        stagnation_timeout_ms: None,
-        exit_logic: None,
+        ..Default::default()
     }
 }
 

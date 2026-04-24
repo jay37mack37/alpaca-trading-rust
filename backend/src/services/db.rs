@@ -3220,27 +3220,23 @@ fn normalize_strategy_options(
 }
 
 fn deserialize_position_legs(json_text: &str) -> Result<Vec<PositionLeg>, rusqlite::Error> {
-    serde_json::from_str(json_text).map_err(|err| {
-        rusqlite::Error::FromSqlConversionFailure(
-            0,
-            rusqlite::types::Type::Text,
-            Box::new(AppError::Internal(format!(
-                "invalid position legs json: {err}"
-            ))),
-        )
-    })
+    match serde_json::from_str(json_text) {
+        Ok(legs) => Ok(legs),
+        Err(err) => {
+            eprintln!("Corrupted position legs JSON: {} - error: {}", json_text, err);
+            Ok(Vec::new())
+        }
+    }
 }
 
 fn deserialize_trade_legs(json_text: &str) -> Result<Vec<TradeLeg>, rusqlite::Error> {
-    serde_json::from_str(json_text).map_err(|err| {
-        rusqlite::Error::FromSqlConversionFailure(
-            0,
-            rusqlite::types::Type::Text,
-            Box::new(AppError::Internal(format!(
-                "invalid trade legs json: {err}"
-            ))),
-        )
-    })
+    match serde_json::from_str(json_text) {
+        Ok(legs) => Ok(legs),
+        Err(err) => {
+            eprintln!("Corrupted trade legs JSON: {} - error: {}", json_text, err);
+            Ok(Vec::new())
+        }
+    }
 }
 
 fn position_legs_from_trade(
@@ -3317,6 +3313,8 @@ fn execution_mode_from_str(value: &str) -> Result<ExecutionMode, rusqlite::Error
         "local_paper" => Ok(ExecutionMode::LocalPaper),
         "alpaca_paper" => Ok(ExecutionMode::AlpacaPaper),
         "alpaca_live" => Ok(ExecutionMode::AlpacaLive),
+        "manual_reconciliation" => Ok(ExecutionMode::ManualReconciliation),
+        "alpaca_reconciliation" => Ok(ExecutionMode::AlpacaReconciliation),
         other => Err(rusqlite::Error::FromSqlConversionFailure(
             0,
             rusqlite::types::Type::Text,
@@ -3415,6 +3413,8 @@ fn execution_mode_to_str(value: ExecutionMode) -> &'static str {
         ExecutionMode::LocalPaper => "local_paper",
         ExecutionMode::AlpacaPaper => "alpaca_paper",
         ExecutionMode::AlpacaLive => "alpaca_live",
+        ExecutionMode::ManualReconciliation => "manual_reconciliation",
+        ExecutionMode::AlpacaReconciliation => "alpaca_reconciliation",
     }
 }
 

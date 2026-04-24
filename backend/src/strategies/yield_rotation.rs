@@ -40,9 +40,24 @@ impl TradingStrategy for YieldRotationStrategy {
             )
         );
 
-        // 3. Fetch system-wide buying power from the state or broker sync
-        let bp = 0.0; // TODO: Pull from latest broker sync
+        // 3. Fetch current Buying Power from the strategy's linked account
+        let db = state.db.lock().await;
+        let bp = db.strategy_broker_sync(&_strategy.id)
+            .ok()
+            .flatten()
+            .and_then(|s| s.account)
+            .and_then(|a| a.buying_power)
+            .unwrap_or(0.0);
         
-        hold("Yield rotation requires system-wide BP audit (Handled by sync loop)")
+        // 4. The Trigger: Idle Cash > $2000
+        if bp > 2000.0 {
+            return buy(
+                format!("Rotating Idle Cash (${:.2}) to SGOV", bp),
+                0.95, // Use 95% of BP for SGOV
+                None
+            );
+        }
+        
+        hold(format!("Insufficient idle cash for yield rotation (${:.2})", bp))
     }
 }

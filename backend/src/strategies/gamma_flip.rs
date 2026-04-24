@@ -1,5 +1,5 @@
 use crate::models::{
-    Candle, Quote, SignalAction, StrategyRecord, StrategySignal,
+    Candle, PositionRecord, Quote, SignalAction, StrategyRecord, StrategySignal,
 };
 use async_trait::async_trait;
 use crate::strategies::{TradingStrategy, hold, buy};
@@ -17,11 +17,11 @@ impl TradingStrategy for GammaFlipStrategy {
         _candles: &[Candle],
         quote: &Quote,
         options: &[crate::models::OptionContractSnapshot],
-        position: Option<&crate::models::PositionRecord>,
+        _position: Option<&PositionRecord>,
         _kronos_score: Option<f64>,
     ) -> StrategySignal {
         // 1. Check if we already have a position
-        if let Some(pos) = position {
+        if let Some(_pos) = _position {
             // Exit Logic: 90% Drawdown OR 300% Profit Target with 50% Trailing
             // In a real implementation, we'd calculate unrealized P&L here
             return hold("Managing gamma flip position");
@@ -82,20 +82,28 @@ impl TradingStrategy for GammaFlipStrategy {
             )
         );
 
-        // 3. The Trigger: Negative Gamma + Volume Spike
-        // For a full implementation, we need the "Previous GEX" to detect the crossover
-        // For now, we trigger if Net GEX is significantly negative
-        if net_gex < -1000000.0 { // Arbitrary threshold for "Negative Gamma Territory"
-            // Filter for 0DTE OTM Options (1.5% out)
-            let target_strike = quote.price * 0.985; // OTM Put for a down-flip
-            
+        // 3. Bidirectional Gamma Flip Trigger
+        // Threshold: +/- $500k Net GEX (Normalized for high-convexity setup)
+        let threshold = 500_000.0;
+        
+        if net_gex < -threshold {
+            // Negative Gamma Territory: High Put Convexity
+            let target_strike = quote.price * 0.985; // 1.5% OTM Put
             return buy(
-                format!("Gamma Flip Triggered (Net GEX: {:.0})", net_gex),
-                0.20, // 20% allocation
+                format!("Gamma Flip (Down): Net GEX {:.2}M", net_gex / 1_000_000.0),
+                0.15, // 15% allocation
+                Some(target_strike)
+            );
+        } else if net_gex > threshold {
+            // Positive Gamma Territory: Call Acceleration
+            let target_strike = quote.price * 1.015; // 1.5% OTM Call
+            return buy(
+                format!("Gamma Flip (Up): Net GEX {:.2}M", net_gex / 1_000_000.0),
+                0.15,
                 Some(target_strike)
             );
         }
 
-        hold(format!("Stable GEX: {:.0}", net_gex))
+        hold(format!("Stable GEX Zone: {:.2}M", net_gex / 1_000_000.0))
     }
 }

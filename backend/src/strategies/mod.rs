@@ -1,3 +1,4 @@
+use chrono::{DateTime, Datelike, Timelike, Utc};
 pub mod listing_arb;
 pub mod parity_sniper;
 pub mod vwap_reversion;
@@ -64,14 +65,46 @@ pub async fn evaluate_strategy(
     position: Option<&PositionRecord>,
     kronos_score: Option<f64>,
 ) -> StrategySignal {
+    // 1. GLOBAL 0DTE SAFETY KILL-SWITCH
+    // Ensures options expiring today are closed before market close.
+    if let Some(pos) = position {
+        if let Some(ref expiry_str) = pos.expiration {
+            if let Ok(expiry) = chrono::DateTime::parse_from_rfc3339(expiry_str) {
+                let today = chrono::Utc::now().date_naive();
+                if expiry.date_naive() == today {
+                    // Check if time is past 15:50 EST/EDT (19:50 UTC in Summer)
+                    let now = chrono::Utc::now();
+                    let trigger_time_reached = (now.hour() == 19 && now.minute() >= 50) || now.hour() >= 20;
+
+                    if trigger_time_reached {
+                         return StrategySignal {
+                            action: SignalAction::Sell,
+                            allocation_fraction: 1.0,
+                            reason: "0DTE SAFETY KILL-SWITCH: Closing expiring option before market close".to_string(),
+                            exit_logic: Some("Automatic 0DTE Expiry Protection".to_string()),
+                            ..Default::default()
+                        };
+                    }
+                }
+            }
+        }
+    }
+
     let registry = get_strategy_registry();
-    if let Some(trading_strategy) = registry.get(&strategy.kind) {
+    let mut signal = if let Some(trading_strategy) = registry.get(&strategy.kind) {
         trading_strategy
             .evaluate(state, strategy, candles, quote, options, position, kronos_score)
             .await
     } else {
         hold(format!("Strategy implementation for {:?} not found", strategy.kind))
+    };
+
+    // 2. ENRICH EXITS: Ensure every buy signal has a planned exit strategy
+    if matches!(signal.action, SignalAction::Buy) && signal.planned_exit.is_none() {
+        signal.planned_exit = Some("Standard Risk Exit: 25% TP / 15% SL".to_string());
     }
+
+    signal
 }
 
 pub struct VwapReflexiveStrategy;
