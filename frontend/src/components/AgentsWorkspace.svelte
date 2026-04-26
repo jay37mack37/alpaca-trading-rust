@@ -68,10 +68,10 @@
     run_interval: "30",
     run_interval_unit: "seconds",
   };
-  let createKind: StrategyKind = "vwap_reflexive";
+  let createKind: StrategyKind = "vwap_reflexive" as StrategyKind;
   let createErrors: ValidationErrors = {};
 
-  $: if (createKind === "jarrod_vwap" && createDraft.tracked_symbols === "AAPL, SPY") {
+  $: if ((createKind as string) === "jarrod_vwap" && createDraft.tracked_symbols === "AAPL, SPY") {
     createDraft.tracked_symbols = "SPY";
     createDraft.asset_class_target = "options";
   }
