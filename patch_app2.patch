@@ -1,0 +1,10 @@
+--- frontend/src/App.svelte
++++ frontend/src/App.svelte
+@@ -452,6 +452,7 @@
+     optionsActive={optionsActive}
+     buyingPower={heartbeatBuyingPower || totalBuyingPower}
+     kronosLatency={kronosLatency}
++    version={backendVersion}
+   />
+   <header class="topbar">
+     <div class="breadcrumb">

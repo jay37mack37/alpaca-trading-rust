@@ -72,7 +72,7 @@
   let createKind: StrategyKind = "vwap_reflexive";
   let createErrors: ValidationErrors = {};
 
-  $: if (createKind === "jarrod_vwap" && createDraft.tracked_symbols === "AAPL, SPY") {
+  $: if ((createKind as unknown as string) === "jarrod_vwap" && createDraft.tracked_symbols === "AAPL, SPY") {
     createDraft.tracked_symbols = "SPY";
     createDraft.asset_class_target = "options";
   }

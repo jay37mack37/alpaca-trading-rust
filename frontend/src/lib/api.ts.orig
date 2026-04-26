@@ -103,17 +103,6 @@ export async function fetchSetupStatus(): Promise<SetupStatusResponse> {
   return body.data!;
 }
 
-export async function fetchHealth(): Promise<{ status: string; now: string; version: string }> {
-  const response = await fetch(`${API_BASE}/api/health`, {
-    headers: {
-      Authorization: `Bearer ${getRuntimeToken()}`,
-    }
-  });
-  const body = await response.json();
-  if (!body.success) throw new Error(body.error || "Failed to fetch health");
-  return body.data!;
-}
-
 export async function writeEnvToken(apiToken: string): Promise<{ written: boolean; message: string }> {
   const response = await fetch(`${API_BASE}/api/setup/env`, {
     method: "POST",
@@ -134,9 +123,6 @@ export const api = {
     if (strategyId) params.set("strategy_id", strategyId);
     if (token) params.set("token", token);
     return `${API_BASE}/api/stream?${params.toString()}`;
-  },
-  fetchHealth() {
-    return fetchHealth();
   },
   dashboard(symbol: string, provider: string) {
     const params = new URLSearchParams({ symbol, provider });
