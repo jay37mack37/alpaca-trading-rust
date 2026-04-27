@@ -26,7 +26,6 @@
   let symbol = "SPY";
   let symbolDraft = "SPY";
   let provider: DataProvider = "yahoo";
-  let backendVersion: string = "";
   let dashboard: DashboardResponse | null = null;
   let selectedStrategyId = "";
   let selectedStrategyDetail: StrategyDetailResponse | null = null;
@@ -280,12 +279,6 @@
       error = err instanceof Error ? err.message : "Failed to load dashboard";
     } finally {
       loading = false;
-      try {
-        const health = await api.fetchHealth();
-        backendVersion = health.version;
-      } catch (err) {
-        console.warn("Could not load backend version:", err);
-      }
     }
   }
 
@@ -452,7 +445,6 @@
     optionsActive={optionsActive}
     buyingPower={heartbeatBuyingPower || totalBuyingPower}
     kronosLatency={kronosLatency}
-    version={backendVersion}
   />
   <header class="topbar">
     <div class="breadcrumb">

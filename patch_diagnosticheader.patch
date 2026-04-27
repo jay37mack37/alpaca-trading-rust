@@ -1,0 +1,35 @@
+--- frontend/src/components/DiagnosticHeader.svelte
++++ frontend/src/components/DiagnosticHeader.svelte
+@@ -5,6 +5,7 @@
+   export let optionsActive: boolean = false;
+   export let kronosLatency: number = 0;
+   export let buyingPower: number = 0;
++  export let version: string = "";
+
+   function getStatusColor(active: boolean) {
+     return active ? "#4ade80" : "#f87171";
+@@ -37,6 +38,13 @@
+     <span class="label">Buying Power</span>
+     <span class="value money">{prettyMoneyStrict(buyingPower)}</span>
+   </div>
++
++  {#if version}
++  <div class="stat-item version-item">
++    <span class="label">Version</span>
++    <span class="value">{version}</span>
++  </div>
++  {/if}
+ </div>
+
+ <style>
+@@ -49,6 +57,10 @@
+     backdrop-filter: blur(10px);
+     font-size: 0.85rem;
+   }
++
++  .version-item {
++    margin-left: auto;
++  }
+
+   .stat-item {
+     display: flex;
