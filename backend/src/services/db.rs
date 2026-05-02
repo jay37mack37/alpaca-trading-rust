@@ -499,11 +499,25 @@ impl Database {
         }
 
         let now = now();
-        for symbol in defaults {
-            self.conn.execute(
-                "INSERT OR IGNORE INTO watchlist (symbol, added_at) VALUES (?1, ?2)",
-                params![symbol.to_uppercase(), now],
-            )?;
+
+        // SQLite limits the number of bound parameters per query (often 999 or 32766 depending on version).
+        // Since we bind 2 parameters per row, we can insert up to 499 rows at a time safely.
+        let chunk_size = 499;
+
+        for chunk in defaults.chunks(chunk_size) {
+            let mut query = String::from("INSERT OR IGNORE INTO watchlist (symbol, added_at) VALUES ");
+            let mut params_vec: Vec<String> = Vec::with_capacity(chunk.len() * 2);
+
+            for i in 0..chunk.len() {
+                if i > 0 {
+                    query.push_str(", ");
+                }
+                query.push_str(&format!("(?{}, ?{})", i * 2 + 1, i * 2 + 2));
+                params_vec.push(chunk[i].to_uppercase());
+                params_vec.push(now.clone());
+            }
+
+            self.conn.execute(&query, rusqlite::params_from_iter(params_vec))?;
         }
 
         Ok(())
