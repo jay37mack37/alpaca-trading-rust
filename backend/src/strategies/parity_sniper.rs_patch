@@ -1,0 +1,81 @@
+<<<<<<< SEARCH
+    // 2. Entry Scan Logic
+    let mut best_gap = 0.0;
+    let mut best_strike = 0.0;
+    let mut best_context = String::new();
+
+    for contract in options {
+        if (contract.strike - spot_price).abs() / spot_price > 0.05 {
+            continue;
+        }
+
+        if contract.option_type.to_lowercase() == "call" {
+            let matching_put = options.iter().find(|o| {
+                o.strike == contract.strike &&
+                o.expiration == contract.expiration &&
+                o.option_type.to_lowercase() == "put"
+            });
+
+            if let Some(put) = matching_put {
+                let call_price = contract.ask.unwrap_or(0.0);
+                let put_price = put.ask.unwrap_or(0.0);
+
+                if call_price > 0.0 && put_price > 0.0 {
+                    let today = Utc::now().date_naive();
+                    let exp_date = chrono::DateTime::parse_from_rfc3339(&contract.expiration).map(|d| d.date_naive()).unwrap_or(today);
+                    let dte = exp_date.signed_duration_since(today).num_days() as f64;
+
+                    let gap = calculate_parity_gap(spot_price, call_price, put_price, contract.strike, dte);
+                    if gap > best_gap {
+                        best_gap = gap;
+                        best_strike = contract.strike;
+                        best_context = format!("S:{:.2} C:{:.2} P:{:.2} K:{:.0}", spot_price, call_price, put_price, contract.strike);
+                    }
+                }
+            }
+        }
+    }
+=======
+    // 2. Entry Scan Logic
+    let mut best_gap = 0.0;
+    let mut best_strike = 0.0;
+    let mut best_context = String::new();
+
+    let mut puts_map = std::collections::HashMap::new();
+    for contract in options {
+        if (contract.strike - spot_price).abs() / spot_price > 0.05 {
+            continue;
+        }
+        if contract.option_type.eq_ignore_ascii_case("put") {
+            let key = (contract.strike.to_bits(), &contract.expiration);
+            puts_map.insert(key, contract);
+        }
+    }
+
+    for contract in options {
+        if (contract.strike - spot_price).abs() / spot_price > 0.05 {
+            continue;
+        }
+
+        if contract.option_type.eq_ignore_ascii_case("call") {
+            let key = (contract.strike.to_bits(), &contract.expiration);
+            if let Some(put) = puts_map.get(&key) {
+                let call_price = contract.ask.unwrap_or(0.0);
+                let put_price = put.ask.unwrap_or(0.0);
+
+                if call_price > 0.0 && put_price > 0.0 {
+                    let today = Utc::now().date_naive();
+                    let exp_date = chrono::DateTime::parse_from_rfc3339(&contract.expiration).map(|d| d.date_naive()).unwrap_or(today);
+                    let dte = exp_date.signed_duration_since(today).num_days() as f64;
+
+                    let gap = calculate_parity_gap(spot_price, call_price, put_price, contract.strike, dte);
+                    if gap > best_gap {
+                        best_gap = gap;
+                        best_strike = contract.strike;
+                        best_context = format!("S:{:.2} C:{:.2} P:{:.2} K:{:.0}", spot_price, call_price, put_price, contract.strike);
+                    }
+                }
+            }
+        }
+    }
+>>>>>>> REPLACE
