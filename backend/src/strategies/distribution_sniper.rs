@@ -110,7 +110,7 @@ impl TradingStrategy for DistributionSniperStrategy {
                             price: put_price,
                             multiplier: 100.0,
                             option_type: Some("put".to_string()),
-                            expiration: None, // TODO: Parse from symbol
+                            expiration: crate::options::parse_expiration_from_occ(&put.contract_symbol),
                             strike: Some(put.strike),
                         }
                     ]);
