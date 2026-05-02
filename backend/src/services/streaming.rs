@@ -445,7 +445,7 @@ async fn broadcast_market_event(
         db.store_market_snapshot(&quote, raw_json)?;
         // Update the market price in strategy_positions for live calculations
         db.mark_symbol_price(symbol, quote.price)?;
-        
+
         let strategies = db.list_strategies()?;
         let positions = db.list_all_open_positions()?;
         (strategies, positions)

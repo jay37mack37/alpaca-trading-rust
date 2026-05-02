@@ -186,8 +186,16 @@ pub async fn flatten_strategy_position(
     };
 
     if strategy.execution_mode.requires_external_broker() {
-        if let Ok(Some(credential)) = resolve_alpaca_credential(&state, strategy.credential_id.as_deref(), true).await {
-            crate::services::providers::liquidate_alpaca_position(&state.http, &credential, &symbol, state.config.mock_alpaca).await?;
+        if let Ok(Some(credential)) =
+            resolve_alpaca_credential(&state, strategy.credential_id.as_deref(), true).await
+        {
+            crate::services::providers::liquidate_alpaca_position(
+                &state.http,
+                &credential,
+                &symbol,
+                state.config.mock_alpaca,
+            )
+            .await?;
         }
     } else {
         let mut db = state.db.lock().await;

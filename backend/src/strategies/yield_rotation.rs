@@ -1,9 +1,7 @@
-use crate::models::{
-    Candle, Quote, SignalAction, StrategyRecord, StrategySignal,
-};
-use async_trait::async_trait;
-use crate::strategies::{TradingStrategy, hold, buy};
+use crate::models::{Candle, Quote, SignalAction, StrategyRecord, StrategySignal};
+use crate::strategies::{buy, hold, TradingStrategy};
 use crate::AppState;
+use async_trait::async_trait;
 
 /// Treasury Yield Rotation Strategy
 /// Rotates idle cash into $SGOV if BP > $1000 for prolonged periods.
@@ -37,27 +35,31 @@ impl TradingStrategy for YieldRotationStrategy {
                 "Audit".to_string(),
                 0.5,
                 "YIELD AUDIT: Checking idle cash thresholds for SGOV rotation.".to_string(),
-            )
+            ),
         );
 
         // 3. Fetch current Buying Power from the strategy's linked account
         let db = state.db.lock().await;
-        let bp = db.strategy_broker_sync(&_strategy.id)
+        let bp = db
+            .strategy_broker_sync(&_strategy.id)
             .ok()
             .flatten()
             .and_then(|s| s.account)
             .and_then(|a| a.buying_power)
             .unwrap_or(0.0);
-        
+
         // 4. The Trigger: Idle Cash > $2000
         if bp > 2000.0 {
             return buy(
                 format!("Rotating Idle Cash (${:.2}) to SGOV", bp),
                 0.95, // Use 95% of BP for SGOV
-                None
+                None,
             );
         }
-        
-        hold(format!("Insufficient idle cash for yield rotation (${:.2})", bp))
+
+        hold(format!(
+            "Insufficient idle cash for yield rotation (${:.2})",
+            bp
+        ))
     }
 }

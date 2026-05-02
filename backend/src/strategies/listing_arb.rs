@@ -1,20 +1,20 @@
+use crate::agents::broadcast_system_event;
 use crate::math::black_scholes_call;
+use crate::models::telemetry::StrategyType;
 use crate::models::{
-    OptionContractSnapshot, PositionRecord, Quote, SignalAction, StrategyRecord,
-    StrategySignal, Candle,
+    Candle, OptionContractSnapshot, PositionRecord, Quote, SignalAction, StrategyRecord,
+    StrategySignal,
 };
 use crate::options::parse_expiration_from_occ;
 use crate::strategies::{hold, TradingStrategy};
-use async_trait::async_trait;
-use crate::agents::broadcast_system_event;
-use crate::models::telemetry::StrategyType;
 use crate::AppState;
+use async_trait::async_trait;
 use chrono::{Local, NaiveDate};
 
 const SPY_SYMBOL: &str = "SPY";
 
 /// Professional Listing Arbitrage Strategy
-/// 
+///
 /// Phase 1: Selective Sniper & Drift Hunter
 pub async fn evaluate_listing_arbitrage_v2(
     state: &AppState,
@@ -39,14 +39,16 @@ pub async fn evaluate_listing_arbitrage_v2(
 
     // 2. Intelligence Check (Kronos AI)
     let kronos_val = kronos_score.unwrap_or(0.5);
-    
+
     // 3. Fair Value Calculation (Black-Scholes)
     let expiration = match parse_expiration_from_occ(&option.contract_symbol) {
         Some(exp) => exp,
         None => return hold("OCC parse error"),
     };
     let dte = days_until_expiration(&expiration).unwrap_or(0);
-    if dte <= 0 { return hold("Expired"); }
+    if dte <= 0 {
+        return hold("Expired");
+    }
 
     let iv = option.implied_volatility.unwrap_or(0.2);
     let fair_value = black_scholes_call(
@@ -59,7 +61,7 @@ pub async fn evaluate_listing_arbitrage_v2(
 
     // 4. Alpha Calculation
     let edge = (mid - fair_value) / fair_value;
-    
+
     // Telemetry
     broadcast_system_event(
         state,
@@ -67,9 +69,14 @@ pub async fn evaluate_listing_arbitrage_v2(
         &option.underlying_symbol,
         edge.abs(),
         kronos_val,
-        &format!("Analyzed {} at strike {:.0}. Black-Scholes edge: {:.2}%", option.contract_symbol, option.strike, edge * 100.0),
+        &format!(
+            "Analyzed {} at strike {:.0}. Black-Scholes edge: {:.2}%",
+            option.contract_symbol,
+            option.strike,
+            edge * 100.0
+        ),
     );
-    
+
     // 5. Entry Logic
     if position.is_none() {
         // Snipe Condition: Edge > 2% + Kronos > 0.8
@@ -77,11 +84,15 @@ pub async fn evaluate_listing_arbitrage_v2(
             return StrategySignal {
                 action: SignalAction::Buy,
                 allocation_fraction: 0.1,
-                reason: format!("SNIPE: Edge {:.1}% | Kronos {:.2}", edge * 100.0, kronos_val),
-                limit_price: Some(bid), // Start at Bid
-                walk_to_mid: Some(true), // Walk if not filled
+                reason: format!(
+                    "SNIPE: Edge {:.1}% | Kronos {:.2}",
+                    edge * 100.0,
+                    kronos_val
+                ),
+                limit_price: Some(bid),      // Start at Bid
+                walk_to_mid: Some(true),     // Walk if not filled
                 stop_loss: Some(mid * 0.98), // 2% Hard Stop
-                split_exit: Some(true), // 50/50 Scalp/Runner
+                split_exit: Some(true),      // 50/50 Scalp/Runner
                 log_type: Some("NEW".to_string()),
                 new_state: None,
                 source: Some("PARITY_SNIPER".to_string()),
@@ -93,10 +104,14 @@ pub async fn evaluate_listing_arbitrage_v2(
 
         // Drift Condition: Kronos > 0.6 + Positive Drift
         if edge < -0.01 && kronos_val > 0.6 {
-             return StrategySignal {
+            return StrategySignal {
                 action: SignalAction::Buy,
                 allocation_fraction: 0.05,
-                reason: format!("DRIFT: Edge {:.1}% | Kronos {:.2}", edge * 100.0, kronos_val),
+                reason: format!(
+                    "DRIFT: Edge {:.1}% | Kronos {:.2}",
+                    edge * 100.0,
+                    kronos_val
+                ),
                 limit_price: Some(mid),
                 walk_to_mid: Some(false),
                 stop_loss: Some(mid * 0.98),
@@ -138,16 +153,23 @@ pub async fn evaluate_listing_arbitrage_v2(
 
         // Price Edge Exit (Profit Taking)
         if edge > 0.01 {
-             return StrategySignal {
+            return StrategySignal {
                 action: SignalAction::Sell,
                 allocation_fraction: 1.0,
-                reason: format!("TARGET: Fair value reached/exceeded (Edge {:.1}%)", edge * 100.0),
+                reason: format!(
+                    "TARGET: Fair value reached/exceeded (Edge {:.1}%)",
+                    edge * 100.0
+                ),
                 ..default_signal()
             };
         }
     }
 
-    hold(&format!("Monitoring | Edge: {:.1}% | Kronos: {:.2}", edge * 100.0, kronos_val))
+    hold(&format!(
+        "Monitoring | Edge: {:.1}% | Kronos: {:.2}",
+        edge * 100.0,
+        kronos_val
+    ))
 }
 
 fn default_signal() -> StrategySignal {
@@ -177,7 +199,16 @@ impl TradingStrategy for ListingArbitrageStrategy {
         position: Option<&PositionRecord>,
         kronos_score: Option<f64>,
     ) -> StrategySignal {
-        evaluate_listing_arbitrage_wrapper(state, strategy, candles, quote, options, position, kronos_score).await
+        evaluate_listing_arbitrage_wrapper(
+            state,
+            strategy,
+            candles,
+            quote,
+            options,
+            position,
+            kronos_score,
+        )
+        .await
     }
 }
 
@@ -205,7 +236,8 @@ pub async fn evaluate_listing_arbitrage_wrapper(
             underlying_quote,
             position,
             kronos_score,
-        ).await;
+        )
+        .await;
 
         if signal.action != SignalAction::Hold {
             return signal; // Found an opportunity
