@@ -87,19 +87,24 @@ pub fn evaluate_parity_sniper(
     let mut best_strike = 0.0;
     let mut best_context = String::new();
 
+    // Pre-index puts by (strike, expiration) for O(1) lookups
+    let mut puts_map = std::collections::HashMap::new();
+    for contract in options {
+        if (contract.strike - spot_price).abs() / spot_price > 0.05 {
+            continue;
+        }
+        if contract.option_type.eq_ignore_ascii_case("put") {
+            puts_map.insert((contract.strike.to_bits(), &contract.expiration), contract);
+        }
+    }
+
     for contract in options {
         if (contract.strike - spot_price).abs() / spot_price > 0.05 {
             continue;
         }
 
-        if contract.option_type.to_lowercase() == "call" {
-            let matching_put = options.iter().find(|o| {
-                o.strike == contract.strike &&
-                o.expiration == contract.expiration &&
-                o.option_type.to_lowercase() == "put"
-            });
-
-            if let Some(put) = matching_put {
+        if contract.option_type.eq_ignore_ascii_case("call") {
+            if let Some(put) = puts_map.get(&(contract.strike.to_bits(), &contract.expiration)) {
                 let call_price = contract.ask.unwrap_or(0.0);
                 let put_price = put.ask.unwrap_or(0.0);
 
