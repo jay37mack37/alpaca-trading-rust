@@ -9,7 +9,7 @@
   import AnalyticsWorkspace from "./components/AnalyticsWorkspace.svelte";
   import { api, apiTokenConfigured, fetchSetupStatus } from "./lib/api";
   import WelcomePage from "./components/WelcomePage.svelte";
-  import { prettyMoney, prettyPct, quantityDigits, structureLabel, contractLabel, legLabel } from "./lib/format";
+  import { prettyMoney, prettyPct, quantityDigits, contractLabel, legLabel } from "./lib/format";
   import type {
     CreateCredentialRequest,
     CreateStrategyRequest,
