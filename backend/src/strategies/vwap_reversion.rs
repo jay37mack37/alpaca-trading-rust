@@ -1,6 +1,6 @@
-use crate::logger::{SystemEvent, SystemSource, SystemEventType};
 use crate::agents::broadcast_audit_log;
-use crate::models::{SignalAction, StrategySignal, Candle, PositionRecord, Quote, StrategyRecord};
+use crate::logger::{SystemEvent, SystemEventType, SystemSource};
+use crate::models::{Candle, PositionRecord, Quote, SignalAction, StrategyRecord, StrategySignal};
 use crate::AppState;
 use async_trait::async_trait;
 
@@ -22,13 +22,22 @@ impl crate::strategies::TradingStrategy for VwapReversionStrategy {
         for candle in candles {
             tracker.update(candle.close, candle.volume);
         }
-        evaluate_vwap_reversion(state, &strategy.id, &quote.symbol, quote.price, &tracker, kronos_score)
+        evaluate_vwap_reversion(
+            state,
+            &strategy.id,
+            &quote.symbol,
+            quote.price,
+            &tracker,
+            kronos_score,
+        )
     }
 }
 
 #[allow(dead_code)]
 pub fn evaluate_vwap(prices: &[f64], volumes: &[f64]) -> (f64, f64) {
-    if prices.is_empty() { return (0.0, 0.0); }
+    if prices.is_empty() {
+        return (0.0, 0.0);
+    }
     let mut pv_sum = 0.0;
     let mut vol_sum = 0.0;
     for (p, v) in prices.iter().zip(volumes.iter()) {
@@ -121,7 +130,8 @@ pub fn evaluate_vwap_reversion(
         narrative = format!("Over-extended ({:.1} SD). Awaiting confirmation.", dev);
     } else if ai_score > 0.8 && abs_dev >= 2.5 && adx_allows {
         event_type = SystemEventType::Signal;
-        narrative = "Critical Deviation + Low Trend (ADX < 25). Initiating snap-back trade.".to_string();
+        narrative =
+            "Critical Deviation + Low Trend (ADX < 25). Initiating snap-back trade.".to_string();
     }
 
     broadcast_audit_log(
@@ -139,8 +149,16 @@ pub fn evaluate_vwap_reversion(
 
     // Entry Logic
     if abs_dev >= 2.5 && ai_score > 0.8 && adx_allows {
-        let action = if dev > 0.0 { SignalAction::Sell } else { SignalAction::Buy };
-        let direction = if dev > 0.0 { "Over-extended (UP)" } else { "Over-extended (DOWN)" };
+        let action = if dev > 0.0 {
+            SignalAction::Sell
+        } else {
+            SignalAction::Buy
+        };
+        let direction = if dev > 0.0 {
+            "Over-extended (UP)"
+        } else {
+            "Over-extended (DOWN)"
+        };
 
         return StrategySignal {
             action,

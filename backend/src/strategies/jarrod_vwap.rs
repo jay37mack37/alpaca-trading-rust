@@ -1,4 +1,7 @@
-use crate::models::{SignalAction, StrategySignal, Candle, PositionRecord, Quote, StrategyRecord, OptionEntryStyle, AssetClassTarget};
+use crate::models::{
+    AssetClassTarget, Candle, OptionEntryStyle, PositionRecord, Quote, SignalAction,
+    StrategyRecord, StrategySignal,
+};
 use crate::AppState;
 use async_trait::async_trait;
 
@@ -68,8 +71,13 @@ fn calculate_atr(candles: &[Candle], period: usize) -> Option<f64> {
 }
 
 fn avg_volume(candles: &[Candle], period: usize) -> Option<f64> {
-    if candles.len() < period { return None; }
-    let sum: f64 = candles[candles.len() - period..].iter().map(|c| c.volume).sum();
+    if candles.len() < period {
+        return None;
+    }
+    let sum: f64 = candles[candles.len() - period..]
+        .iter()
+        .map(|c| c.volume)
+        .sum();
     Some(sum / period as f64)
 }
 
@@ -89,12 +97,19 @@ fn default_signal() -> StrategySignal {
 }
 
 fn profit_target_pct(strategy: &StrategyRecord) -> f64 {
-    strategy.state_json.get("profit_target_pct")
+    strategy
+        .state_json
+        .get("profit_target_pct")
         .and_then(|v| v.as_f64())
         .unwrap_or(0.05)
 }
 
-fn get_entry_state(prev_below: bool, curr_above: bool, prev_above: bool, curr_below: bool) -> Option<String> {
+fn get_entry_state(
+    prev_below: bool,
+    curr_above: bool,
+    prev_above: bool,
+    curr_below: bool,
+) -> Option<String> {
     if prev_below && curr_above {
         Some("reclaim".to_string())
     } else if prev_above && curr_below {
@@ -115,7 +130,9 @@ pub fn evaluate_jarrod_vwap(
         return crate::strategies::hold("Not enough candles");
     }
 
-    let symbol = strategy.tracked_symbols.first()
+    let symbol = strategy
+        .tracked_symbols
+        .first()
         .map(|s| s.as_str())
         .unwrap_or("SPY");
 
@@ -151,8 +168,16 @@ pub fn evaluate_jarrod_vwap(
     let closes: Vec<f64> = candles.iter().map(|c| c.close).collect();
     let sma_200 = sma(&closes, 200).unwrap_or(0.0);
 
-    let is_bullish = if sma_200 > 0.0 { current.close > sma_200 } else { true };
-    let is_bearish = if sma_200 > 0.0 { current.close < sma_200 } else { true };
+    let is_bullish = if sma_200 > 0.0 {
+        current.close > sma_200
+    } else {
+        true
+    };
+    let is_bearish = if sma_200 > 0.0 {
+        current.close < sma_200
+    } else {
+        true
+    };
 
     let prev_below = previous.close < prev_vwap;
     let curr_above = current.close > curr_vwap;
@@ -160,7 +185,11 @@ pub fn evaluate_jarrod_vwap(
     let curr_below = current.close < curr_vwap;
 
     let vol_20 = avg_volume(candles, 20).unwrap_or(0.0);
-    let rvol = if vol_20 > 0.0 { current.volume / vol_20 } else { 0.0 };
+    let rvol = if vol_20 > 0.0 {
+        current.volume / vol_20
+    } else {
+        0.0
+    };
 
     let target_pct = profit_target_pct(strategy);
 
@@ -195,21 +224,28 @@ pub fn evaluate_jarrod_vwap(
     // --- Entry Logic ---
     let _is_options = strategy.asset_class_target == AssetClassTarget::Options;
 
-    let (triggered, direction, option_style) = if is_bullish && prev_below && curr_above && rvol > 1.5 {
-        (true, "VWAP Reclaim", Some(OptionEntryStyle::LongCall))
-    } else if is_bearish && prev_above && curr_below && rvol > 1.5 {
-        (true, "VWAP Breakdown", Some(OptionEntryStyle::LongPut))
-    } else {
-        (false, "", None)
-    };
+    let (triggered, direction, option_style) =
+        if is_bullish && prev_below && curr_above && rvol > 1.5 {
+            (true, "VWAP Reclaim", Some(OptionEntryStyle::LongCall))
+        } else if is_bearish && prev_above && curr_below && rvol > 1.5 {
+            (true, "VWAP Breakdown", Some(OptionEntryStyle::LongPut))
+        } else {
+            (false, "", None)
+        };
 
     if !triggered {
         return crate::strategies::hold(format!(
             "Monitoring VWAP (RVOL: {:.2} | SMA filter: {})",
             rvol,
             if sma_200 > 0.0 {
-                if current.close > sma_200 { "bullish" } else { "bearish" }
-            } else { "warming" }
+                if current.close > sma_200 {
+                    "bullish"
+                } else {
+                    "bearish"
+                }
+            } else {
+                "warming"
+            }
         ));
     }
 
@@ -228,18 +264,16 @@ pub fn evaluate_jarrod_vwap(
 
     let mut state_json = strategy.state_json.clone();
     if let Some(obj) = state_json.as_object_mut() {
-        obj.insert("last_entry_state".to_string(), serde_json::Value::String(entry_state.clone()));
+        obj.insert(
+            "last_entry_state".to_string(),
+            serde_json::Value::String(entry_state.clone()),
+        );
     }
 
     StrategySignal {
         action: SignalAction::Buy,
         allocation_fraction: allocation,
-        reason: format!(
-            "Jarrod VWAP {}! {} | RVOL: {:.2}",
-            direction,
-            symbol,
-            rvol
-        ),
+        reason: format!("Jarrod VWAP {}! {} | RVOL: {:.2}", direction, symbol, rvol),
         limit_price: Some(current.close),
         stop_loss: Some(stop_loss),
         take_profit: Some(current.close + 2.0 * risk_per_share),

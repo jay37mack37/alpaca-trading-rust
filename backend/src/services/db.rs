@@ -326,11 +326,26 @@ impl Database {
             "ALTER TABLE strategies ADD COLUMN asset_class_target TEXT NOT NULL DEFAULT 'options'",
             [],
         );
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN hold_intent TEXT", []);
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN planned_exit TEXT", []);
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN buy_logic TEXT", []);
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN entry_math TEXT", []);
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN entry_ai REAL", []);
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN hold_intent TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN planned_exit TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN buy_logic TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN entry_math TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN entry_ai REAL",
+            [],
+        );
         let _ = conn.execute(
             "ALTER TABLE strategies ADD COLUMN run_interval_ms INTEGER NOT NULL DEFAULT 30000",
             [],
@@ -345,16 +360,28 @@ impl Database {
         );
 
         // trade_log expansions
-        let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0", []);
+        let _ = conn.execute(
+            "ALTER TABLE trade_log ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
         let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN hold_intent TEXT", []);
         let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN exit_logic TEXT", []);
         let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN planned_exit TEXT", []);
         let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN buy_logic TEXT", []);
         let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN entry_math TEXT", []);
         let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN entry_ai REAL", []);
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN take_profit REAL", []);
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN exit_logic TEXT", []);
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN entry_time TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN take_profit REAL",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN exit_logic TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN entry_time TEXT",
+            [],
+        );
         let _ = conn.execute(
             "ALTER TABLE strategies ADD COLUMN option_spread_width REAL NOT NULL DEFAULT 5.0",
             [],
@@ -467,20 +494,44 @@ impl Database {
             "ALTER TABLE strategies ADD COLUMN state_json TEXT NOT NULL DEFAULT '{}'",
             [],
         );
- 
+
         // New columns for active risk management and AI integration
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN razor_stop REAL", []);
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN stagnation_timestamp TEXT", []);
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN kronos_sentiment REAL", []);
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN buy_logic TEXT", []);
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN entry_math TEXT", []);
-        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN entry_ai REAL", []);
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN razor_stop REAL",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN stagnation_timestamp TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN kronos_sentiment REAL",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN buy_logic TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN entry_math TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE strategy_positions ADD COLUMN entry_ai REAL",
+            [],
+        );
 
         // Risk engine columns
-        let _ = conn.execute("ALTER TABLE strategies ADD COLUMN risk_parameters_json TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE strategies ADD COLUMN risk_parameters_json TEXT",
+            [],
+        );
 
         // Fix auto-enabled strategies: disable parity-sniper and vwap-reversion
-        let _ = conn.execute("UPDATE strategies SET enabled = 0 WHERE id IN ('parity-sniper', 'vwap-reversion')", []);
+        let _ = conn.execute(
+            "UPDATE strategies SET enabled = 0 WHERE id IN ('parity-sniper', 'vwap-reversion')",
+            [],
+        );
 
         // Clean up orphaned positions from previous Alpaca paper sessions
         // Position rows can remain with quantity > 0 after Alpaca closes them
@@ -582,14 +633,20 @@ impl Database {
         for (id, name, kind, symbols) in defaults {
             println!("DB Seeding: Checking strategy {} ({})", name, id);
             // Check if ID already exists
-            let existing_kind: Option<String> = self.conn.query_row(
-                "SELECT kind FROM strategies WHERE id = ?1",
-                params![id],
-                |row| row.get(0),
-            ).optional()?;
+            let existing_kind: Option<String> = self
+                .conn
+                .query_row(
+                    "SELECT kind FROM strategies WHERE id = ?1",
+                    params![id],
+                    |row| row.get(0),
+                )
+                .optional()?;
 
             if let Some(old_kind) = existing_kind {
-                println!("DB Seeding: Updating existing strategy {} (old kind: {})", id, old_kind);
+                println!(
+                    "DB Seeding: Updating existing strategy {} (old kind: {})",
+                    id, old_kind
+                );
                 self.conn.execute(
                     "UPDATE strategies SET name = ?1, kind = ?2 WHERE id = ?3",
                     params![name, kind.as_str(), id],
@@ -635,23 +692,26 @@ impl Database {
     fn seed_alpaca_from_env(&self) -> AppResult<()> {
         let api_key = std::env::var("ALPACA_API_KEY").unwrap_or_default();
         let api_secret = std::env::var("ALPACA_API_SECRET").unwrap_or_default();
-        
+
         if api_key.is_empty() || api_key == "your_api_key_here" {
             return Ok(());
         }
 
         // Check if we already have a credential with this key
-        let exists: bool = self.conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM credentials WHERE label = 'Auto-Seeded Alpaca Paper')",
-            [],
-            |row| row.get(0),
-        ).unwrap_or(false);
+        let exists: bool = self
+            .conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM credentials WHERE label = 'Auto-Seeded Alpaca Paper')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
 
         if !exists {
             let id = "default-paper-cred".to_string();
             let encrypted_key = encrypt(&self.credential_cipher, api_key.trim())?;
             let encrypted_secret = encrypt(&self.credential_cipher, api_secret.trim())?;
-            
+
             self.conn.execute(
                 "INSERT INTO credentials (
                     id, provider, label, environment, api_key_encrypted, api_secret_encrypted,
@@ -670,7 +730,9 @@ impl Database {
     }
 
     pub fn count_credentials(&self) -> AppResult<usize> {
-        Ok(self.conn.query_row("SELECT COUNT(*) FROM credentials", [], |row| row.get(0))?)
+        Ok(self
+            .conn
+            .query_row("SELECT COUNT(*) FROM credentials", [], |row| row.get(0))?)
     }
 
     pub fn list_credentials(&self) -> AppResult<Vec<CredentialSummary>> {
@@ -842,7 +904,9 @@ impl Database {
                 run_interval_ms: row.get(24)?,
                 state_json: serde_json::from_str(&row.get::<_, String>(25)?)
                     .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
-                risk_parameters: row.get::<_, Option<String>>(26)?.and_then(|s| serde_json::from_str(&s).ok()),
+                risk_parameters: row
+                    .get::<_, Option<String>>(26)?
+                    .and_then(|s| serde_json::from_str(&s).ok()),
             })
         })?;
 
@@ -1032,7 +1096,10 @@ impl Database {
 
         let rp_json = match &request.risk_parameters {
             Some(rp) => Some(serde_json::to_string(rp).unwrap_or_default()),
-            None => current.risk_parameters.as_ref().map(|rp| serde_json::to_string(rp).unwrap_or_default()),
+            None => current
+                .risk_parameters
+                .as_ref()
+                .map(|rp| serde_json::to_string(rp).unwrap_or_default()),
         };
         self.conn.execute(
             "UPDATE strategies
@@ -1076,7 +1143,7 @@ impl Database {
                 now,
                 run_interval_ms,
                 serde_json::to_string(&current.state_json)?,
-            rp_json,
+                rp_json,
             ],
         )?;
 
@@ -1507,7 +1574,7 @@ impl Database {
         }
 
         // --- RECONCILE STRATEGY POSITIONS ---
-        // If a strategy is running in Alpaca mode and has a symbol open locally but missing from 
+        // If a strategy is running in Alpaca mode and has a symbol open locally but missing from
         // the broker's response, it was closed manually. We must update the local ledger.
         let broker_symbols: BTreeSet<String> = positions.iter().map(|p| p.symbol.clone()).collect();
         let strategies_to_sync: Vec<String> = tx.prepare(
@@ -1516,44 +1583,74 @@ impl Database {
         .query_map(params![credential_id], |row| row.get(0))?
         .collect::<Result<Vec<String>, _>>()?;
 
-        for strategy_id in strategies_to_sync {
-            let mut stmt = tx.prepare("SELECT instrument_symbol, underlying_symbol, asset_type, quantity, average_price, market_price, multiplier, option_structure_preset, option_type, expiration, strike, legs_json, hold_intent, exit_logic, planned_exit, buy_logic, entry_math, entry_ai FROM strategy_positions WHERE strategy_id = ?1")?;
-            let positions_to_reconcile: Vec<PositionRecord> = stmt.query_map(params![strategy_id], |row| {
-                let legs_json: String = row.get(11)?;
-                Ok(PositionRecord {
-                    underlying_symbol: row.get(1)?,
-                    instrument_symbol: row.get(0)?,
-                    asset_type: row.get(2)?,
-                    quantity: row.get(3)?,
-                    average_price: row.get(4)?,
-                    market_price: row.get(5)?,
-                    multiplier: row.get(6)?,
-                    option_structure_preset: row.get::<_, Option<String>>(7)?.as_deref().map(option_structure_preset_from_str).transpose().unwrap_or_default(),
-                    option_type: row.get(8)?,
-                    expiration: row.get(9)?,
-                    strike: row.get(10)?,
+        let mut positions_by_strategy: std::collections::HashMap<String, Vec<PositionRecord>> =
+            std::collections::HashMap::new();
+
+        {
+            let mut stmt = tx.prepare("
+                SELECT sp.strategy_id, sp.instrument_symbol, sp.underlying_symbol, sp.asset_type, sp.quantity, sp.average_price,
+                       sp.market_price, sp.multiplier, sp.option_structure_preset, sp.option_type, sp.expiration, sp.strike,
+                       sp.legs_json, sp.hold_intent, sp.exit_logic, sp.planned_exit, sp.buy_logic, sp.entry_math, sp.entry_ai
+                FROM strategy_positions sp
+                JOIN strategies s ON sp.strategy_id = s.id
+                WHERE s.credential_id = ?1 AND s.execution_mode IN ('alpaca_paper', 'alpaca_live')
+            ")?;
+
+            let all_positions = stmt.query_map(params![credential_id], |row| {
+                let strategy_id: String = row.get(0)?;
+                let legs_json: String = row.get(12)?;
+                let pos = PositionRecord {
+                    instrument_symbol: row.get(1)?,
+                    underlying_symbol: row.get(2)?,
+                    asset_type: row.get(3)?,
+                    quantity: row.get(4)?,
+                    average_price: row.get(5)?,
+                    market_price: row.get(6)?,
+                    multiplier: row.get(7)?,
+                    option_structure_preset: row
+                        .get::<_, Option<String>>(8)?
+                        .as_deref()
+                        .map(option_structure_preset_from_str)
+                        .transpose()
+                        .unwrap_or_default(),
+                    option_type: row.get(9)?,
+                    expiration: row.get(10)?,
+                    strike: row.get(11)?,
                     stale_quote: false,
                     legs: serde_json::from_str(&legs_json).unwrap_or_default(),
-                    hold_intent: row.get(12)?,
-                    exit_logic: row.get(13)?,
-                    planned_exit: row.get(14)?,
-                    buy_logic: row.get(15)?,
-                    entry_math: row.get(16)?,
-                    entry_ai: row.get(17)?,
+                    hold_intent: row.get(13)?,
+                    exit_logic: row.get(14)?,
+                    planned_exit: row.get(15)?,
+                    buy_logic: row.get(16)?,
+                    entry_math: row.get(17)?,
+                    entry_ai: row.get(18)?,
                     ..Default::default()
-                })
-            })?
-            .collect::<Result<Vec<PositionRecord>, _>>()?;
+                };
+                Ok((strategy_id, pos))
+            })?;
+
+            for result in all_positions {
+                let (strat_id, pos) = result?;
+                positions_by_strategy.entry(strat_id).or_default().push(pos);
+            }
+        }
+
+        for strategy_id in strategies_to_sync {
+            let positions_to_reconcile = positions_by_strategy
+                .remove(&strategy_id)
+                .unwrap_or_default();
 
             for local_pos in positions_to_reconcile {
                 let local_symbol = &local_pos.instrument_symbol;
                 if !broker_symbols.contains(local_symbol) {
-                    // Closed on broker! 
+                    // Closed on broker!
                     // Record the closure in trade_log
                     let trade_id = Uuid::new_v4().to_string();
                     let executed_at = now();
-                    let realized_pnl = (local_pos.market_price - local_pos.average_price) * local_pos.quantity * local_pos.multiplier;
-                    
+                    let realized_pnl = (local_pos.market_price - local_pos.average_price)
+                        * local_pos.quantity
+                        * local_pos.multiplier;
+
                     tx.execute(
                         "INSERT INTO trade_log (
                             id, strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type, side,
@@ -2016,7 +2113,12 @@ impl Database {
         trade: &LocalTradeInput,
     ) -> AppResult<Option<TradeRecord>> {
         if matches!(signal.action, SignalAction::Hold) {
-            Self::mark_strategy_run_internal(&self.conn, strategy_id, &signal.reason, signal.new_state.clone())?;
+            Self::mark_strategy_run_internal(
+                &self.conn,
+                strategy_id,
+                &signal.reason,
+                signal.new_state.clone(),
+            )?;
             return Ok(None);
         }
 
@@ -2672,16 +2774,16 @@ impl Database {
                 "DELETE FROM strategy_positions WHERE strategy_id = ?1 AND instrument_symbol = ?2",
                 params![strategy_id, symbol],
             )?;
-            
+
             // Log it
-             let trade_id = Uuid::new_v4().to_string();
-             self.conn.execute(
+            let trade_id = Uuid::new_v4().to_string();
+            self.conn.execute(
                 "INSERT INTO trade_log (id, strategy_id, symbol, instrument_symbol, asset_type, side, quantity, price, multiplier, provider, execution_mode, reason, executed_at)
                  VALUES (?1, ?2, ?3, ?3, 'liquidated', 'sell', ?4, ?5, ?6, 'local', 'local_paper', 'MANUAL FLATTEN', ?7)",
                  params![trade_id, strategy_id, symbol, qty, price, multiplier, Utc::now().to_rfc3339()],
              )?;
-             
-             Self::recompute_strategy_equity_internal(&self.conn, strategy_id)?;
+
+            Self::recompute_strategy_equity_internal(&self.conn, strategy_id)?;
         }
         Ok(())
     }
@@ -2731,7 +2833,7 @@ impl Database {
     pub fn reconcile_all_to_history(&self) -> AppResult<()> {
         let positions = self.list_all_open_positions()?;
         let now = now();
-        
+
         for pos in positions {
             let trade_id = Uuid::new_v4().to_string();
             // Create the record in trade_log
@@ -2785,17 +2887,17 @@ impl Database {
                     take_profit, exit_logic, entry_time, buy_logic, entry_math, entry_ai, hold_intent, planned_exit
              FROM strategy_positions WHERE quantity > 0"
         )?;
-        
+
         let position_rows = stmt.query_map([], |row| {
-             let legs_json: String = row.get(13)?;
-             let legs: Vec<PositionLeg> = serde_json::from_str(&legs_json).unwrap_or_default();
-             
-             let qty: f64 = row.get(4)?;
-             let avg_price: f64 = row.get(5)?;
-             let market_price: f64 = row.get(6)?;
-             let multiplier: f64 = row.get(7)?;
-             
-             Ok(PositionSummary {
+            let legs_json: String = row.get(13)?;
+            let legs: Vec<PositionLeg> = serde_json::from_str(&legs_json).unwrap_or_default();
+
+            let qty: f64 = row.get(4)?;
+            let avg_price: f64 = row.get(5)?;
+            let market_price: f64 = row.get(6)?;
+            let multiplier: f64 = row.get(7)?;
+
+            Ok(PositionSummary {
                 strategy_id: row.get(0)?,
                 underlying_symbol: row.get(1)?,
                 instrument_symbol: row.get(2)?,
@@ -2804,7 +2906,12 @@ impl Database {
                 average_price: avg_price,
                 market_price,
                 multiplier,
-                option_structure_preset: row.get::<_, Option<String>>(8)?.as_deref().map(option_structure_preset_from_str).transpose().unwrap_or_default(),
+                option_structure_preset: row
+                    .get::<_, Option<String>>(8)?
+                    .as_deref()
+                    .map(option_structure_preset_from_str)
+                    .transpose()
+                    .unwrap_or_default(),
                 option_type: row.get(9)?,
                 expiration: row.get(10)?,
                 strike: row.get(11)?,
@@ -2823,7 +2930,7 @@ impl Database {
                 entry_ai: row.get(22)?,
                 hold_intent: row.get(23)?,
                 planned_exit: row.get(24)?,
-             })
+            })
         })?;
 
         let mut positions = Vec::new();
@@ -3223,7 +3330,10 @@ fn deserialize_position_legs(json_text: &str) -> Result<Vec<PositionLeg>, rusqli
     match serde_json::from_str(json_text) {
         Ok(legs) => Ok(legs),
         Err(err) => {
-            eprintln!("Corrupted position legs JSON: {} - error: {}", json_text, err);
+            eprintln!(
+                "Corrupted position legs JSON: {} - error: {}",
+                json_text, err
+            );
             Ok(Vec::new())
         }
     }

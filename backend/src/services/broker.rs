@@ -120,22 +120,26 @@ pub async fn liquidate_for_funding(
 ) -> AppResult<()> {
     // 1. Fetch current positions from Alpaca for this credential
     let sync = fetch_alpaca_broker_sync(&state.http, credential, state.config.mock_alpaca).await?;
-    
+
     // 2. Find any "Yield Assets" (SGOV)
     let yield_pos = sync.positions.iter().find(|p| p.symbol == "SGOV");
-    
+
     if let Some(pos) = yield_pos {
         let current_value = pos.market_value.unwrap_or(0.0);
         if current_value > 0.0 {
             // Liquidate exactly what's needed OR the whole position if needed
             // For SGOV, we'll just liquidate the necessary fraction or all
             // Since the user asked for "instantly sells enough SGOV", we'll use a Market Order
-            
+
             let liquidation_value = required_notional.min(current_value);
             let qty_to_sell = (liquidation_value / pos.current_price.unwrap_or(100.0)).ceil();
-            
-            tracing::info!("Liquidity Bridge: Selling {} shares of SGOV to fund trade (Value: ${:.2})", qty_to_sell, liquidation_value);
-            
+
+            tracing::info!(
+                "Liquidity Bridge: Selling {} shares of SGOV to fund trade (Value: ${:.2})",
+                qty_to_sell,
+                liquidation_value
+            );
+
             crate::services::providers::submit_alpaca_order(
                 &state.http,
                 credential,
@@ -145,10 +149,11 @@ pub async fn liquidate_for_funding(
                     quantity: qty_to_sell,
                     order_type: crate::services::providers::AlpacaOrderType::Market,
                 },
-                state.config.mock_alpaca
-            ).await?;
+                state.config.mock_alpaca,
+            )
+            .await?;
         }
     }
-    
+
     Ok(())
 }

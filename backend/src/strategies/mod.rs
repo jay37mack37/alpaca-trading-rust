@@ -1,17 +1,17 @@
-use chrono::{DateTime, Datelike, Timelike, Utc};
+use chrono::Timelike;
+pub mod distribution_sniper;
+pub mod gamma_flip;
+pub mod jarrod_vwap;
 pub mod listing_arb;
 pub mod parity_sniper;
 pub mod vwap_reversion;
-pub mod jarrod_vwap;
 pub mod yield_rotation;
-pub mod gamma_flip;
-pub mod distribution_sniper;
 
 use crate::models::{
     Candle, PositionRecord, Quote, SignalAction, StrategyKind, StrategyRecord, StrategySignal,
 };
-use async_trait::async_trait;
 use crate::AppState;
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -32,7 +32,8 @@ pub trait TradingStrategy: Send + Sync {
 static STRATEGY_REGISTRY: OnceLock<HashMap<StrategyKind, Box<dyn TradingStrategy + Send + Sync>>> =
     OnceLock::new();
 
-fn get_strategy_registry() -> &'static HashMap<StrategyKind, Box<dyn TradingStrategy + Send + Sync>> {
+fn get_strategy_registry() -> &'static HashMap<StrategyKind, Box<dyn TradingStrategy + Send + Sync>>
+{
     STRATEGY_REGISTRY.get_or_init(|| {
         let mut m: HashMap<StrategyKind, Box<dyn TradingStrategy + Send + Sync>> = HashMap::new();
         m.insert(StrategyKind::VwapReflexive, Box::new(VwapReflexiveStrategy));
@@ -45,13 +46,34 @@ fn get_strategy_registry() -> &'static HashMap<StrategyKind, Box<dyn TradingStra
             StrategyKind::ListingArbitrage,
             Box::new(listing_arb::ListingArbitrageStrategy),
         );
-        m.insert(StrategyKind::PutCallParity, Box::new(parity_sniper::ParitySniperStrategy));
-        m.insert(StrategyKind::ParitySniper, Box::new(parity_sniper::ParitySniperStrategy));
-        m.insert(StrategyKind::VwapReversion, Box::new(vwap_reversion::VwapReversionStrategy));
-        m.insert(StrategyKind::JarrodVwap, Box::new(jarrod_vwap::JarrodVwapStrategy));
-        m.insert(StrategyKind::YieldRotation, Box::new(yield_rotation::YieldRotationStrategy));
-        m.insert(StrategyKind::GammaFlip, Box::new(gamma_flip::GammaFlipStrategy));
-        m.insert(StrategyKind::DistributionSniper, Box::new(distribution_sniper::DistributionSniperStrategy));
+        m.insert(
+            StrategyKind::PutCallParity,
+            Box::new(parity_sniper::ParitySniperStrategy),
+        );
+        m.insert(
+            StrategyKind::ParitySniper,
+            Box::new(parity_sniper::ParitySniperStrategy),
+        );
+        m.insert(
+            StrategyKind::VwapReversion,
+            Box::new(vwap_reversion::VwapReversionStrategy),
+        );
+        m.insert(
+            StrategyKind::JarrodVwap,
+            Box::new(jarrod_vwap::JarrodVwapStrategy),
+        );
+        m.insert(
+            StrategyKind::YieldRotation,
+            Box::new(yield_rotation::YieldRotationStrategy),
+        );
+        m.insert(
+            StrategyKind::GammaFlip,
+            Box::new(gamma_flip::GammaFlipStrategy),
+        );
+        m.insert(
+            StrategyKind::DistributionSniper,
+            Box::new(distribution_sniper::DistributionSniperStrategy),
+        );
         m
     })
 }
@@ -74,10 +96,11 @@ pub async fn evaluate_strategy(
                 if expiry.date_naive() == today {
                     // Check if time is past 15:50 EST/EDT (19:50 UTC in Summer)
                     let now = chrono::Utc::now();
-                    let trigger_time_reached = (now.hour() == 19 && now.minute() >= 50) || now.hour() >= 20;
+                    let trigger_time_reached =
+                        (now.hour() == 19 && now.minute() >= 50) || now.hour() >= 20;
 
                     if trigger_time_reached {
-                         return StrategySignal {
+                        return StrategySignal {
                             action: SignalAction::Sell,
                             allocation_fraction: 1.0,
                             reason: "0DTE SAFETY KILL-SWITCH: Closing expiring option before market close".to_string(),
@@ -93,10 +116,21 @@ pub async fn evaluate_strategy(
     let registry = get_strategy_registry();
     let mut signal = if let Some(trading_strategy) = registry.get(&strategy.kind) {
         trading_strategy
-            .evaluate(state, strategy, candles, quote, options, position, kronos_score)
+            .evaluate(
+                state,
+                strategy,
+                candles,
+                quote,
+                options,
+                position,
+                kronos_score,
+            )
             .await
     } else {
-        hold(format!("Strategy implementation for {:?} not found", strategy.kind))
+        hold(format!(
+            "Strategy implementation for {:?} not found",
+            strategy.kind
+        ))
     };
 
     // 2. ENRICH EXITS: Ensure every buy signal has a planned exit strategy
@@ -129,8 +163,8 @@ async fn evaluate_vwap_reflexive(
     candles: &[Candle],
     quote: &Quote,
     position: Option<&PositionRecord>,
-        _kronos_score: Option<f64>,
-    ) -> StrategySignal {
+    _kronos_score: Option<f64>,
+) -> StrategySignal {
     let session_vwap = quote.vwap.or_else(|| intraday_vwap(candles));
     let Some(vwap) = session_vwap else {
         return hold("VWAP unavailable");
@@ -147,14 +181,12 @@ async fn evaluate_vwap_reflexive(
             allocation_fraction: 0.18,
             reason: format!("Price is {:.2}% above session VWAP", d * 100.0),
             ..Default::default()
-
         },
         (Some(_), d) if d < -0.001 => StrategySignal {
             action: SignalAction::Sell,
             allocation_fraction: 1.0,
             reason: format!("Price fell {:.2}% below session VWAP", d * 100.0),
             ..Default::default()
-
         },
         _ => hold("Waiting for VWAP displacement"),
     }
@@ -184,8 +216,8 @@ async fn evaluate_rsi_mean_reversion(
     candles: &[Candle],
     _quote: &Quote,
     position: Option<&PositionRecord>,
-        _kronos_score: Option<f64>,
-    ) -> StrategySignal {
+    _kronos_score: Option<f64>,
+) -> StrategySignal {
     let closes = closes(candles);
     let Some(rsi) = rsi(&closes, 14) else {
         return hold("RSI unavailable");
@@ -197,14 +229,12 @@ async fn evaluate_rsi_mean_reversion(
             allocation_fraction: 0.12,
             reason: format!("RSI mean reversion entry at {:.1}", value),
             ..Default::default()
-
         },
         (Some(_), value) if value > 62.0 => StrategySignal {
             action: SignalAction::Sell,
             allocation_fraction: 1.0,
             reason: format!("RSI exit at {:.1}", value),
             ..Default::default()
-
         },
         _ => hold("RSI within neutral zone"),
     }
@@ -232,8 +262,8 @@ async fn evaluate_sma_trend(
     candles: &[Candle],
     _quote: &Quote,
     position: Option<&PositionRecord>,
-        _kronos_score: Option<f64>,
-    ) -> StrategySignal {
+    _kronos_score: Option<f64>,
+) -> StrategySignal {
     let closes = closes(candles);
     let Some(fast) = sma(&closes, 20) else {
         return hold("20 period SMA unavailable");
@@ -248,14 +278,12 @@ async fn evaluate_sma_trend(
             allocation_fraction: 0.15,
             reason: format!("Fast SMA {:.2} crossed above slow SMA {:.2}", fast, slow),
             ..Default::default()
-
         },
         (Some(_), false) => StrategySignal {
             action: SignalAction::Sell,
             allocation_fraction: 1.0,
             reason: format!("Fast SMA {:.2} dropped below slow SMA {:.2}", fast, slow),
             ..Default::default()
-
         },
         _ => hold("Trend regime unchanged"),
     }
@@ -351,16 +379,19 @@ fn rsi(values: &[f64], period: usize) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
-    use crate::models::{DataProvider, ExecutionMode, AssetClassTarget, OptionEntryStyle, OptionStructurePreset};
-    use crate::services::streaming::StreamHub;
     use super::*;
+    use crate::models::{
+        AssetClassTarget, DataProvider, ExecutionMode, OptionEntryStyle, OptionStructurePreset,
+    };
+    use crate::services::streaming::StreamHub;
 
     fn make_test_app_state() -> AppState {
         let db = crate::services::db::Database::open(
             std::path::Path::new(":memory:"),
             &[],
             "test-master-key-for-unit-tests",
-        ).unwrap();
+        )
+        .unwrap();
         AppState {
             api_token: std::sync::Arc::new("test-token".to_string()),
             db: std::sync::Arc::new(tokio::sync::Mutex::new(db)),
@@ -375,7 +406,9 @@ mod tests {
                 mock_alpaca: false,
             },
             streams: StreamHub::new(),
-            agent_tasks: std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            agent_tasks: std::sync::Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             risk_engine: std::sync::Arc::new(crate::services::risk::RiskEngine::new()),
         }
     }
@@ -470,7 +503,15 @@ mod tests {
         let quote = make_quote(100.5, Some(100.0));
         let state = make_test_app_state();
         let strategy = make_test_strategy(StrategyKind::VwapReflexive);
-        let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &candles, &quote, &[], None, None));
+        let signal = tokio_test::block_on(evaluate_strategy(
+            &state,
+            &strategy,
+            &candles,
+            &quote,
+            &[],
+            None,
+            None,
+        ));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
@@ -483,7 +524,15 @@ mod tests {
         let quote = make_quote(100.0, None);
         let state = make_test_app_state();
         let strategy = make_test_strategy(StrategyKind::RsiMeanReversion);
-        let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &candles, &quote, &[], None, None));
+        let signal = tokio_test::block_on(evaluate_strategy(
+            &state,
+            &strategy,
+            &candles,
+            &quote,
+            &[],
+            None,
+            None,
+        ));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
@@ -496,15 +545,39 @@ mod tests {
         let quote = make_quote(100.0, None);
         let state = make_test_app_state();
         let strategy = make_test_strategy(StrategyKind::SmaTrend);
-        let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &candles, &quote, &[], None, None));
+        let signal = tokio_test::block_on(evaluate_strategy(
+            &state,
+            &strategy,
+            &candles,
+            &quote,
+            &[],
+            None,
+            None,
+        ));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
     #[test]
     fn test_intraday_vwap() {
         let candles = vec![
-            Candle { timestamp: "".into(), open: 10.0, high: 12.0, low: 8.0, close: 10.0, volume: 100.0, vwap: None },
-            Candle { timestamp: "".into(), open: 20.0, high: 22.0, low: 18.0, close: 20.0, volume: 200.0, vwap: None },
+            Candle {
+                timestamp: "".into(),
+                open: 10.0,
+                high: 12.0,
+                low: 8.0,
+                close: 10.0,
+                volume: 100.0,
+                vwap: None,
+            },
+            Candle {
+                timestamp: "".into(),
+                open: 20.0,
+                high: 22.0,
+                low: 18.0,
+                close: 20.0,
+                volume: 200.0,
+                vwap: None,
+            },
         ];
         let vwap = intraday_vwap(&candles).unwrap();
         assert!((vwap - 16.666666666666668).abs() < 1e-9);
@@ -532,7 +605,15 @@ mod tests {
         let quote = make_quote(150.0, None);
         let strategy = make_test_strategy(StrategyKind::VwapReflexive);
         let state = make_test_app_state();
-        let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &[], &quote, &[], None, None));
+        let signal = tokio_test::block_on(evaluate_strategy(
+            &state,
+            &strategy,
+            &[],
+            &quote,
+            &[],
+            None,
+            None,
+        ));
         assert_eq!(signal.action, SignalAction::Hold);
         assert_eq!(signal.reason, "VWAP unavailable");
     }
