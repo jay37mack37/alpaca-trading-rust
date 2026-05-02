@@ -80,11 +80,21 @@ async fn main() -> anyhow::Result<()> {
     let cors_origins: Vec<HeaderValue> = config
         .allowed_origins
         .iter()
-        .filter_map(|origin: &String| origin.parse::<HeaderValue>().ok())
+        .filter(|origin| *origin != "*")
+        .filter_map(|origin| {
+            if let Ok(uri) = origin.parse::<axum::http::Uri>() {
+                let scheme = uri.scheme_str().unwrap_or("");
+                if scheme == "http" || scheme == "https" {
+                    return origin.parse::<HeaderValue>().ok();
+                }
+            }
+            None
+        })
         .collect();
+
     if cors_origins.is_empty() {
         return Err(anyhow::anyhow!(
-            "AUTO_STONKS_ALLOWED_ORIGINS did not yield any parsable origins; set it to a comma-separated list of frontend origins"
+            "AUTO_STONKS_ALLOWED_ORIGINS did not yield any valid origins; set it to a comma-separated list of valid frontend origins (http/https)"
         ));
     }
     let cors = CorsLayer::new()
