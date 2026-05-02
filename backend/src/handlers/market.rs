@@ -35,7 +35,10 @@ pub async fn dashboard(
     let options = match fetch_options(&state.http, provider, &symbol, credential.as_ref()).await {
         Ok(options) => options,
         Err(err) => {
-            warn!("CRITICAL: Options fetch failed for {symbol} via {:?}: {err}", provider);
+            warn!(
+                "CRITICAL: Options fetch failed for {symbol} via {:?}: {err}",
+                provider
+            );
             crate::services::providers::FetchedOptions {
                 contracts: Vec::new(),
                 raw_json: json!({}),

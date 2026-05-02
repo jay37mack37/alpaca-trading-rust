@@ -1,10 +1,8 @@
-use crate::models::{
-    Candle, PositionRecord, Quote, SignalAction, StrategyRecord, StrategySignal,
-};
-use async_trait::async_trait;
-use crate::strategies::{TradingStrategy, hold, buy};
-use crate::AppState;
+use crate::models::{Candle, PositionRecord, Quote, SignalAction, StrategyRecord, StrategySignal};
 use crate::services::greeks::GreeksEngine;
+use crate::strategies::{buy, hold, TradingStrategy};
+use crate::AppState;
+use async_trait::async_trait;
 
 pub struct GammaFlipStrategy;
 
@@ -29,7 +27,7 @@ impl TradingStrategy for GammaFlipStrategy {
 
         // 2. Calculate Net GEX
         let mut net_gex = 0.0;
-        let risk_free_rate = 0.045; 
+        let risk_free_rate = 0.045;
         let mut contracts_scanned = 0;
 
         crate::agents::broadcast_audit_log(
@@ -41,13 +39,16 @@ impl TradingStrategy for GammaFlipStrategy {
                 crate::logger::SystemEventType::Scan,
                 format!("Price: ${:.2}", quote.price),
                 0.5,
-                format!("GEX SCAN: Analyzing {} option contracts for gamma inflection.", options.len()),
-            )
+                format!(
+                    "GEX SCAN: Analyzing {} option contracts for gamma inflection.",
+                    options.len()
+                ),
+            ),
         );
 
         for contract in options {
             contracts_scanned += 1;
-            let t = 1.0 / 252.0; 
+            let t = 1.0 / 252.0;
             let sigma = contract.implied_volatility.unwrap_or(0.25);
 
             let greeks = GreeksEngine::calculate_greeks(
@@ -55,17 +56,17 @@ impl TradingStrategy for GammaFlipStrategy {
                 contract.strike,
                 t,
                 risk_free_rate,
-                sigma
+                sigma,
             );
 
             let oi = contract.open_interest.unwrap_or(0.0);
             let vol = contract.volume.unwrap_or(0.0);
-            
-            let is_call = contract.contract_symbol.to_uppercase().contains('C'); 
-            
+
+            let is_call = contract.contract_symbol.to_uppercase().contains('C');
+
             let gex = GreeksEngine::calculate_gex(quote.price, greeks.gamma, oi, is_call);
             let weighted_gex = GreeksEngine::weighted_gex(gex, vol, oi);
-            
+
             net_gex += weighted_gex;
         }
 
@@ -78,21 +79,26 @@ impl TradingStrategy for GammaFlipStrategy {
                 crate::logger::SystemEventType::Scan,
                 format!("GEX: {:.0}", net_gex),
                 0.5,
-                format!("SCAN COMPLETE: Net GEX for {} is {:.2}M across {} contracts.", quote.symbol, net_gex / 1_000_000.0, contracts_scanned),
-            )
+                format!(
+                    "SCAN COMPLETE: Net GEX for {} is {:.2}M across {} contracts.",
+                    quote.symbol,
+                    net_gex / 1_000_000.0,
+                    contracts_scanned
+                ),
+            ),
         );
 
         // 3. Bidirectional Gamma Flip Trigger
         // Threshold: +/- $500k Net GEX (Normalized for high-convexity setup)
         let threshold = 500_000.0;
-        
+
         if net_gex < -threshold {
             // Negative Gamma Territory: High Put Convexity
             let target_strike = quote.price * 0.985; // 1.5% OTM Put
             return buy(
                 format!("Gamma Flip (Down): Net GEX {:.2}M", net_gex / 1_000_000.0),
                 0.15, // 15% allocation
-                Some(target_strike)
+                Some(target_strike),
             );
         } else if net_gex > threshold {
             // Positive Gamma Territory: Call Acceleration
@@ -100,7 +106,7 @@ impl TradingStrategy for GammaFlipStrategy {
             return buy(
                 format!("Gamma Flip (Up): Net GEX {:.2}M", net_gex / 1_000_000.0),
                 0.15,
-                Some(target_strike)
+                Some(target_strike),
             );
         }
 

@@ -34,7 +34,7 @@ impl GreeksEngine {
             return GreeksResult::default();
         }
 
-        let d1 = ( (s / k).ln() + (r + 0.5 * sigma * sigma) * t ) / (sigma * t.sqrt());
+        let d1 = ((s / k).ln() + (r + 0.5 * sigma * sigma) * t) / (sigma * t.sqrt());
         let d2 = d1 - sigma * t.sqrt();
 
         let call_price = s * Self::normal_cdf(d1) - k * (-r * t).exp() * Self::normal_cdf(d2);
@@ -67,7 +67,9 @@ impl GreeksEngine {
     /// Applies Volume-Weighted Adjustment to GEX
     /// If intraday volume is much higher than daily OI, we increase the GEX weight
     pub fn weighted_gex(gex: f64, volume: f64, oi: f64) -> f64 {
-        if oi <= 0.0 { return 0.0; }
+        if oi <= 0.0 {
+            return 0.0;
+        }
         let weight = (1.0 + (volume / oi).min(5.0)).sqrt(); // Max 5x adjustment
         gex * weight
     }
