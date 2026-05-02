@@ -1454,56 +1454,64 @@ impl Database {
         )?;
 
         let positions_json = serde_json::to_string(raw_positions)?;
-        for position in positions {
-            tx.execute(
+        {
+            let mut stmt = tx.prepare(
                 "INSERT INTO broker_positions (
                     credential_id, symbol, asset_class, side, quantity, avg_entry_price, market_value,
                     current_price, unrealized_pl, unrealized_plpc, synced_at, raw_json
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-                params![
-                    credential_id,
-                    position.symbol,
-                    position.asset_class,
-                    position.side,
-                    position.quantity,
-                    position.avg_entry_price,
-                    position.market_value,
-                    position.current_price,
-                    position.unrealized_pl,
-                    position.unrealized_plpc,
-                    position.synced_at,
-                    positions_json,
-                ],
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"
             )?;
+            for position in positions {
+                stmt.execute(
+                    params![
+                        credential_id,
+                        position.symbol,
+                        position.asset_class,
+                        position.side,
+                        position.quantity,
+                        position.avg_entry_price,
+                        position.market_value,
+                        position.current_price,
+                        position.unrealized_pl,
+                        position.unrealized_plpc,
+                        position.synced_at,
+                        positions_json,
+                    ],
+                )?;
+            }
         }
 
         let orders_json = serde_json::to_string(raw_orders)?;
-        for order in orders {
-            tx.execute(
+        {
+            let mut stmt = tx.prepare(
                 "INSERT INTO broker_orders (
                     credential_id, order_id, client_order_id, symbol, side, order_type, order_class,
                     status, quantity, filled_qty, filled_avg_price, time_in_force, submitted_at,
                     updated_at, synced_at, raw_json
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
-                params![
-                    credential_id,
-                    order.order_id,
-                    order.client_order_id,
-                    order.symbol,
-                    order.side,
-                    order.order_type,
-                    order.order_class,
-                    order.status,
-                    order.quantity,
-                    order.filled_qty,
-                    order.filled_avg_price,
-                    order.time_in_force,
-                    order.submitted_at,
-                    order.updated_at,
-                    order.synced_at,
-                    orders_json,
-                ],
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)"
             )?;
+            for order in orders {
+                stmt.execute(
+                    params![
+                        credential_id,
+                        order.order_id,
+                        order.client_order_id,
+                        order.symbol,
+                        order.side,
+                        order.order_type,
+                        order.order_class,
+                        order.status,
+                        order.quantity,
+                        order.filled_qty,
+                        order.filled_avg_price,
+                        order.time_in_force,
+                        order.submitted_at,
+                        order.updated_at,
+                        order.synced_at,
+                        orders_json,
+                    ],
+                )?;
+            }
         }
 
         // --- RECONCILE STRATEGY POSITIONS ---
