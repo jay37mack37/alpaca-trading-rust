@@ -579,14 +579,23 @@ impl Database {
             ),
         ];
 
+        // Fetch existing strategies upfront to avoid N+1 query problem
+        let mut existing_strategies = std::collections::HashMap::new();
+        let mut stmt = self.conn.prepare("SELECT id, kind FROM strategies")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+
+        for row in rows {
+            if let Ok((id_val, kind_val)) = row {
+                existing_strategies.insert(id_val, kind_val);
+            }
+        }
+
         for (id, name, kind, symbols) in defaults {
             println!("DB Seeding: Checking strategy {} ({})", name, id);
-            // Check if ID already exists
-            let existing_kind: Option<String> = self.conn.query_row(
-                "SELECT kind FROM strategies WHERE id = ?1",
-                params![id],
-                |row| row.get(0),
-            ).optional()?;
+            // Check if ID already exists in our pre-fetched map
+            let existing_kind = existing_strategies.get(&id.to_string()).cloned();
 
             if let Some(old_kind) = existing_kind {
                 println!("DB Seeding: Updating existing strategy {} (old kind: {})", id, old_kind);
