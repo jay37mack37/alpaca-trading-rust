@@ -1454,12 +1454,14 @@ impl Database {
         )?;
 
         let positions_json = serde_json::to_string(raw_positions)?;
+        let mut pos_stmt = tx.prepare(
+            "INSERT INTO broker_positions (
+                credential_id, symbol, asset_class, side, quantity, avg_entry_price, market_value,
+                current_price, unrealized_pl, unrealized_plpc, synced_at, raw_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"
+        )?;
         for position in positions {
-            tx.execute(
-                "INSERT INTO broker_positions (
-                    credential_id, symbol, asset_class, side, quantity, avg_entry_price, market_value,
-                    current_price, unrealized_pl, unrealized_plpc, synced_at, raw_json
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            pos_stmt.execute(
                 params![
                     credential_id,
                     position.symbol,
@@ -1476,15 +1478,18 @@ impl Database {
                 ],
             )?;
         }
+        drop(pos_stmt); // Need to drop prepared statements before transaction can be committed
 
         let orders_json = serde_json::to_string(raw_orders)?;
+        let mut order_stmt = tx.prepare(
+            "INSERT INTO broker_orders (
+                credential_id, order_id, client_order_id, symbol, side, order_type, order_class,
+                status, quantity, filled_qty, filled_avg_price, time_in_force, submitted_at,
+                updated_at, synced_at, raw_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)"
+        )?;
         for order in orders {
-            tx.execute(
-                "INSERT INTO broker_orders (
-                    credential_id, order_id, client_order_id, symbol, side, order_type, order_class,
-                    status, quantity, filled_qty, filled_avg_price, time_in_force, submitted_at,
-                    updated_at, synced_at, raw_json
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+            order_stmt.execute(
                 params![
                     credential_id,
                     order.order_id,
@@ -1505,6 +1510,7 @@ impl Database {
                 ],
             )?;
         }
+        drop(order_stmt);
 
         // --- RECONCILE STRATEGY POSITIONS ---
         // If a strategy is running in Alpaca mode and has a symbol open locally but missing from 
