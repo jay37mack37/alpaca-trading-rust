@@ -1747,11 +1747,8 @@ impl Database {
             })
         })?;
 
-        let mut results = Vec::new();
-        for record in rows {
-            results.push(record?);
-        }
-        Ok(results)
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
     }
 
     pub fn update_watchlist(
