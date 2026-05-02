@@ -19,7 +19,7 @@
   import PositionsSection from "./PositionsSection.svelte";
   import RecentTradesSection from "./RecentTradesSection.svelte";
   import { api } from "../lib/api";
-  import { prettyMoney, quantityDigits, structureLabel, contractLabel, legLabel, parseSymbols } from "../lib/format";
+  import { parseSymbols } from "../lib/format";
   import { validateStrategyDraft, type ValidationErrors } from "../lib/validation";
   import { type StrategyDraft, runIntervalToDraft, draftToRunIntervalMs } from "../lib/drafts";
   import type { DashboardResponse } from "../lib/types";
