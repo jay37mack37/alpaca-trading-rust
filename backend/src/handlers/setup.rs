@@ -48,7 +48,9 @@ pub async fn write_env(
 ) -> AppResult<ApiResponse<WriteEnvResponse>> {
     let candidate = payload.api_token.trim().to_string();
     if candidate.is_empty() {
-        return Err(AppError::Validation("api_token must not be empty".to_string()));
+        return Err(AppError::Validation(
+            "api_token must not be empty".to_string(),
+        ));
     }
 
     // Constant-time comparison with the actual API token stored in AppState

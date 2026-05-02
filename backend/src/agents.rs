@@ -1,21 +1,18 @@
-use std::time::Duration;
 use crate::models::telemetry::{StrategyType, SystemEvent};
+use std::time::Duration;
 
 use chrono::Utc;
 use futures_util::stream::{FuturesUnordered, StreamExt};
 
 use crate::error::{AppError, AppResult};
-use crate::models::{
-    AssetClassTarget, DataProvider, ExecutionMode, RealtimeEvent, SignalAction,
-};
+use crate::logger::{SystemEvent as AuditEvent, SystemEventType, SystemSource};
+use crate::models::{AssetClassTarget, DataProvider, ExecutionMode, RealtimeEvent, SignalAction};
 use crate::services::broker::{resolve_alpaca_credential, sync_strategy_broker_state};
 use crate::services::kronos::fetch_kronos_score;
 use crate::services::providers::{
-    fetch_candles, fetch_options, fetch_quote, poll_alpaca_order_until_filled,
-    submit_alpaca_order,
+    fetch_candles, fetch_options, fetch_quote, poll_alpaca_order_until_filled, submit_alpaca_order,
 };
 use crate::services::trading::{prepare_trade, TradePreparationOutcome};
-use crate::logger::{SystemEvent as AuditEvent, SystemSource, SystemEventType};
 use crate::AppState;
 use tracing::warn;
 
@@ -250,7 +247,7 @@ pub async fn run_strategy_once(
                         let credential = trading_credential.as_ref().ok_or_else(|| {
                             AppError::Validation("missing Alpaca trading credential".to_string())
                         })?;
-                        
+
                         // LIQUIDITY BRIDGE: If this is a high-conviction signal (GammaFlip or ParitySniper),
                         // and we need funding, check for SGOV liquidation.
                         if matches!(latest_strategy.kind, crate::models::StrategyKind::GammaFlip | crate::models::StrategyKind::ParitySniper) {
@@ -470,9 +467,10 @@ pub fn broadcast_system_event(
         ai_confirmation,
         message: message.to_string(),
     };
-    let _ = state.streams.send_event(crate::models::RealtimeEvent::System { event });
+    let _ = state
+        .streams
+        .send_event(crate::models::RealtimeEvent::System { event });
 }
-
 
 pub fn broadcast_audit_log(state: &AppState, event: crate::logger::SystemEvent) {
     let _ = state.streams.send_event(RealtimeEvent::SystemLog { event });
@@ -496,7 +494,7 @@ pub async fn spawn_agent_loop(state: AppState, strategy_id: String) {
                         if !strat.enabled {
                             break;
                         }
-                        strat.run_interval_ms as u64
+                        strat.run_interval_ms
                     } else {
                         break;
                     }

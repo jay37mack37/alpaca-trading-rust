@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
 use crate::error::AppResult;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -11,13 +11,17 @@ pub struct KronosScore {
 }
 
 pub async fn fetch_kronos_score(client: &Client, symbol: &str) -> AppResult<KronosScore> {
-    let base_url = std::env::var("KRONOS_BRIDGE_URL").unwrap_or_else(|_| "http://localhost:8000".to_string());
+    let base_url =
+        std::env::var("KRONOS_BRIDGE_URL").unwrap_or_else(|_| "http://localhost:8000".to_string());
     let url = format!("{}/score/{}", base_url, symbol);
 
     let response = match client.get(&url).send().await {
         Ok(res) => res,
         Err(err) => {
-            warn!("Kronos Bridge connection failed: {}. Using simulated score.", err);
+            warn!(
+                "Kronos Bridge connection failed: {}. Using simulated score.",
+                err
+            );
             return Ok(KronosScore {
                 symbol: symbol.to_string(),
                 trend: "NEUTRAL-SIM".to_string(),
@@ -27,7 +31,10 @@ pub async fn fetch_kronos_score(client: &Client, symbol: &str) -> AppResult<Kron
     };
 
     if !response.status().is_success() {
-        warn!("Kronos Bridge returned error: {}. Using simulated score.", response.status());
+        warn!(
+            "Kronos Bridge returned error: {}. Using simulated score.",
+            response.status()
+        );
         return Ok(KronosScore {
             symbol: symbol.to_string(),
             trend: "NEUTRAL-SIM".to_string(),
@@ -41,7 +48,7 @@ pub async fn fetch_kronos_score(client: &Client, symbol: &str) -> AppResult<Kron
             symbol: symbol.to_string(),
             trend: "NEUTRAL-SIM".to_string(),
             confidence: 0.85,
-        }
+        },
     };
     Ok(score)
 }

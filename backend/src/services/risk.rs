@@ -1,8 +1,8 @@
+use crate::error::{AppError, AppResult};
 use crate::models::{StrategyRecord, StrategySignal};
-use crate::error::{AppResult, AppError};
 use async_trait::async_trait;
-use tracing::warn;
 use std::sync::Arc;
+use tracing::warn;
 
 #[async_trait]
 pub trait RiskValidator: Send + Sync {
@@ -30,7 +30,11 @@ impl RiskValidator for MaxPositionSizeValidator {
         };
 
         // If strategy.equity is 0 (new strategy), fallback to starting cash
-        let equity = if strategy.equity > 0.0 { strategy.equity } else { strategy.starting_cash };
+        let equity = if strategy.equity > 0.0 {
+            strategy.equity
+        } else {
+            strategy.starting_cash
+        };
         let trade_value = equity * signal.allocation_fraction;
 
         if trade_value > risk_params.max_position_size && risk_params.max_position_size > 0.0 {
@@ -100,7 +104,10 @@ impl RiskEngine {
         signal: &StrategySignal,
     ) -> AppResult<()> {
         if strategy.risk_parameters.is_none() {
-            warn!("Risk parameters not set for strategy {}, bypassing risk checks.", strategy.id);
+            warn!(
+                "Risk parameters not set for strategy {}, bypassing risk checks.",
+                strategy.id
+            );
             return Ok(());
         }
 
@@ -110,4 +117,4 @@ impl RiskEngine {
 
         Ok(())
     }
-}
+}

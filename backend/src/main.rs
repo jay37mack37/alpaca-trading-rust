@@ -1,9 +1,9 @@
 mod agents;
 mod auth;
-mod logger;
 mod config;
 mod error;
 mod handlers;
+mod logger;
 mod math;
 mod models;
 mod options;
@@ -13,22 +13,21 @@ mod strategies;
 use std::{env, net::SocketAddr, sync::Arc};
 
 use auth::{require_token, ApiToken};
-use chrono::Utc;
-use std::time::Duration;
 use axum::{
     http::{HeaderValue, Method},
     middleware,
     routing::{delete, get, post},
     Router,
 };
+use chrono::Utc;
 use reqwest::Client;
 use serde::Deserialize;
+use std::time::Duration;
 use tokio::sync::Mutex;
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     trace::TraceLayer,
 };
-use tracing::info;
 
 use crate::agents::spawn_agent_loop;
 use crate::models::AppConfig;
@@ -119,7 +118,14 @@ async fn main() -> anyhow::Result<()> {
             .unwrap_or_default()
             .into_iter()
             .filter(|s| {
-                s.enabled && !matches!(s.kind, crate::models::StrategyKind::ParitySniper | crate::models::StrategyKind::PutCallParity | crate::models::StrategyKind::VwapReversion | crate::models::StrategyKind::JarrodVwap)
+                s.enabled
+                    && !matches!(
+                        s.kind,
+                        crate::models::StrategyKind::ParitySniper
+                            | crate::models::StrategyKind::PutCallParity
+                            | crate::models::StrategyKind::VwapReversion
+                            | crate::models::StrategyKind::JarrodVwap
+                    )
             })
             .map(|s| s.id)
             .collect()
@@ -135,24 +141,28 @@ async fn main() -> anyhow::Result<()> {
     // Global Heartbeat and Connectivity Audit Loop
     let state_hb = state.clone();
     tokio::spawn(async move {
-        use crate::models::RealtimeEvent;
-        use crate::logger::{SystemEvent, SystemSource, SystemEventType};
         use crate::agents::broadcast_audit_log;
-        use crate::services::providers::fetch_alpaca_broker_sync;
-        use crate::services::kronos::fetch_kronos_score;
+        use crate::logger::{SystemEvent, SystemEventType, SystemSource};
+        use crate::models::RealtimeEvent;
         use crate::services::broker::resolve_alpaca_credential;
+        use crate::services::kronos::fetch_kronos_score;
+        use crate::services::providers::fetch_alpaca_broker_sync;
 
         loop {
             // 1. Audit Kronos
             let kronos_status = match fetch_kronos_score(&state_hb.http, "SPY").await {
-                Ok(score) => format!("CONNECTED | Signal: {} ({:.1}%)", score.trend, score.confidence * 100.0),
+                Ok(score) => format!(
+                    "CONNECTED | Signal: {} ({:.1}%)",
+                    score.trend,
+                    score.confidence * 100.0
+                ),
                 Err(_) => "OFFLINE | Using fallback internal probability".to_string(),
             };
 
             // 2. Audit Alpaca (Fetch system-wide buying power)
             let mut buying_power = 0.0;
             let mut alpaca_status = "STBY".to_string();
-            
+
             if state_hb.config.mock_alpaca {
                 buying_power = 100000.0;
                 alpaca_status = "LIVE (MOCK)".to_string();
@@ -172,28 +182,30 @@ async fn main() -> anyhow::Result<()> {
             let mut options_active = false;
             if let Ok(strats) = state_hb.db.lock().await.list_strategy_records() {
                 if let Some(_strat) = strats.into_iter().find(|s| s.enabled) {
-                match crate::services::providers::fetch_options(
-                    &state_hb.http,
-                    crate::models::DataProvider::Yahoo,
-                    "SPY",
-                    None
-                ).await {
-                    Ok(_) => options_active = true,
-                    Err(e) => {
-                        // Only log if it was previously active to avoid noise
-                        tracing::warn!("Options heartbeat check failed for SPY: {:?}", e);
+                    match crate::services::providers::fetch_options(
+                        &state_hb.http,
+                        crate::models::DataProvider::Yahoo,
+                        "SPY",
+                        None,
+                    )
+                    .await
+                    {
+                        Ok(_) => options_active = true,
+                        Err(e) => {
+                            // Only log if it was previously active to avoid noise
+                            tracing::warn!("Options heartbeat check failed for SPY: {:?}", e);
+                        }
                     }
-                }
                 }
             }
 
             // Fallback for Options connectivity in Mock Mode
             if state_hb.config.mock_alpaca && !options_active {
-               options_active = true; 
+                options_active = true;
             }
 
             // 4. Broadcast Heartbeat (for UI indicator)
-            let _ = state_hb.streams.send_event(RealtimeEvent::Heartbeat { 
+            let _ = state_hb.streams.send_event(RealtimeEvent::Heartbeat {
                 timestamp: Utc::now().timestamp_millis() as u64,
                 buying_power,
                 kronos_active: kronos_status.contains("CONNECTED") || kronos_status.contains("SIM"),
@@ -211,8 +223,13 @@ async fn main() -> anyhow::Result<()> {
                     SystemEventType::Scan,
                     format!("BP:${:.0}", buying_power),
                     0.0,
-                    format!("Kronos: {} | Alpaca: {} | Options: {}", kronos_status, alpaca_status, if options_active { "LINKED" } else { "ERROR" }),
-                )
+                    format!(
+                        "Kronos: {} | Alpaca: {} | Options: {}",
+                        kronos_status,
+                        alpaca_status,
+                        if options_active { "LINKED" } else { "ERROR" }
+                    ),
+                ),
             );
 
             tokio::time::sleep(Duration::from_secs(5)).await;
@@ -235,11 +252,13 @@ async fn main() -> anyhow::Result<()> {
                 let db = state_pos.db.lock().await;
                 db.list_all_open_positions().unwrap_or_default()
             };
-            
+
             if !positions.is_empty() {
-                let _ = state_pos.streams.send_event(crate::models::RealtimeEvent::Positions { positions });
+                let _ = state_pos
+                    .streams
+                    .send_event(crate::models::RealtimeEvent::Positions { positions });
             }
-            
+
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     });
@@ -334,7 +353,7 @@ async fn main() -> anyhow::Result<()> {
     let address = SocketAddr::new(state.config.host.parse()?, state.config.port);
     println!("🚀 AutoStonks Trade Engine is initializing...");
     println!("📡 API Server listening on: http://{}", address);
-    
+
     let listener = tokio::net::TcpListener::bind(address).await?;
     println!("✅ Web server is READY for requests!");
     axum::serve(listener, app).await?;

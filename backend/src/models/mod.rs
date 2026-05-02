@@ -446,7 +446,6 @@ pub struct WatchlistAddRequest {
     pub symbol: String,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RiskParameters {
     pub max_position_size: f64,
