@@ -2826,11 +2826,7 @@ impl Database {
              })
         })?;
 
-        let mut positions = Vec::new();
-        for row in position_rows {
-            positions.push(row?);
-        }
-        Ok(positions)
+        Ok(position_rows.collect::<Result<Vec<_>, rusqlite::Error>>()?)
     }
 
     fn map_strategy_summary(&self, record: StrategyRecord) -> AppResult<StrategySummary> {
