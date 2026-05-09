@@ -5,6 +5,7 @@ import type {
   CreateCredentialRequest,
   CreateStrategyRequest,
   DashboardResponse,
+  IntelligenceLog,
   PatternAnalysisResponse,
   SetupStatusResponse,
   StrategyDetailResponse,
@@ -152,6 +153,9 @@ export const api = {
       body: JSON.stringify(payload),
     });
   },
+  fetchStrategyLogs(strategyId: string) {
+    return request<IntelligenceLog[]>(`/api/strategies/${strategyId}/logs`);
+  },
   runStrategy(strategyId: string, symbol?: string) {
     const suffix = symbol ? `?symbol=${encodeURIComponent(symbol)}` : "";
     return request<TradeRecord | null>(`/api/strategies/${strategyId}/run${suffix}`, {
@@ -178,8 +182,18 @@ export const api = {
       method: "POST",
     });
   },
+  delete(path: string) {
+    return request<void>(path, {
+      method: "DELETE",
+    });
+  },
   panic() {
-    return request<void>("/api/panic", {
+    return request<void>("/api/strategies/panic", {
+      method: "POST",
+    });
+  },
+  liquidateAllBrokerPositions() {
+    return request<void>("/api/broker/liquidate-all", {
       method: "POST",
     });
   },

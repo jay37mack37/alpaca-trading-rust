@@ -5,6 +5,8 @@ pub mod vwap_reversion;
 pub mod jarrod_vwap;
 pub mod yield_rotation;
 pub mod gamma_flip;
+pub mod incubator;
+pub mod zero_dte_neutral;
 pub mod distribution_sniper;
 
 use crate::models::{
@@ -26,6 +28,7 @@ pub trait TradingStrategy: Send + Sync {
         options: &[crate::models::OptionContractSnapshot],
         position: Option<&PositionRecord>,
         kronos_score: Option<f64>,
+        net_gex: Option<f64>,
     ) -> StrategySignal;
 }
 
@@ -35,12 +38,12 @@ static STRATEGY_REGISTRY: OnceLock<HashMap<StrategyKind, Box<dyn TradingStrategy
 fn get_strategy_registry() -> &'static HashMap<StrategyKind, Box<dyn TradingStrategy + Send + Sync>> {
     STRATEGY_REGISTRY.get_or_init(|| {
         let mut m: HashMap<StrategyKind, Box<dyn TradingStrategy + Send + Sync>> = HashMap::new();
-        m.insert(StrategyKind::VwapReflexive, Box::new(VwapReflexiveStrategy));
+        m.insert(StrategyKind::VwapReflexive, Box::new(incubator::VwapReflexiveStrategy));
         m.insert(
             StrategyKind::RsiMeanReversion,
-            Box::new(RsiMeanReversionStrategy),
+            Box::new(incubator::RsiMeanReversionStrategy),
         );
-        m.insert(StrategyKind::SmaTrend, Box::new(SmaTrendStrategy));
+        m.insert(StrategyKind::SmaTrend, Box::new(zero_dte_neutral::ZeroDteNeutralStrategy));
         m.insert(
             StrategyKind::ListingArbitrage,
             Box::new(listing_arb::ListingArbitrageStrategy),
@@ -51,7 +54,9 @@ fn get_strategy_registry() -> &'static HashMap<StrategyKind, Box<dyn TradingStra
         m.insert(StrategyKind::JarrodVwap, Box::new(jarrod_vwap::JarrodVwapStrategy));
         m.insert(StrategyKind::YieldRotation, Box::new(yield_rotation::YieldRotationStrategy));
         m.insert(StrategyKind::GammaFlip, Box::new(gamma_flip::GammaFlipStrategy));
+        m.insert(StrategyKind::ZeroDteNeutral, Box::new(zero_dte_neutral::ZeroDteNeutralStrategy));
         m.insert(StrategyKind::DistributionSniper, Box::new(distribution_sniper::DistributionSniperStrategy));
+        m.insert(StrategyKind::SmaTrend, Box::new(incubator::VwapReflexiveStrategy));
         m
     })
 }
@@ -64,6 +69,7 @@ pub async fn evaluate_strategy(
     options: &[crate::models::OptionContractSnapshot],
     position: Option<&PositionRecord>,
     kronos_score: Option<f64>,
+    net_gex: Option<f64>,
 ) -> StrategySignal {
     // 1. GLOBAL 0DTE SAFETY KILL-SWITCH
     // Ensures options expiring today are closed before market close.
@@ -93,13 +99,74 @@ pub async fn evaluate_strategy(
     let registry = get_strategy_registry();
     let mut signal = if let Some(trading_strategy) = registry.get(&strategy.kind) {
         trading_strategy
-            .evaluate(state, strategy, candles, quote, options, position, kronos_score)
+            .evaluate(state, strategy, candles, quote, options, position, kronos_score, net_gex)
             .await
     } else {
         hold(format!("Strategy implementation for {:?} not found", strategy.kind))
     };
 
-    // 2. ENRICH EXITS: Ensure every buy signal has a planned exit strategy
+    // 2. PROFIT GUARD: Dynamic Protection for 0DTE and High-Profit Trades
+    if let Some(pos) = position {
+        let current_price = quote.price;
+        let avg_price = pos.average_price;
+        let profit_pct = if pos.quantity > 0.0 {
+            (current_price - avg_price) / avg_price
+        } else {
+            0.0
+        };
+
+        // STAGE 3: Trailing Stop at +30% profit
+        if profit_pct >= 0.30 {
+            signal.trailing_stop = Some(0.05); // 5% trailing stop
+            signal.reason = format!("PROFIT GUARD [STAGE 3]: +30% reached ({:.1}%). Locking in gains with 5% Trailing Stop.", profit_pct * 100.0);
+        }
+        // STAGE 1 & 2: Breakeven Anchor at +15%
+        else if profit_pct >= 0.15 {
+             // If we don't have a stop loss or it's below breakeven, move it up.
+             let breakeven_plus = avg_price * 1.005; // Entry + 0.5% to cover fees
+             if signal.stop_loss.is_none() || signal.stop_loss.unwrap() < breakeven_plus {
+                 signal.stop_loss = Some(breakeven_plus);
+                 signal.reason = format!("PROFIT GUARD [STAGE 1/2]: +15% reached ({:.1}%). Anchoring Stop-Loss to Breakeven.", profit_pct * 100.0);
+             }
+        }
+
+        // --- EXPLICIT TARGET MONITORING ---
+        // 1. Take Profit Check
+        if let Some(tp_target) = pos.take_profit {
+            let is_long = pos.quantity > 0.0;
+            let tp_hit = if is_long { current_price >= tp_target } else { current_price <= tp_target };
+            if tp_hit {
+                signal.action = SignalAction::Sell;
+                signal.reason = format!("GLOBAL TARGET HIT: Take-Profit reached at ${:.2} (Target: ${:.2})", current_price, tp_target);
+                signal.exit_logic = Some("Take Profit".to_string());
+            }
+        }
+
+        // 2. Stop Loss Check (Razor Stop)
+        if let Some(sl_target) = pos.razor_stop {
+            let is_long = pos.quantity > 0.0;
+            let sl_hit = if is_long { current_price <= sl_target } else { current_price >= sl_target };
+            if sl_hit {
+                signal.action = SignalAction::Sell;
+                signal.reason = format!("GLOBAL PROTECTION: Stop-Loss reached at ${:.2} (Limit: ${:.2})", current_price, sl_target);
+                signal.exit_logic = Some("Stop Loss".to_string());
+            }
+        }
+        
+        // THETA KILL: If 0DTE and holding > 45 mins without profit, exit.
+        // (Requires entry_time in PositionRecord)
+        if let Some(ref entry_time_str) = pos.entry_time {
+            if let Ok(entry_time) = chrono::DateTime::parse_from_rfc3339(entry_time_str) {
+                let hold_duration = chrono::Utc::now() - entry_time.with_timezone(&chrono::Utc);
+                if hold_duration.num_minutes() >= 45 && profit_pct < 0.05 {
+                    signal.action = SignalAction::Sell;
+                    signal.reason = "PROFIT GUARD [THETA KILL]: 0DTE held > 45 mins without 5% profit breakout. Exiting to preserve premium.".to_string();
+                }
+            }
+        }
+    }
+
+    // 3. ENRICH EXITS: Ensure every buy signal has a planned exit strategy
     if matches!(signal.action, SignalAction::Buy) && signal.planned_exit.is_none() {
         signal.planned_exit = Some("Standard Risk Exit: 25% TP / 15% SL".to_string());
     }
@@ -107,159 +174,6 @@ pub async fn evaluate_strategy(
     signal
 }
 
-pub struct VwapReflexiveStrategy;
-
-#[async_trait]
-impl TradingStrategy for VwapReflexiveStrategy {
-    async fn evaluate(
-        &self,
-        _state: &AppState,
-        _strategy: &StrategyRecord,
-        candles: &[Candle],
-        quote: &Quote,
-        _options: &[crate::models::OptionContractSnapshot],
-        position: Option<&PositionRecord>,
-        kronos_score: Option<f64>,
-    ) -> StrategySignal {
-        evaluate_vwap_reflexive(candles, quote, position, kronos_score).await
-    }
-}
-
-async fn evaluate_vwap_reflexive(
-    candles: &[Candle],
-    quote: &Quote,
-    position: Option<&PositionRecord>,
-        _kronos_score: Option<f64>,
-    ) -> StrategySignal {
-    let session_vwap = quote.vwap.or_else(|| intraday_vwap(candles));
-    let Some(vwap) = session_vwap else {
-        return hold("VWAP unavailable");
-    };
-
-    if vwap <= 0.0 {
-        return hold("VWAP invalid");
-    }
-
-    let distance = (quote.price - vwap) / vwap;
-    match (position, distance) {
-        (None, d) if d > 0.002 => StrategySignal {
-            action: SignalAction::Buy,
-            allocation_fraction: 0.18,
-            reason: format!("Price is {:.2}% above session VWAP", d * 100.0),
-            ..Default::default()
-
-        },
-        (Some(_), d) if d < -0.001 => StrategySignal {
-            action: SignalAction::Sell,
-            allocation_fraction: 1.0,
-            reason: format!("Price fell {:.2}% below session VWAP", d * 100.0),
-            ..Default::default()
-
-        },
-        _ => hold("Waiting for VWAP displacement"),
-    }
-}
-
-// Strategy logic delegated to modules below
-
-pub struct RsiMeanReversionStrategy;
-
-#[async_trait]
-impl TradingStrategy for RsiMeanReversionStrategy {
-    async fn evaluate(
-        &self,
-        _state: &AppState,
-        _strategy: &StrategyRecord,
-        candles: &[Candle],
-        quote: &Quote,
-        _options: &[crate::models::OptionContractSnapshot],
-        position: Option<&PositionRecord>,
-        kronos_score: Option<f64>,
-    ) -> StrategySignal {
-        evaluate_rsi_mean_reversion(candles, quote, position, kronos_score).await
-    }
-}
-
-async fn evaluate_rsi_mean_reversion(
-    candles: &[Candle],
-    _quote: &Quote,
-    position: Option<&PositionRecord>,
-        _kronos_score: Option<f64>,
-    ) -> StrategySignal {
-    let closes = closes(candles);
-    let Some(rsi) = rsi(&closes, 14) else {
-        return hold("RSI unavailable");
-    };
-
-    match (position, rsi) {
-        (None, value) if value < 30.0 => StrategySignal {
-            action: SignalAction::Buy,
-            allocation_fraction: 0.12,
-            reason: format!("RSI mean reversion entry at {:.1}", value),
-            ..Default::default()
-
-        },
-        (Some(_), value) if value > 62.0 => StrategySignal {
-            action: SignalAction::Sell,
-            allocation_fraction: 1.0,
-            reason: format!("RSI exit at {:.1}", value),
-            ..Default::default()
-
-        },
-        _ => hold("RSI within neutral zone"),
-    }
-}
-
-pub struct SmaTrendStrategy;
-
-#[async_trait]
-impl TradingStrategy for SmaTrendStrategy {
-    async fn evaluate(
-        &self,
-        _state: &AppState,
-        _strategy: &StrategyRecord,
-        candles: &[Candle],
-        quote: &Quote,
-        _options: &[crate::models::OptionContractSnapshot],
-        position: Option<&PositionRecord>,
-        kronos_score: Option<f64>,
-    ) -> StrategySignal {
-        evaluate_sma_trend(candles, quote, position, kronos_score).await
-    }
-}
-
-async fn evaluate_sma_trend(
-    candles: &[Candle],
-    _quote: &Quote,
-    position: Option<&PositionRecord>,
-        _kronos_score: Option<f64>,
-    ) -> StrategySignal {
-    let closes = closes(candles);
-    let Some(fast) = sma(&closes, 20) else {
-        return hold("20 period SMA unavailable");
-    };
-    let Some(slow) = sma(&closes, 50) else {
-        return hold("50 period SMA unavailable");
-    };
-
-    match (position, fast > slow) {
-        (None, true) => StrategySignal {
-            action: SignalAction::Buy,
-            allocation_fraction: 0.15,
-            reason: format!("Fast SMA {:.2} crossed above slow SMA {:.2}", fast, slow),
-            ..Default::default()
-
-        },
-        (Some(_), false) => StrategySignal {
-            action: SignalAction::Sell,
-            allocation_fraction: 1.0,
-            reason: format!("Fast SMA {:.2} dropped below slow SMA {:.2}", fast, slow),
-            ..Default::default()
-
-        },
-        _ => hold("Trend regime unchanged"),
-    }
-}
 
 pub fn hold(reason: impl Into<String>) -> StrategySignal {
     StrategySignal {
@@ -277,6 +191,15 @@ pub fn hold(reason: impl Into<String>) -> StrategySignal {
         source: None,
         math_edge: None,
         ai_score: None,
+        ..Default::default()
+    }
+}
+
+pub fn hold_with_intent(reason: impl Into<String>, intent: impl Into<String>) -> StrategySignal {
+    StrategySignal {
+        action: SignalAction::Hold,
+        reason: reason.into(),
+        hold_intent: Some(intent.into()),
         ..Default::default()
     }
 }
@@ -461,6 +384,10 @@ mod tests {
             run_interval_ms: 0,
             state_json: serde_json::json!({}),
             risk_parameters: None,
+            performance_stats_json: None,
+            shared_cash: None,
+            use_shared_cash: false,
+            execution_profile: crate::models::ExecutionProfile::Standard,
         }
     }
 
@@ -470,7 +397,7 @@ mod tests {
         let quote = make_quote(100.5, Some(100.0));
         let state = make_test_app_state();
         let strategy = make_test_strategy(StrategyKind::VwapReflexive);
-        let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &candles, &quote, &[], None, None));
+        let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &candles, &quote, &[], None, None, None));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
@@ -483,7 +410,7 @@ mod tests {
         let quote = make_quote(100.0, None);
         let state = make_test_app_state();
         let strategy = make_test_strategy(StrategyKind::RsiMeanReversion);
-        let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &candles, &quote, &[], None, None));
+        let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &candles, &quote, &[], None, None, None));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
@@ -496,7 +423,7 @@ mod tests {
         let quote = make_quote(100.0, None);
         let state = make_test_app_state();
         let strategy = make_test_strategy(StrategyKind::SmaTrend);
-        let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &candles, &quote, &[], None, None));
+        let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &candles, &quote, &[], None, None, None));
         assert_eq!(signal.action, SignalAction::Buy);
     }
 
@@ -532,7 +459,7 @@ mod tests {
         let quote = make_quote(150.0, None);
         let strategy = make_test_strategy(StrategyKind::VwapReflexive);
         let state = make_test_app_state();
-        let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &[], &quote, &[], None, None));
+        let signal = tokio_test::block_on(evaluate_strategy(&state, &strategy, &[], &quote, &[], None, None, None));
         assert_eq!(signal.action, SignalAction::Hold);
         assert_eq!(signal.reason, "VWAP unavailable");
     }

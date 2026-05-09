@@ -43,7 +43,7 @@ pub async fn dashboard(
         }
     };
 
-    let (strategies, recent_trades, credentials, tracked_symbols, watchlists) = {
+    let (strategies, recent_trades, credentials, tracked_symbols, watchlists, recent_logs) = {
         let mut db = state.db.lock().await;
         db.store_market_snapshot(&quote.quote, &quote.raw_json)?;
         db.store_option_snapshots(&options.contracts, &options.raw_json)?;
@@ -63,6 +63,7 @@ pub async fn dashboard(
             db.list_credentials()?,
             tracked_symbols,
             db.list_watchlists()?,
+            db.list_global_intelligence_logs(500)?,
         )
     };
 
@@ -80,6 +81,7 @@ pub async fn dashboard(
             credentials,
             tracked_symbols,
             watchlists,
+            recent_logs,
         }),
         error: None,
     })

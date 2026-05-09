@@ -1,8 +1,28 @@
 <script lang="ts">
-  import type { PositionSummary } from "../lib/types";
+  import type { PositionSummary, BrokerPositionSummary } from "../lib/types";
   import PositionCard from "./PositionCard.svelte";
+  import BrokerPositionCard from "./BrokerPositionCard.svelte";
+
+  import { api } from "../lib/api";
 
   export let positions: PositionSummary[] = [];
+  export let brokerPositions: BrokerPositionSummary[] = [];
+  export let strategies: any[] = [];
+
+  let isSellingAll = false;
+
+  async function handleSellAll() {
+    if (!confirm("Are you sure you want to FORCE LIQUIDATE ALL positions? This will hit Alpaca directly and close everything visible, even if the bot's metadata is lost.")) return;
+    isSellingAll = true;
+    try {
+      await api.liquidateAllBrokerPositions();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to force liquidate all positions. Check logs.");
+    } finally {
+      isSellingAll = false;
+    }
+  }
 
   function handleFlattened(event: CustomEvent<string>) {
     const symbol = event.detail;
@@ -11,23 +31,38 @@
   }
 </script>
 
-{#if positions.length > 0}
 <section class="positions-section">
   <div class="section-header">
     <div class="header-main">
-        <h2>Open Combat Positions</h2>
-        <span class="count">{positions.length} Active</span>
+        <h2>Live Deployments</h2>
+        <span class="count">{positions.length + brokerPositions.length} Total</span>
+        {#if positions.length > 0 || brokerPositions.length > 0}
+          <button class="sell-all-btn" on:click={handleSellAll} disabled={isSellingAll}>
+            {isSellingAll ? 'FLATTENING...' : 'SELL ALL'}
+          </button>
+        {/if}
     </div>
-    <p>Real-time surveillance of live deployments and risk parameters.</p>
+    <p>Real-time surveillance of tracked strategies and manual broker positions.</p>
   </div>
   
   <div class="positions-scroll">
-    {#each positions as position (position.strategy_id + position.instrument_symbol)}
-      <PositionCard {position} on:flattened={handleFlattened} />
-    {/each}
+    {#if positions.length === 0 && brokerPositions.length === 0}
+      <div class="empty-positions">
+        <p>No active deployments or broker positions found.</p>
+      </div>
+    {:else}
+      {#each positions as position (position.strategy_id + position.instrument_symbol)}
+        <PositionCard {position} strategyName={strategies.find(s => s.id === position.strategy_id)?.name || position.strategy_id} on:flattened={handleFlattened} />
+      {/each}
+
+      {#each brokerPositions as brokerPos (brokerPos.symbol)}
+          {#if !positions.some(p => p.instrument_symbol === brokerPos.symbol)}
+              <BrokerPositionCard position={brokerPos} />
+          {/if}
+      {/each}
+    {/if}
   </div>
 </section>
-{/if}
 
 <style>
   .positions-section {
@@ -70,6 +105,30 @@
     color: rgba(221, 233, 255, 0.6);
   }
 
+  .sell-all-btn {
+    margin-left: auto;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: #f87171;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    padding: 0.25rem 0.75rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .sell-all-btn:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.3);
+    color: white;
+  }
+
+  .sell-all-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .positions-scroll {
     display: flex;
     gap: 1.5rem;
@@ -86,5 +145,17 @@
   .positions-scroll::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.1);
     border-radius: 3px;
+  }
+
+  .empty-positions {
+    padding: 3rem;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.3);
+    font-style: italic;
+    font-size: 0.9rem;
+    width: 100%;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    border: 1px dashed rgba(255, 255, 255, 0.1);
   }
 </style>

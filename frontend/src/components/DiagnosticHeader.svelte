@@ -8,94 +8,111 @@
   export let buyingPower: number = 0;
 
   function getStatusColor(active: boolean) {
-    return active ? "#4ade80" : "#f87171";
+    return active ? "var(--accent-cyan)" : "var(--accent-coral)";
   }
 </script>
 
-<div class="diagnostic-header">
+<div class="diagnostic-header glass-panel">
   <div class="stat-item">
-    <span class="label">Alpaca</span>
+    <span class="label">Broker</span>
     <div class="value-row">
-      <div class="indicator" style="background: {getStatusColor(alpacaActive)}"></div>
-      <span class="value">{alpacaActive ? "LIVE" : "OFFLINE"}</span>
+      <div class="indicator" style="background: {getStatusColor(alpacaActive)}; box-shadow: 0 0 12px {getStatusColor(alpacaActive)}"></div>
+      <span class="value">{alpacaActive ? "ALPACA LIVE" : "DISCONNECTED"}</span>
     </div>
   </div>
 
   <div class="stat-item">
     <span class="label">Kronos Intelligence</span>
     <div class="value-row">
-      <div class="indicator" style="background: {getStatusColor(kronosActive)}"></div>
+      <div class="indicator" style="background: {getStatusColor(kronosActive)}; box-shadow: 0 0 12px {getStatusColor(kronosActive)}"></div>
       <span class="value">{kronosActive ? "SYNCED" : "OFFLINE"}</span>
       {#if kronosActive}
-        <span class="latency">{kronosLatency}ms</span>
+        <span class="latency font-mono">{kronosLatency}ms</span>
       {/if}
     </div>
   </div>
 
   <div class="stat-item">
-    <span class="label">Options Chain</span>
+    <span class="label">Market Data</span>
     <div class="value-row">
-      <div class="indicator" style="background: {getStatusColor(optionsActive)}"></div>
-      <span class="value">{optionsActive ? "READY" : "ERROR"}</span>
+      <div class="indicator" style="background: {getStatusColor(optionsActive)}; box-shadow: 0 0 12px {getStatusColor(optionsActive)}"></div>
+      <span class="value">{optionsActive ? "READY" : "STALE"}</span>
     </div>
   </div>
 
   <div class="stat-item">
     <span class="label">Buying Power</span>
-    <span class="value money">{prettyMoneyStrict(buyingPower)}</span>
+    <span class="value money font-mono">{prettyMoneyStrict(buyingPower)}</span>
+  </div>
+
+  <div class="stat-item version-item">
+    <span class="label">Terminal</span>
+    <span class="value font-mono">v0.2.0-PRO</span>
   </div>
 </div>
 
 <style>
   .diagnostic-header {
     display: flex;
-    gap: 2rem;
-    padding: 12px 24px;
-    background: rgba(0, 0, 0, 0.4);
+    gap: 3rem;
+    padding: 0.75rem 2rem;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: 0;
+    border-top: none;
+    border-left: none;
+    border-right: none;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(10px);
-    font-size: 0.85rem;
+    backdrop-filter: blur(20px);
+    z-index: 100;
+    position: sticky;
+    top: 0;
   }
 
   .stat-item {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    justify-content: center;
   }
 
   .label {
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 0.7rem;
+    color: #475569;
+    font-size: 0.6rem;
+    font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 1px;
+    letter-spacing: 0.1rem;
+    margin-bottom: 0.25rem;
   }
 
   .value-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 0.5rem;
   }
 
   .indicator {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
-    box-shadow: 0 0 10px currentColor;
   }
 
   .value {
-    color: white;
-    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
   }
 
   .latency {
-    color: rgba(255, 255, 255, 0.4);
-    font-size: 0.75rem;
-    font-weight: normal;
+    color: #475569;
+    font-size: 0.7rem;
   }
 
   .money {
-    color: #4ade80;
-    font-family: inherit;
+    color: var(--accent-cyan);
+  }
+
+  .version-item {
+    margin-left: auto;
+    text-align: right;
   }
 </style>

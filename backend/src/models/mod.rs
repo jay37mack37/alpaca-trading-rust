@@ -61,6 +61,14 @@ pub enum ExecutionMode {
     AlpacaReconciliation,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionProfile {
+    Standard,
+    #[serde(rename = "sniper_0dte")]
+    Sniper0Dte,
+}
+
 impl ExecutionMode {
     pub fn requires_external_broker(self) -> bool {
         !matches!(self, Self::LocalPaper)
@@ -118,6 +126,7 @@ pub enum StrategyKind {
     YieldRotation,
     DistributionSniper,
     GammaFlip,
+    ZeroDteNeutral,
 }
 
 impl StrategyKind {
@@ -134,6 +143,7 @@ impl StrategyKind {
             Self::YieldRotation => "yield_rotation",
             Self::DistributionSniper => "distribution_sniper",
             Self::GammaFlip => "gamma_flip",
+            Self::ZeroDteNeutral => "zero_dte_neutral",
         }
     }
 }
@@ -249,6 +259,8 @@ pub struct BrokerPositionSummary {
     pub current_price: Option<f64>,
     pub unrealized_pl: Option<f64>,
     pub unrealized_plpc: Option<f64>,
+    pub strategy_id: Option<String>,
+    pub entry_logic: Option<String>,
     pub synced_at: String,
 }
 
@@ -297,6 +309,7 @@ pub struct StrategySummary {
     pub option_dte_max: u32,
     pub option_max_spread_pct: f64,
     pub option_limit_buffer_pct: f64,
+    pub use_shared_cash: bool,
     pub credential_id: Option<String>,
     pub starting_cash: f64,
     pub cash_balance: f64,
@@ -318,6 +331,7 @@ pub struct StrategySummary {
     pub run_interval_ms: u64,
     pub state_json: serde_json::Value,
     pub risk_parameters: Option<RiskParameters>,
+    pub execution_profile: ExecutionProfile,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -406,6 +420,8 @@ pub struct TradeRecord {
     pub buy_logic: Option<String>,
     pub entry_math: Option<String>,
     pub entry_ai: Option<f64>,
+    pub signal_price: Option<f64>,
+    pub slippage_pnl: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -429,6 +445,7 @@ pub struct DashboardResponse {
     pub credentials: Vec<CredentialSummary>,
     pub tracked_symbols: Vec<String>,
     pub watchlists: Vec<Watchlist>,
+    pub recent_logs: Vec<IntelligenceLog>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -478,6 +495,8 @@ pub struct CreateStrategyRequest {
     pub live_confirmation: Option<String>,
     pub run_interval_ms: Option<u64>,
     pub risk_parameters: Option<RiskParameters>,
+    pub use_shared_cash: Option<bool>,
+    pub execution_profile: Option<ExecutionProfile>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -502,6 +521,8 @@ pub struct UpdateStrategyRequest {
     pub live_confirmation: Option<String>,
     pub run_interval_ms: Option<u64>,
     pub risk_parameters: Option<RiskParameters>,
+    pub use_shared_cash: Option<bool>,
+    pub execution_profile: Option<ExecutionProfile>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -531,6 +552,7 @@ pub enum RealtimeEvent {
     },
     Positions {
         positions: Vec<PositionSummary>,
+        broker_positions: Vec<BrokerPositionSummary>,
     },
     Status {
         channel: String,
@@ -548,6 +570,8 @@ pub enum RealtimeEvent {
         decision: String,
         narrative: String,
         time: String,
+        was_executed: Option<bool>,
+        version_hash: Option<String>,
     },
     Notification {
         strategy_id: Option<String>,
@@ -561,6 +585,7 @@ pub enum RealtimeEvent {
         kronos_active: bool,
         alpaca_active: bool,
         options_active: bool,
+        execution_profile: ExecutionProfile,
     },
     System {
         event: telemetry::SystemEvent,
@@ -601,6 +626,22 @@ impl RealtimeEvent {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntelligenceLog {
+    pub id: Option<String>,
+    pub strategy_id: String,
+    pub symbol: String,
+    pub source: String,
+    pub math_edge: String,
+    pub ai_score: String,
+    pub decision: String,
+    pub narrative: String,
+    pub timestamp: String,
+    #[serde(default)]
+    pub was_executed: bool,
+    pub version_hash: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct StrategyRecord {
     pub id: String,
@@ -630,6 +671,10 @@ pub struct StrategyRecord {
     pub run_interval_ms: u64,
     pub state_json: serde_json::Value,
     pub risk_parameters: Option<RiskParameters>,
+    pub use_shared_cash: bool,
+    pub shared_cash: Option<f64>,
+    pub performance_stats_json: Option<String>,
+    pub execution_profile: ExecutionProfile,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -699,6 +744,8 @@ pub struct StrategySignal {
     pub hold_intent: Option<String>,
     pub planned_exit: Option<String>,
     pub exit_logic: Option<String>,
+    pub strike: Option<f64>,
+    pub contract_symbol: Option<String>,
     pub legs: Option<Vec<crate::models::TradeLeg>>,
 }
 

@@ -15,8 +15,9 @@ impl crate::strategies::TradingStrategy for JarrodVwapStrategy {
         _options: &[crate::models::OptionContractSnapshot],
         position: Option<&PositionRecord>,
         kronos_score: Option<f64>,
+        net_gex: Option<f64>,
     ) -> StrategySignal {
-        evaluate_jarrod_vwap(state, strategy, candles, position, kronos_score)
+        evaluate_jarrod_vwap(state, strategy, candles, position, kronos_score, net_gex)
     }
 }
 
@@ -110,6 +111,7 @@ pub fn evaluate_jarrod_vwap(
     candles: &[Candle],
     position: Option<&PositionRecord>,
     _kronos_score: Option<f64>,
+    _net_gex: Option<f64>,
 ) -> StrategySignal {
     if candles.len() < 2 {
         return crate::strategies::hold("Not enough candles");

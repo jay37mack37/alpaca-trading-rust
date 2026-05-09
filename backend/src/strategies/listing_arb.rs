@@ -176,8 +176,9 @@ impl TradingStrategy for ListingArbitrageStrategy {
         options: &[OptionContractSnapshot],
         position: Option<&PositionRecord>,
         kronos_score: Option<f64>,
+        net_gex: Option<f64>,
     ) -> StrategySignal {
-        evaluate_listing_arbitrage_wrapper(state, strategy, candles, quote, options, position, kronos_score).await
+        evaluate_listing_arbitrage_wrapper(state, strategy, candles, quote, options, position, kronos_score, net_gex).await
     }
 }
 
@@ -190,6 +191,7 @@ pub async fn evaluate_listing_arbitrage_wrapper(
     options: &[OptionContractSnapshot],
     position: Option<&PositionRecord>,
     kronos_score: Option<f64>,
+    _net_gex: Option<f64>,
 ) -> StrategySignal {
     if options.is_empty() {
         return hold("No option contracts available for evaluation");

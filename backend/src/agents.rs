@@ -9,6 +9,7 @@ use crate::models::{
     AssetClassTarget, DataProvider, ExecutionMode, RealtimeEvent, SignalAction,
 };
 use crate::services::broker::{resolve_alpaca_credential, sync_strategy_broker_state};
+use crate::strategies::gamma_flip::calculate_net_gex;
 use crate::services::kronos::fetch_kronos_score;
 use crate::services::providers::{
     fetch_candles, fetch_options, fetch_quote, poll_alpaca_order_until_filled,
@@ -78,13 +79,29 @@ pub async fn run_strategy_once(
                 )
                 .await?;
 
-                let latest_strategy = {
+                let mut latest_strategy = {
                     let db = state.db.lock().await;
                     db.list_strategy_records()?
                         .into_iter()
                         .find(|candidate| candidate.id == strategy_id)
                         .ok_or_else(|| AppError::NotFound(format!("strategy {strategy_id}")))?
                 };
+
+                // CAPITAL BOXING: If this is a Sniper0Dte profile, we FORCIBLY disable shared cash.
+                // This ensures the strategy strictly uses its $1000 isolated pot.
+                if latest_strategy.execution_profile == crate::models::ExecutionProfile::Sniper0Dte {
+                    latest_strategy.use_shared_cash = false;
+                    latest_strategy.shared_cash = None;
+                }
+
+                // SHARED BALANCE LOGIC: For standard strategies, we can use the global pool.
+                if latest_strategy.use_shared_cash && latest_strategy.execution_mode.requires_external_broker() {
+                    if let Some(credential) = trading_credential.as_ref().or(data_credential.as_ref()) {
+                         if let Ok(sync) = crate::services::providers::fetch_alpaca_broker_sync(&state.http, credential, state.config.mock_alpaca).await {
+                             latest_strategy.shared_cash = sync.account.buying_power;
+                         }
+                    }
+                }
                 let mut option_contracts = Vec::new();
                 let option_provider =
                     if latest_strategy.asset_class_target == AssetClassTarget::Options {
@@ -132,6 +149,13 @@ pub async fn run_strategy_once(
                 let kronos_result = fetch_kronos_score(&state.http, &symbol).await;
                 let kronos_score = kronos_result.as_ref().map(|s| s.confidence).ok();
 
+                // Calculate Net GEX for the symbol (Filter)
+                let net_gex = if !option_contracts.is_empty() {
+                    Some(calculate_net_gex(quote.quote.price, &option_contracts))
+                } else {
+                    None
+                };
+
                 let signal = crate::strategies::evaluate_strategy(
                     &state,
                     &latest_strategy,
@@ -140,6 +164,7 @@ pub async fn run_strategy_once(
                     &option_contracts,
                     current_position.as_ref(),
                     kronos_score,
+                    net_gex,
                 )
                 .await;
 
@@ -154,19 +179,47 @@ pub async fn run_strategy_once(
                     &signal.reason,
                 );
 
+                // Audit Log: Decision Narrative
+                if !matches!(signal.action, SignalAction::Hold) {
+                    let event_type = if matches!(signal.action, SignalAction::Buy) {
+                        SystemEventType::Signal
+                    } else if current_position.is_some() {
+                        SystemEventType::Exit
+                    } else {
+                        SystemEventType::Scan
+                    };
+
+                    if event_type != SystemEventType::Scan {
+                        broadcast_audit_log(
+                            &state,
+                            AuditEvent::now(
+                                strategy_id.to_uppercase(),
+                                Some(strategy_id.clone()),
+                                symbol.to_string(),
+                                event_type,
+                                format!("Price: ${:.2}", quote.quote.price),
+                                kronos_score.unwrap_or(0.5),
+                                format!("STRATEGY DECISION | Action: {} | Reason: {}", signal.action.as_str().to_uppercase(), signal.reason),
+                                Some(latest_strategy.execution_profile),
+                            )
+                        );
+                    }
+                }
+
 
                 if !matches!(signal.action, SignalAction::Hold) && current_position.is_none() {
                     if let Err(e) = state.risk_engine.validate(state.db.clone(), &latest_strategy, &signal).await {
                         broadcast_audit_log(
                             &state,
                             AuditEvent::now(
-                                SystemSource::System,
+                                strategy_id.to_uppercase(),
                                 Some(strategy_id.clone()),
                                 symbol.to_string(),
                                 SystemEventType::Protection,
                                 format!("Price: ${:.2}", quote.quote.price),
                                 kronos_score.unwrap_or(0.5),
                                 format!("RISK ENGINE BLOCKED: {}", e),
+                                Some(latest_strategy.execution_profile),
                             )
                         );
                         let db2 = state.db.lock().await;
@@ -210,6 +263,11 @@ pub async fn run_strategy_once(
                         return Ok(None);
                     }
 
+                    let global_profile = {
+                        let db = state.db.lock().await;
+                        db.get_global_execution_profile()
+                    };
+
                     match prepare_trade(
                         &latest_strategy,
                         current_position.as_ref(),
@@ -218,12 +276,28 @@ pub async fn run_strategy_once(
                         &signal,
                         &option_contracts,
                         true,
+                        global_profile,
                     )? {
                         TradePreparationOutcome::Ready(trade) => Some(trade),
                         TradePreparationOutcome::Skip(reason) => {
+                            broadcast_audit_log(
+                                &state,
+                                AuditEvent::now(
+                                    strategy_id.to_uppercase(),
+                                    Some(strategy_id.clone()),
+                                    symbol.to_string(),
+                                    SystemEventType::Scan,
+                                    format!("Price: ${:.2}", quote.quote.price),
+                                    kronos_score.unwrap_or(0.5),
+                                    format!("TRADE SKIPPED: {}", reason),
+                                    Some(global_profile),
+                                )
+                            );
                             let db = state.db.lock().await;
                             db.mark_strategy_run(&strategy_id, &reason, signal.new_state.clone())?;
                             return Ok(None);
+                        }
+                    }
                         }
                     }
                 } else {
@@ -235,9 +309,23 @@ pub async fn run_strategy_once(
                         &signal,
                         &option_contracts,
                         false,
+                        global_profile,
                     )? {
                         TradePreparationOutcome::Ready(trade) => Some(trade),
                         TradePreparationOutcome::Skip(reason) => {
+                            broadcast_audit_log(
+                                &state,
+                                AuditEvent::now(
+                                    strategy_id.to_uppercase(),
+                                    Some(strategy_id.clone()),
+                                    symbol.to_string(),
+                                    SystemEventType::Scan,
+                                    format!("Price: ${:.2}", quote.quote.price),
+                                    kronos_score.unwrap_or(0.5),
+                                    format!("TRADE SKIPPED: {}", reason),
+                                    Some(global_profile),
+                                )
+                            );
                             let db = state.db.lock().await;
                             db.mark_strategy_run(&strategy_id, &reason, signal.new_state.clone())?;
                             return Ok(None);
@@ -291,13 +379,14 @@ pub async fn run_strategy_once(
                             broadcast_audit_log(
                                 &state,
                                 AuditEvent::now(
-                                    SystemSource::System,
+                                    strategy_id.to_uppercase(),
                                     Some(strategy_id.clone()),
                                     symbol.to_string(),
                                     SystemEventType::Haggle,
                                     format!("Order:{}", submitted.order_id),
                                     kronos_score.unwrap_or(0.5),
                                     "THE HAGGLER | Order submitted. Walking price to mid for optimal fill.".to_string(),
+                                    Some(global_profile),
                                 )
                             );
 
@@ -334,6 +423,11 @@ pub async fn run_strategy_once(
                             let mut reconciled_trade = prepared_trade.local.clone();
                             reconciled_trade.quantity = fill.filled_qty;
                             reconciled_trade.price = fill.filled_avg_price;
+                            
+                            // Calculate Real Slippage (Signal vs Reality)
+                            let slippage_per_unit = prepared_trade.local.price - fill.filled_avg_price;
+                            let total_slippage = slippage_per_unit * fill.filled_qty * prepared_trade.local.multiplier;
+                            reconciled_trade.slippage_pnl = Some(total_slippage);
 
                             // HAGGLER LOGGING: Slippage Audit
                             let slippage = (fill.filled_avg_price - prepared_trade.local.price).abs();
@@ -341,13 +435,14 @@ pub async fn run_strategy_once(
                             broadcast_audit_log(
                                 &state,
                                 AuditEvent::now(
-                                    SystemSource::System,
+                                    strategy_id.to_uppercase(),
                                     Some(strategy_id.clone()),
                                     symbol.to_string(),
                                     SystemEventType::Exit,
                                     format!("Exp:${:.2} Act:${:.2}", prepared_trade.local.price, fill.filled_avg_price),
                                     kronos_score.unwrap_or(0.5),
                                     format!("FILL COMPLETE | Slippage: ${:.2} ({:.2}%)", slippage, slippage_pct),
+                                    Some(global_profile),
                                 )
                             );
 
@@ -356,21 +451,22 @@ pub async fn run_strategy_once(
                                 broadcast_audit_log(
                                     &state,
                                     AuditEvent::now(
-                                        SystemSource::System,
+                                        strategy_id.to_uppercase(),
                                         Some(strategy_id.clone()),
                                         symbol.to_string(),
                                         SystemEventType::Protection,
                                         format!("Stop:${:.2}", stop),
                                         kronos_score.unwrap_or(0.5),
-                                        format!("RAZOR ACTIVE | Protective stop set at ${:.2}", stop),
+                                        format!("SMART TRAIL | Initial Stop-Loss anchored at ${:.2}", stop),
+                                        Some(latest_strategy.execution_profile),
                                     )
                                 );
                             }
 
-                            let trade = {
+                            let executed_trade = {
                                 let mut db = state.db.lock().await;
                                 db.store_market_snapshot(&quote.quote, &quote.raw_json)?;
-                                db.execute_local_trade(
+                                 let trade_record = db.execute_local_trade(
                                     &strategy_id,
                                     if latest_strategy.asset_class_target
                                         == AssetClassTarget::Options
@@ -382,9 +478,26 @@ pub async fn run_strategy_once(
                                     latest_strategy.execution_mode,
                                     &signal,
                                     &reconciled_trade,
-                                )?
+                                )?;
+                                db.mark_latest_intelligence_log_executed(&strategy_id, &symbol)?;
+
+                                // LIVE BROADCAST: Mark the intelligence log as executed in real-time
+                                let _ = state.streams.send_event(crate::models::RealtimeEvent::Log {
+                                    strategy_id: strategy_id.clone(),
+                                    symbol: symbol.to_string(),
+                                    source: latest_strategy.name.clone(),
+                                    math_edge: reconciled_trade.entry_math.clone().unwrap_or_else(|| signal.math_edge.clone().unwrap_or_else(|| "0.00".to_string())),
+                                    ai_score: format!("{:.2}", kronos_score.unwrap_or(0.5)),
+                                    decision: "EXECUTED".to_string(),
+                                    narrative: format!("Filled {} units @ ${:.2} | Reason: {}", reconciled_trade.quantity, reconciled_trade.price, signal.reason),
+                                    time: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                                    was_executed: Some(true),
+                                    version_hash: Some(env!("GIT_HASH").to_string()),
+                                });
+                                
+                                trade_record
                             };
-                            return Ok(trade);
+                            return Ok(executed_trade);
                         }
                     }
                 }
@@ -393,7 +506,7 @@ pub async fn run_strategy_once(
                     let mut db = state.db.lock().await;
                     db.store_market_snapshot(&quote.quote, &quote.raw_json)?;
                     if let Some(prepared_trade) = prepared_trade.as_ref() {
-                        db.execute_local_trade(
+                        let trade = db.execute_local_trade(
                             &strategy_id,
                             if latest_strategy.asset_class_target == AssetClassTarget::Options {
                                 option_provider
@@ -403,7 +516,49 @@ pub async fn run_strategy_once(
                             latest_strategy.execution_mode,
                             &signal,
                             &prepared_trade.local,
-                        )?
+                        )?;
+                        db.mark_latest_intelligence_log_executed(&strategy_id, &symbol)?;
+
+                        // LIVE BROADCAST: Transparency into standard execution
+                        let _ = state.streams.send_event(crate::models::RealtimeEvent::Log {
+                            strategy_id: strategy_id.clone(),
+                            symbol: symbol.to_string(),
+                            source: latest_strategy.name.clone(),
+                            math_edge: signal.math_edge.clone().unwrap_or_else(|| "0.00".to_string()),
+                            ai_score: format!("{:.2}", kronos_score.unwrap_or(0.5)),
+                            decision: "EXECUTED".to_string(),
+                            narrative: format!("Filled {} units @ ${:.2} | Reason: {}", prepared_trade.local.quantity, prepared_trade.local.price, signal.reason),
+                            time: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                            was_executed: Some(true),
+                            version_hash: Some(env!("GIT_HASH").to_string()),
+                        });
+
+                        trade
+                    } else if matches!(signal.action, SignalAction::Hold) {
+                        db.update_position_metadata(&strategy_id, &symbol, &signal)?;
+                        
+                        // BROADCAST NARRATIVE: Transparency into why we are holding
+                        if let Some(intent) = signal.hold_intent.as_ref() {
+                             let narrative = format!("STRATEGY VISION | {}: {}", signal.reason, intent);
+                             tracing::info!("[{}] {}", strategy_id, narrative);
+                             
+                             crate::agents::broadcast_audit_log(
+                                &state,
+                                 crate::logger::SystemEvent::now(
+                                    strategy_id.to_uppercase(),
+                                    Some(strategy_id.clone()),
+                                    symbol.to_string(),
+                                    crate::logger::SystemEventType::Scan,
+                                    "Audit".to_string(),
+                                    kronos_score.unwrap_or(0.5),
+                                    narrative,
+                                    Some(latest_strategy.execution_profile),
+                                )
+                            );
+                        }
+                        
+                        db.mark_strategy_run(&strategy_id, &signal.reason, signal.new_state.clone())?;
+                        None
                     } else {
                         db.mark_strategy_run(&strategy_id, &signal.reason, signal.new_state.clone())?;
                         None
@@ -442,6 +597,32 @@ pub fn broadcast_strategy_log(
     decision: &str,
     narrative: &str,
 ) {
+    let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let version_hash = Some(env!("GIT_HASH").to_string());
+    
+    // PERSIST TO DATABASE
+    let db_log = crate::models::IntelligenceLog {
+        id: None,
+        strategy_id: strategy_id.to_string(),
+        symbol: symbol.to_string(),
+        source: source.to_string(),
+        math_edge: math_edge.to_string(),
+        ai_score: ai_score.to_string(),
+        decision: decision.to_string(),
+        narrative: narrative.to_string(),
+        timestamp: timestamp.clone(),
+        was_executed: false,
+        version_hash: version_hash.clone(),
+    };
+
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        let db = state_clone.db.lock().await;
+        if let Err(e) = db.store_intelligence_log(&db_log) {
+            tracing::error!("Failed to persist intelligence log: {:?}", e);
+        }
+    });
+
     let _ = state.streams.send_event(RealtimeEvent::Log {
         strategy_id: strategy_id.to_string(),
         symbol: symbol.to_string(),
@@ -450,7 +631,9 @@ pub fn broadcast_strategy_log(
         ai_score: ai_score.to_string(),
         decision: decision.to_string(),
         narrative: narrative.to_string(),
-        time: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        time: timestamp,
+        was_executed: Some(false),
+        version_hash,
     });
 }
 

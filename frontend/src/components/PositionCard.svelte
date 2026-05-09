@@ -5,6 +5,7 @@
   import { createEventDispatcher, onMount } from "svelte";
 
   export let position: PositionSummary;
+  export let strategyName: string = "";
 
   const dispatch = createEventDispatcher();
 
@@ -68,6 +69,7 @@
   }
 
   function getStrategyLabel(id: string) {
+    if (strategyName && strategyName !== id) return strategyName;
     return id.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
   }
 

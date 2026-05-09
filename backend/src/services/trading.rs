@@ -38,6 +38,7 @@ pub fn prepare_trade(
     signal: &StrategySignal,
     option_contracts: &[OptionContractSnapshot],
     needs_broker_order: bool,
+    execution_profile: crate::models::ExecutionProfile,
 ) -> AppResult<TradePreparationOutcome> {
     match strategy.asset_class_target {
         crate::models::AssetClassTarget::Equity => Ok(prepare_equity_trade(
@@ -47,6 +48,7 @@ pub fn prepare_trade(
             signal,
             quote.price,
             needs_broker_order,
+            execution_profile,
         )),
         crate::models::AssetClassTarget::Options => prepare_option_trade(
             strategy,
@@ -56,6 +58,7 @@ pub fn prepare_trade(
             signal,
             option_contracts,
             needs_broker_order,
+            execution_profile,
         ),
     }
 }
@@ -67,11 +70,41 @@ pub fn prepare_equity_trade(
     signal: &StrategySignal,
     price: f64,
     needs_broker_order: bool,
+    execution_profile: crate::models::ExecutionProfile,
 ) -> TradePreparationOutcome {
     let quantity = match signal.action {
         SignalAction::Buy => {
-            let notional = strategy.cash_balance * signal.allocation_fraction.clamp(0.0, 1.0);
-            round_quantity(notional / price)
+            let mut effective_buying_power = if strategy.use_shared_cash {
+                strategy.shared_cash.unwrap_or(strategy.cash_balance)
+            } else {
+                strategy.cash_balance
+            };
+
+            // BUDGET ANCHOR: For Sniper0Dte, we use exactly the starting cash basis ($1000).
+            // For Standard (Pro Mode), we use the actual available buying power to allow scaling.
+            let is_sniper = execution_profile == crate::models::ExecutionProfile::Sniper0Dte;
+            let risk_basis = if is_sniper {
+                strategy.starting_cash.min(1000.0).max(100.0) // Isolated $1k pot for snipers
+            } else {
+                effective_buying_power // Pro mode uses everything available
+            };
+            
+            // RISK RESTRAINT: Calculate budget based on the signal's allocation fraction
+            let mut budget = risk_basis * signal.allocation_fraction.clamp(0.0, 1.0);
+            
+            // GLOBAL FAILSAFE: For snipers, limit to 50% of basis per trade to prevent 'all-in' errors.
+            // For standard, we trust the allocation fraction of the full buying power.
+            let dynamic_limit = if is_sniper {
+                risk_basis * 0.50
+            } else {
+                effective_buying_power // Allow full allocation of available cash in Pro mode
+            };
+            budget = budget.min(dynamic_limit);
+
+            // HARD CEILING: Never spend more than what is actually in the pot.
+            budget = budget.min(effective_buying_power);
+
+            round_quantity(budget / price)
         }
         SignalAction::Sell => {
             let Some(position) = position else {
@@ -120,6 +153,8 @@ pub fn prepare_equity_trade(
         entry_ai: signal.ai_score.as_ref().and_then(|s| s.parse::<f64>().ok()),
         hold_intent: signal.hold_intent.clone(),
         planned_exit: signal.planned_exit.clone(),
+        signal_price: Some(price),
+        slippage_pnl: Some(0.0),
     };
     let broker_order = needs_broker_order.then_some(AlpacaOrderRequest::Single {
         symbol: symbol.to_string(),
@@ -142,6 +177,7 @@ pub fn prepare_option_trade(
     signal: &StrategySignal,
     option_contracts: &[OptionContractSnapshot],
     needs_broker_order: bool,
+    execution_profile: crate::models::ExecutionProfile,
 ) -> AppResult<TradePreparationOutcome> {
     let side = match signal.action {
         SignalAction::Buy => TradeSide::Buy,
@@ -224,13 +260,66 @@ pub fn prepare_option_trade(
                     (spread_symbol, net_limit, net_mark, legs)
                 }
             };
-            let budget = strategy.cash_balance * signal.allocation_fraction.clamp(0.0, 1.0);
+            let mut effective_buying_power = if strategy.use_shared_cash {
+                strategy.shared_cash.unwrap_or(strategy.cash_balance)
+            } else {
+                strategy.cash_balance
+            };
+
+            // BUDGET ANCHOR: For Sniper0Dte, we use exactly the starting cash basis ($1000).
+            // For Standard (Pro Mode), we use the actual available buying power to allow scaling.
+            let is_sniper = execution_profile == crate::models::ExecutionProfile::Sniper0Dte;
+            let risk_basis = if is_sniper {
+                strategy.starting_cash.min(1000.0).max(100.0) // Isolated $1k pot for snipers
+            } else {
+                effective_buying_power // Pro mode uses everything available
+            };
+            
+            let mut budget = risk_basis * signal.allocation_fraction.clamp(0.0, 1.0);
+            
+            // PROFILE OVERRIDE: Sniper mode is aggressive but capped within its pot.
+            let mut dynamic_limit = if is_sniper {
+                risk_basis * 0.95 // Snipers can use more of their small pot
+            } else {
+                effective_buying_power // Pro mode uses full account power
+            };
+            
+            if is_sniper {
+                // HARD FAILSAFE: In Sniper Mode, we MUST have 0DTE.
+                let today = chrono::Utc::now().date_naive();
+                let exp_date = chrono::DateTime::parse_from_rfc3339(&contract.expiration)
+                    .map(|dt| dt.date_naive())
+                    .unwrap_or(today);
+                let dte = exp_date.signed_duration_since(today).num_days();
+
+                if dte > 0 {
+                    return Ok(TradePreparationOutcome::Skip(
+                        format!("SNIPER FAILSAFE: Blocked non-0DTE contract ({}) in Sniper Mode", contract.contract_symbol)
+                    ));
+                }
+
+                if net_limit_price * 100.0 > dynamic_limit {
+                    return Ok(TradePreparationOutcome::Skip(
+                        format!("SNIPER FAILSAFE: Blocked contract costing ${:.2} exceeding sniper limit", net_limit_price * 100.0)
+                    ));
+                }
+            }
+            
+            budget = budget.min(dynamic_limit);
+            budget = budget.min(effective_buying_power);
+
             let contract_cost = net_limit_price * 100.0;
-            let quantity = if contract_cost > 0.0 {
+            let mut quantity = if contract_cost > 0.0 {
                 (budget / contract_cost).floor()
             } else {
                 0.0
             };
+
+            // SMALL ACCOUNT OVERRIDE: Only allow 1-contract override if the cost is within the profile's budget.
+            if quantity < 1.0 && effective_buying_power >= contract_cost && contract_cost > 0.0 && contract_cost <= dynamic_limit {
+                quantity = 1.0;
+            }
+
             if quantity < 1.0 {
                 return Ok(TradePreparationOutcome::Skip(
                     "Signal skipped: insufficient cash for one options contract".to_string(),
@@ -261,6 +350,8 @@ pub fn prepare_option_trade(
                 entry_ai: signal.ai_score.as_ref().and_then(|s| s.parse::<f64>().ok()),
                 hold_intent: signal.hold_intent.clone(),
                 planned_exit: signal.planned_exit.clone(),
+                signal_price: Some(net_mark_price),
+                slippage_pnl: Some(0.0),
             };
             let broker_order =
                 needs_broker_order.then_some(match strategy.option_structure_preset {
@@ -410,6 +501,8 @@ pub fn prepare_option_trade(
                 entry_ai: None,
                 hold_intent: None,
                 planned_exit: None,
+                signal_price: Some(market_price),
+                slippage_pnl: Some(0.0),
             };
             let broker_order = needs_broker_order.then_some(
                 match position
@@ -465,19 +558,46 @@ pub fn resolve_option_contract(
         },
     };
     let today = Utc::now().date_naive();
+    
+    // PRIORITY 1: Explicit Contract Symbol
+    if let Some(target_symbol) = &signal.contract_symbol {
+        if let Some(contract) = option_contracts.iter().find(|c| &c.contract_symbol == target_symbol) {
+            let bid = contract.bid.unwrap_or(0.0);
+            let ask = contract.ask.unwrap_or(0.0);
+            return Some(ResolvedOptionContract {
+                contract_symbol: contract.contract_symbol.clone(),
+                option_type: contract.option_type.clone(),
+                expiration: contract.expiration.clone(),
+                strike: contract.strike,
+                bid,
+                ask,
+                mark_price: (bid + ask) / 2.0,
+                marketable_limit_price: (ask * (1.0 + strategy.option_limit_buffer_pct)).max(0.01),
+            });
+        }
+    }
+
     let mut candidates = option_contracts
         .iter()
         .filter_map(|contract| {
             if contract.option_type != target_type {
                 return None;
             }
+            
+            // PRIORITY 2: Explicit Strike Match (Conditional Bypass of DTE/Spread)
+            let is_targeted_strike = signal.strike.map(|s| (s - contract.strike).abs() < 0.01).unwrap_or(false);
+
             let expiration = chrono::DateTime::parse_from_rfc3339(&contract.expiration)
                 .ok()?
                 .date_naive();
             let dte = expiration.signed_duration_since(today).num_days();
-            if dte < strategy.option_dte_min as i64 || dte > strategy.option_dte_max as i64 {
-                return None;
+
+            if !is_targeted_strike {
+                if dte < strategy.option_dte_min as i64 || dte > strategy.option_dte_max as i64 {
+                    return None;
+                }
             }
+
             let bid = contract.bid?;
             let ask = contract.ask?;
             if bid <= 0.0 || ask <= 0.0 || ask < bid {
@@ -487,9 +607,12 @@ pub fn resolve_option_contract(
             if mid <= 0.0 {
                 return None;
             }
+            
             let spread_pct = (ask - bid) / mid;
-            if spread_pct > strategy.option_max_spread_pct {
-                return None;
+            if !is_targeted_strike {
+                if spread_pct > strategy.option_max_spread_pct {
+                    return None;
+                }
             }
             let delta_score = contract
                 .delta
@@ -498,9 +621,12 @@ pub fn resolve_option_contract(
             let dte_midpoint =
                 (strategy.option_dte_min as f64 + strategy.option_dte_max as f64) / 2.0;
             let dte_score = ((dte as f64) - dte_midpoint).abs();
+            
+            // If targeted strike, give it a tiny score so it wins
+            let priority_score = if is_targeted_strike { -1_000_000.0 } else { 0.0 };
 
             Some((
-                delta_score,
+                delta_score + priority_score,
                 spread_pct,
                 dte_score,
                 ResolvedOptionContract {

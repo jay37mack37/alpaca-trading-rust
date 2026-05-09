@@ -35,7 +35,7 @@ impl AppConfig {
             polling_seconds: env::var("AUTO_STONKS_POLL_SECONDS")
                 .ok()
                 .and_then(|value| value.parse().ok())
-                .unwrap_or(120),
+                .unwrap_or(30),
             allowed_origins,
             mock_alpaca: env::var("AUTO_STONKS_MOCK_ALPACA")
                 .map(|v| v == "true" || v == "1")

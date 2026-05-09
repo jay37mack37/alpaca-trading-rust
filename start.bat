@@ -21,19 +21,43 @@ powershell -Command "Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyC
 echo Cleaning up port 3001...
 powershell -Command "Get-NetTCPConnection -LocalPort 3001 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
 
+echo Cleaning up port 8000 (Kronos)...
+powershell -Command "Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
+
 timeout /t 1 /nobreak >nul
+
+:: --- AI Engine: Kronos Bridge ---
+echo.
+echo [0/2] Launching Kronos AI Brain...
+
+:: Try to find the right python command
+set "PYTHON_CMD=py -3.10"
+py -3.10 --version >nul 2>&1
+if %errorlevel% neq 0 (
+    set "PYTHON_CMD=python"
+)
+
+:: Check for dependencies
+%PYTHON_CMD% -c "import torch, transformers, fastapi, uvicorn, yfinance" 2>nul
+if %errorlevel% neq 0 (
+    echo [!] Missing AI dependencies. Installing...
+    %PYTHON_CMD% -m pip install torch transformers fastapi uvicorn yfinance einops huggingface_hub tqdm safetensors
+)
+
+start "Kronos AI Bridge" cmd /k "cd backend && %PYTHON_CMD% kronos_bridge.py"
+echo AI Brain is initializing in the background...
+timeout /t 5 /nobreak >nul
 
 :: --- Load .env if present ---
 echo Loading environment from .env...
 if not exist ".env" goto no_env
 for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
-    set "key=%%a"
-    set "val=%%b"
-    if defined key (
-        if not "!key:~0,1!=="#" (
-            if not "!key!"==" " (
-                set "!key!=!val!"
-            )
+    set "line_key=%%a"
+    set "line_val=%%b"
+    if defined line_key (
+        set "first_char=!line_key:~0,1!"
+        if not "!first_char!"=="#" (
+            set "!line_key!=!line_val!"
         )
     )
 )
@@ -46,9 +70,7 @@ if "!AUTO_STONKS_MASTER_KEY!"=="" (
     exit /b 1
 )
 if "!AUTO_STONKS_API_TOKEN!"=="" (
-    echo [ERROR] AUTO_STONKS_API_TOKEN is not set. Please check your .env file.
-    pause
-    exit /b 1
+    echo [INFO] AUTO_STONKS_API_TOKEN missing, backend will generate one.
 )
 
 if not exist "data" mkdir data
@@ -60,7 +82,7 @@ set AUTO_STONKS_HOST=127.0.0.1
 set AUTO_STONKS_PORT=8080
 set AUTO_STONKS_ALLOWED_ORIGINS=http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:5173,http://localhost:5173,http://localhost:3001,http://127.0.0.1:3001
 
-start "AutoStonks Backend" powershell -NoExit -Command "$env:AUTO_STONKS_HOST='127.0.0.1'; $env:AUTO_STONKS_PORT='8080'; $env:AUTO_STONKS_ALLOWED_ORIGINS='http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:5173,http://localhost:5173,http://localhost:3001,http://127.0.0.1:3001'; $env:AUTO_STONKS_MASTER_KEY='!AUTO_STONKS_MASTER_KEY!'; $env:AUTO_STONKS_API_TOKEN='!AUTO_STONKS_API_TOKEN!'; cd backend; cargo run 2>&1 | Tee-Object -FilePath ..\data\backend.log"
+start "AutoStonks Backend" powershell -NoExit -Command "$env:AUTO_STONKS_HOST='127.0.0.1'; $env:AUTO_STONKS_PORT='8080'; $env:AUTO_STONKS_ALLOWED_ORIGINS='http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:5173,http://localhost:5173,http://localhost:3001,http://127.0.0.1:3001'; $env:AUTO_STONKS_MASTER_KEY='!AUTO_STONKS_MASTER_KEY!'; $env:AUTO_STONKS_API_TOKEN='!AUTO_STONKS_API_TOKEN!'; cd backend; cargo run --bin autostonks-backend 2>&1 | Tee-Object -FilePath ..\data\backend.log"
 
 echo Waiting for backend to initialize...
 set "retries=0"
@@ -91,7 +113,7 @@ copy "frontend\.env.example" "frontend\.env" >nul
 :frontend_env_ok
 
 echo.
-echo [2/2] Starting frontend (port 5173)...
+echo [2/2] Starting frontend (port 3000)...
 if exist "frontend\node_modules" goto npm_ok
 echo [!] node_modules missing. Running npm install...
 start "AutoStonks Frontend Install" cmd /c "cd frontend && npm install"
@@ -105,6 +127,6 @@ echo =============================================
 echo  Both services are running!
 echo =============================================
 echo   Backend:  http://127.0.0.1:8080
-echo   Frontend: http://localhost:5173
+echo   Frontend: http://localhost:3000
 echo =============================================
 pause

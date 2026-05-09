@@ -440,7 +440,7 @@ async fn broadcast_market_event(
     candle: Option<Candle>,
     raw_json: &Value,
 ) -> AppResult<()> {
-    let (strategies, positions) = {
+    let (strategies, positions, broker_positions) = {
         let db = state.db.lock().await;
         db.store_market_snapshot(&quote, raw_json)?;
         // Update the market price in strategy_positions for live calculations
@@ -448,7 +448,15 @@ async fn broadcast_market_event(
         
         let strategies = db.list_strategies()?;
         let positions = db.list_all_open_positions()?;
-        (strategies, positions)
+        
+        // Find the primary credential to show "General" positions
+        // For now, we'll just grab the first one that has positions
+        let broker_positions = db.list_all_broker_positions()?.into_iter()
+            .next()
+            .map(|(_, pos)| pos)
+            .unwrap_or_default();
+            
+        (strategies, positions, broker_positions)
     };
 
     let _ = tx.send(RealtimeEvent::Market {
@@ -460,7 +468,7 @@ async fn broadcast_market_event(
     });
 
     // Explicitly broadcast position updates for real-time P&L in UI
-    let _ = tx.send(RealtimeEvent::Positions { positions });
+    let _ = tx.send(RealtimeEvent::Positions { positions, broker_positions });
 
     Ok(())
 }

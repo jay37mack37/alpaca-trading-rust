@@ -20,6 +20,7 @@ impl TradingStrategy for DistributionSniperStrategy {
         options: &[crate::models::OptionContractSnapshot],
         position: Option<&crate::models::PositionRecord>,
         _kronos_score: Option<f64>,
+        _net_gex: Option<f64>,
     ) -> StrategySignal {
         // 1. If we have a position, we are waiting for the ex-date to pass
         if position.is_some() {
@@ -30,13 +31,14 @@ impl TradingStrategy for DistributionSniperStrategy {
         crate::agents::broadcast_audit_log(
             state,
             crate::logger::SystemEvent::now(
-                crate::logger::SystemSource::System,
+                "DISTRIBUTION_SNIPER".to_string(),
                 Some(_strategy.id.clone()),
                 quote.symbol.clone(),
                 crate::logger::SystemEventType::Scan,
                 format!("Price: ${:.2}", quote.price),
                 0.5,
                 format!("DIVIDEND SCAN: Checking yield capture feasibility for {}.", quote.symbol),
+                Some(_strategy.execution_profile),
             )
         );
 
@@ -46,13 +48,14 @@ impl TradingStrategy for DistributionSniperStrategy {
                 crate::agents::broadcast_audit_log(
                     state,
                     crate::logger::SystemEvent::now(
-                        crate::logger::SystemSource::System,
+                        "DISTRIBUTION_SNIPER".to_string(),
                         Some(_strategy.id.clone()),
                         quote.symbol.clone(),
                         crate::logger::SystemEventType::Scan,
                         "N/A".to_string(),
                         0.5,
                         format!("NO DIVIDEND: {} has no upcoming payouts in database.", quote.symbol),
+                        Some(_strategy.execution_profile),
                     )
                 );
                 return hold("No upcoming dividend found");

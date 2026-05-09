@@ -20,27 +20,14 @@ impl TradingStrategy for YieldRotationStrategy {
         _options: &[crate::models::OptionContractSnapshot],
         position: Option<&crate::models::PositionRecord>,
         _kronos_score: Option<f64>,
+        _net_gex: Option<f64>,
     ) -> StrategySignal {
         // 1. If we already have a position, we just hold (The manager handles exits)
         if position.is_some() {
             return hold("Currently harvesting yield in SGOV");
         }
 
-        // 2. Logging for console visibility
-        crate::agents::broadcast_audit_log(
-            state,
-            crate::logger::SystemEvent::now(
-                crate::logger::SystemSource::System,
-                Some(_strategy.id.clone()),
-                "SGOV".to_string(),
-                crate::logger::SystemEventType::Scan,
-                "Audit".to_string(),
-                0.5,
-                "YIELD AUDIT: Checking idle cash thresholds for SGOV rotation.".to_string(),
-            )
-        );
-
-        // 3. Fetch current Buying Power from the strategy's linked account
+        // 2. Fetch current Buying Power from the strategy's linked account
         let db = state.db.lock().await;
         let bp = db.strategy_broker_sync(&_strategy.id)
             .ok()
@@ -48,12 +35,26 @@ impl TradingStrategy for YieldRotationStrategy {
             .and_then(|s| s.account)
             .and_then(|a| a.buying_power)
             .unwrap_or(0.0);
+
+        crate::agents::broadcast_audit_log(
+            state,
+            crate::logger::SystemEvent::now(
+                "YIELD_ROTATION".to_string(),
+                Some(_strategy.id.clone()),
+                "SGOV".to_string(),
+                crate::logger::SystemEventType::Scan,
+                format!("BP: ${:.0}", bp),
+                0.5,
+                "YIELD AUDIT: Checking idle cash thresholds for SGOV rotation.".to_string(),
+                Some(_strategy.execution_profile),
+            )
+        );
         
         // 4. The Trigger: Idle Cash > $2000
         if bp > 2000.0 {
             return buy(
                 format!("Rotating Idle Cash (${:.2}) to SGOV", bp),
-                0.95, // Use 95% of BP for SGOV
+                0.05, // Use 5% of BP for SGOV rotation
                 None
             );
         }

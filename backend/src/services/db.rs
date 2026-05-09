@@ -20,7 +20,7 @@ use crate::{
         CredentialSummary, DataProvider, ExecutionMode, OptionContractSnapshot, OptionEntryStyle,
         OptionStructurePreset, PositionLeg, PositionRecord, PositionSummary, Quote, SignalAction,
         StoredCredential, StrategyDetailResponse, StrategyKind, StrategyRecord, StrategySignal,
-        StrategySummary, TradeLeg, TradeRecord, TradeSide, UpdateStrategyRequest,
+        StrategySummary, TradeLeg, TradeRecord, TradeSide, UpdateStrategyRequest, ExecutionProfile,
     },
 };
 
@@ -53,9 +53,16 @@ pub struct LocalTradeInput {
     pub entry_ai: Option<f64>,
     pub hold_intent: Option<String>,
     pub planned_exit: Option<String>,
+    pub signal_price: Option<f64>,
+    pub slippage_pnl: Option<f64>,
 }
 
 impl Database {
+    #[cfg(test)]
+    pub fn get_conn(&self) -> &Connection {
+        &self.conn
+    }
+
     pub fn open(path: &Path, default_watchlist: &[String], master_key: &str) -> AppResult<Self> {
         if master_key.trim().is_empty() {
             return Err(AppError::Internal(
@@ -99,6 +106,10 @@ impl Database {
             );
             "#,
         )?;
+
+        // Safe migrations (ignore errors if columns exist)
+        let _ = conn.execute("ALTER TABLE broker_positions ADD COLUMN strategy_id TEXT", []);
+        let _ = conn.execute("ALTER TABLE broker_positions ADD COLUMN entry_logic TEXT", []);
 
         conn.execute_batch(
             r#"
@@ -149,6 +160,7 @@ impl Database {
                 run_interval_ms INTEGER NOT NULL DEFAULT 30000,
                 state_json TEXT NOT NULL DEFAULT '{}',
                 risk_parameters_json TEXT,
+                use_shared_cash INTEGER NOT NULL DEFAULT 1,
                 FOREIGN KEY (credential_id) REFERENCES credentials(id)
             );
 
@@ -211,6 +223,32 @@ impl Database {
                 buy_logic TEXT,
                 entry_math TEXT,
                 entry_ai REAL,
+                signal_price REAL,
+                slippage_pnl REAL,
+                FOREIGN KEY (strategy_id) REFERENCES strategies(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS account_balance_snapshots (
+                id TEXT PRIMARY KEY,
+                strategy_id TEXT NOT NULL,
+                equity REAL NOT NULL,
+                cash_balance REAL NOT NULL,
+                captured_at TEXT NOT NULL,
+                FOREIGN KEY (strategy_id) REFERENCES strategies(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS intelligence_logs (
+                id TEXT PRIMARY KEY,
+                strategy_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                source TEXT NOT NULL,
+                math_edge TEXT NOT NULL,
+                ai_score TEXT NOT NULL,
+                decision TEXT NOT NULL,
+                narrative TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                was_executed INTEGER NOT NULL DEFAULT 0,
+                version_hash TEXT,
                 FOREIGN KEY (strategy_id) REFERENCES strategies(id) ON DELETE CASCADE
             );
 
@@ -250,6 +288,22 @@ impl Database {
                 vega REAL,
                 moneyness REAL,
                 captured_at TEXT NOT NULL,
+                FOREIGN KEY (underlying_symbol) REFERENCES watchlist(symbol) ON DELETE CASCADE
+            );
+
+
+            CREATE TABLE IF NOT EXISTS market_snapshots (
+                id TEXT PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                price REAL NOT NULL,
+                bid REAL,
+                ask REAL,
+                volume REAL,
+                vwap REAL,
+                day_high REAL,
+                day_low REAL,
+                captured_at TEXT NOT NULL,
                 raw_json TEXT NOT NULL
             );
 
@@ -287,6 +341,8 @@ impl Database {
                 current_price REAL,
                 unrealized_pl REAL,
                 unrealized_plpc REAL,
+                strategy_id TEXT,
+                entry_logic TEXT,
                 synced_at TEXT NOT NULL,
                 raw_json TEXT NOT NULL,
                 PRIMARY KEY (credential_id, symbol),
@@ -404,8 +460,11 @@ impl Database {
             [],
         );
         let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN strike REAL", []);
+        let _ = conn.execute("ALTER TABLE strategy_positions ADD COLUMN stale_quote INTEGER NOT NULL DEFAULT 0", []);
+
+        // Institutional Baseline: Reset all strategies to $1,000 for small-account testing
         let _ = conn.execute(
-            "ALTER TABLE strategy_positions ADD COLUMN stale_quote INTEGER NOT NULL DEFAULT 0",
+            "UPDATE strategies SET starting_cash = 1000.0, cash_balance = 1000.0, equity = 1000.0 WHERE starting_cash > 1000.0 OR starting_cash = 0.0",
             [],
         );
         let _ = conn.execute(
@@ -458,10 +517,14 @@ impl Database {
             [],
         );
         // Run migrations for existing databases that were missing these columns
+        let _ = conn.execute("ALTER TABLE intelligence_logs ADD COLUMN version_hash TEXT", []);
+        let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN signal_price REAL", []);
+        let _ = conn.execute("ALTER TABLE trade_log ADD COLUMN slippage_pnl REAL", []);
         let _ = conn.execute("ALTER TABLE option_snapshots ADD COLUMN delta REAL", []);
         let _ = conn.execute("ALTER TABLE option_snapshots ADD COLUMN gamma REAL", []);
         let _ = conn.execute("ALTER TABLE option_snapshots ADD COLUMN theta REAL", []);
         let _ = conn.execute("ALTER TABLE option_snapshots ADD COLUMN vega REAL", []);
+        let _ = conn.execute("ALTER TABLE strategies ADD COLUMN use_shared_cash INTEGER NOT NULL DEFAULT 1", []);
         let _ = conn.execute("ALTER TABLE option_snapshots ADD COLUMN moneyness REAL", []);
         let _ = conn.execute(
             "ALTER TABLE strategies ADD COLUMN state_json TEXT NOT NULL DEFAULT '{}'",
@@ -485,6 +548,14 @@ impl Database {
         // Clean up orphaned positions from previous Alpaca paper sessions
         // Position rows can remain with quantity > 0 after Alpaca closes them
         let _ = conn.execute("UPDATE strategy_positions SET quantity = 0 WHERE quantity > 0 AND strategy_id = 'parity-sniper'", []);
+
+        let _ = conn.execute("ALTER TABLE intelligence_logs ADD COLUMN was_executed INTEGER NOT NULL DEFAULT 0", []);
+
+        let _ = conn.execute("ALTER TABLE strategies ADD COLUMN performance_stats_json TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE strategies ADD COLUMN execution_profile TEXT NOT NULL DEFAULT 'standard'",
+            [],
+        );
 
         Ok(())
     }
@@ -604,7 +675,7 @@ impl Database {
                         option_dte_min, option_dte_max, option_max_spread_pct, option_limit_buffer_pct, credential_id,
                         starting_cash, cash_balance, equity, tracked_symbols,
                         total_trades, wins, losses, last_signal, last_run_at, run_interval_ms, state_json, risk_parameters_json
-                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, 50000.0, 50000.0, 50000.0, ?15, 0, 0, 0, ?16, ?17, ?18, '{}', NULL)",
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, 1000.0, 1000.0, 1000.0, ?15, 0, 0, 0, ?16, ?17, ?18, '{}', NULL)",
                     params![
                         id,
                         name,
@@ -629,6 +700,13 @@ impl Database {
             }
         }
 
+        // MIGRATION: Scaled Down Scaling ($100k -> $1k)
+        // If we find strategies still at $50k, scale them down to $1k
+        let _ = self.conn.execute(
+            "UPDATE strategies SET starting_cash = 1000.0, cash_balance = 1000.0, equity = 1000.0 WHERE starting_cash = 50000.0",
+            [],
+        );
+
         Ok(())
     }
 
@@ -640,32 +718,34 @@ impl Database {
             return Ok(());
         }
 
-        // Check if we already have a credential with this key
-        let exists: bool = self.conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM credentials WHERE label = 'Auto-Seeded Alpaca Paper')",
-            [],
-            |row| row.get(0),
-        ).unwrap_or(false);
-
-        if !exists {
+        if !api_key.is_empty() && api_key != "your_api_key_here" {
             let id = "default-paper-cred".to_string();
             let encrypted_key = encrypt(&self.credential_cipher, api_key.trim())?;
             let encrypted_secret = encrypt(&self.credential_cipher, api_secret.trim())?;
             
+            // Upsert the default paper credential
             self.conn.execute(
                 "INSERT INTO credentials (
                     id, provider, label, environment, api_key_encrypted, api_secret_encrypted,
                     use_for_data, use_for_trading, created_at
-                ) VALUES (?1, 'alpaca', 'Auto-Seeded Alpaca Paper', 'paper', ?2, ?3, 1, 1, ?4)",
+                ) VALUES (?1, 'alpaca', 'Auto-Seeded Alpaca Paper', 'paper', ?2, ?3, 1, 1, ?4)
+                ON CONFLICT(id) DO UPDATE SET
+                    api_key_encrypted = EXCLUDED.api_key_encrypted,
+                    api_secret_encrypted = EXCLUDED.api_secret_encrypted,
+                    label = EXCLUDED.label",
                 params![id, encrypted_key, encrypted_secret, now()],
             )?;
 
-            // Assign this credential to the core strategies
+            // Ensure this credential is assigned to the core strategies if they don't have one or if they use the default
             self.conn.execute(
-                "UPDATE strategies SET credential_id = ?1, execution_mode = 'alpaca_paper' WHERE id IN ('parity-sniper', 'vwap-reversion')",
+                "UPDATE strategies SET credential_id = ?1, execution_mode = 'alpaca_paper' 
+                 WHERE id IN ('parity-sniper', 'vwap-reversion') AND (credential_id IS NULL OR credential_id = ?1)",
                 params![id],
             )?;
+            
+            tracing::info!("Database: Synchronized Alpaca credentials from environment variables.");
         }
+
         Ok(())
     }
 
@@ -750,6 +830,16 @@ impl Database {
             .ok_or_else(|| AppError::NotFound(format!("strategy {id}")))
     }
 
+    pub fn list_alpaca_trading_credentials(&self) -> AppResult<Vec<StoredCredential>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, label, environment, api_key_encrypted, api_secret_encrypted, use_for_data, use_for_trading
+             FROM credentials WHERE provider = 'alpaca' AND use_for_trading = 1"
+        )?;
+        let cipher = &self.credential_cipher;
+        let rows = stmt.query_map([], |row| decode_credential_row(row, cipher))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
     pub fn resolve_alpaca_credential(
         &self,
         preferred_id: Option<&str>,
@@ -799,6 +889,106 @@ impl Database {
         Ok(count)
     }
 
+    pub fn get_realized_pnl_today(&self, strategy_id: &str) -> AppResult<f64> {
+        Self::get_realized_pnl_today_internal(&self.conn, strategy_id)
+    }
+
+    fn get_realized_pnl_today_internal(conn: &Connection, strategy_id: &str) -> AppResult<f64> {
+        let today_prefix = Utc::now().format("%Y-%m-%d").to_string();
+        let pnl: f64 = conn.query_row(
+            "SELECT TOTAL(realized_pnl) FROM trade_log WHERE strategy_id = ?1 AND executed_at LIKE ?2",
+            params![strategy_id, format!("{}%", today_prefix)],
+            |row| row.get(0),
+        )?;
+        Ok(pnl)
+    }
+
+    pub fn store_intelligence_log(&self, log: &crate::models::IntelligenceLog) -> AppResult<String> {
+        let id = Uuid::new_v4().to_string();
+        self.conn.execute(
+            "INSERT INTO intelligence_logs (id, strategy_id, symbol, source, math_edge, ai_score, decision, narrative, timestamp, was_executed, version_hash)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                id,
+                log.strategy_id,
+                log.symbol,
+                log.source,
+                log.math_edge,
+                log.ai_score,
+                log.decision,
+                log.narrative,
+                log.timestamp,
+                log.was_executed as i64,
+                log.version_hash,
+            ],
+        )?;
+        Ok(id)
+    }
+
+    pub fn mark_latest_intelligence_log_executed(&self, strategy_id: &str, symbol: &str) -> AppResult<()> {
+        self.conn.execute(
+            "UPDATE intelligence_logs 
+             SET was_executed = 1 
+             WHERE strategy_id = ?1 AND symbol = ?2 
+             AND id = (SELECT id FROM intelligence_logs WHERE strategy_id = ?1 AND symbol = ?2 ORDER BY timestamp DESC LIMIT 1)",
+            params![strategy_id, symbol],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_intelligence_logs(&self, strategy_id: &str, limit: usize) -> AppResult<Vec<crate::models::IntelligenceLog>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, strategy_id, symbol, source, math_edge, ai_score, decision, narrative, timestamp, was_executed, version_hash
+             FROM intelligence_logs
+             WHERE strategy_id = ?1
+             ORDER BY timestamp DESC LIMIT ?2"
+        )?;
+
+        let rows = stmt.query_map(params![strategy_id, limit as i64], |row| {
+            Ok(crate::models::IntelligenceLog {
+                id: Some(row.get(0)?),
+                strategy_id: row.get(1)?,
+                symbol: row.get(2)?,
+                source: row.get(3)?,
+                math_edge: row.get(4)?,
+                ai_score: row.get(5)?,
+                decision: row.get(6)?,
+                narrative: row.get(7)?,
+                timestamp: row.get(8)?,
+                was_executed: row.get::<_, i64>(9)? != 0,
+                version_hash: row.get(10)?,
+            })
+        })?;
+
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
+    pub fn list_global_intelligence_logs(&self, limit: usize) -> AppResult<Vec<crate::models::IntelligenceLog>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, strategy_id, symbol, source, math_edge, ai_score, decision, narrative, timestamp, was_executed, version_hash
+             FROM intelligence_logs
+             ORDER BY timestamp DESC LIMIT ?1"
+        )?;
+
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok(crate::models::IntelligenceLog {
+                id: Some(row.get(0)?),
+                strategy_id: row.get(1)?,
+                symbol: row.get(2)?,
+                source: row.get(3)?,
+                math_edge: row.get(4)?,
+                ai_score: row.get(5)?,
+                decision: row.get(6)?,
+                narrative: row.get(7)?,
+                timestamp: row.get(8)?,
+                was_executed: row.get::<_, i64>(9)? != 0,
+                version_hash: row.get(10)?,
+            })
+        })?;
+
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
     fn list_strategy_records_internal(conn: &Connection) -> AppResult<Vec<StrategyRecord>> {
         let mut stmt = conn.prepare(
             "SELECT id, name, kind, enabled, execution_mode, asset_class_target,
@@ -806,13 +996,15 @@ impl Database {
                     option_target_delta, option_dte_min, option_dte_max,
                     option_max_spread_pct, option_limit_buffer_pct, credential_id, starting_cash,
                     cash_balance, equity, tracked_symbols, total_trades, wins, losses,
-                    last_signal, last_run_at, run_interval_ms, state_json, risk_parameters_json
+                    last_signal, last_run_at, run_interval_ms, state_json, risk_parameters_json, use_shared_cash,
+                    performance_stats_json, execution_profile
              FROM strategies
              ORDER BY CASE WHEN kind = 'vwap_reflexive' THEN 0 ELSE 1 END, name ASC",
         )?;
 
         let rows = stmt.query_map([], |row| {
             Ok(StrategyRecord {
+                shared_cash: None,
                 id: row.get(0)?,
                 name: row.get(1)?,
                 kind: strategy_kind_from_str(&row.get::<_, String>(2)?)?,
@@ -843,6 +1035,9 @@ impl Database {
                 state_json: serde_json::from_str(&row.get::<_, String>(25)?)
                     .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
                 risk_parameters: row.get::<_, Option<String>>(26)?.and_then(|s| serde_json::from_str(&s).ok()),
+                use_shared_cash: row.get::<_, i64>(27)? != 0,
+                performance_stats_json: row.get(28)?,
+                execution_profile: execution_profile_from_str(&row.get::<_, String>(29)?)?,
             })
         })?;
 
@@ -898,8 +1093,9 @@ impl Database {
                 option_structure_preset, option_spread_width, option_target_delta, option_dte_min,
                 option_dte_max, option_max_spread_pct, option_limit_buffer_pct, credential_id,
                 starting_cash, cash_balance, equity, tracked_symbols,
-                total_trades, wins, losses, last_signal, last_run_at, run_interval_ms, state_json, risk_parameters_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?16, ?16, ?17, 0, 0, 0, ?18, ?19, ?20, '{}', ?21)",
+                total_trades, wins, losses, last_signal, last_run_at, run_interval_ms, state_json, risk_parameters_json, use_shared_cash,
+                execution_profile
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?16, ?16, ?17, 0, 0, 0, ?18, ?19, ?20, '{}', ?21, ?22, ?23)",
             params![
                 id,
                 name,
@@ -928,6 +1124,8 @@ impl Database {
                 now(),
                 run_interval_ms,
                 request.risk_parameters.as_ref().map(|rp| serde_json::to_string(rp).unwrap_or_default()),
+                request.use_shared_cash.unwrap_or(true) as i64,
+                execution_profile_to_str(request.execution_profile.unwrap_or(crate::models::ExecutionProfile::Standard)),
             ],
         )?;
 
@@ -974,6 +1172,18 @@ impl Database {
             .into_iter()
             .find(|s| s.id == strategy_id)
             .ok_or_else(|| crate::error::AppError::NotFound(format!("strategy {strategy_id}")))
+    }
+
+    pub fn update_strategy_performance_stats(
+        &self,
+        strategy_id: &str,
+        stats_json: &str,
+    ) -> AppResult<()> {
+        self.conn.execute(
+            "UPDATE strategies SET performance_stats_json = ? WHERE id = ?",
+            rusqlite::params![stats_json, strategy_id],
+        )?;
+        Ok(())
     }
 
     pub fn update_strategy(
@@ -1054,7 +1264,9 @@ impl Database {
                  last_run_at = ?17,
                  run_interval_ms = ?18,
                  state_json = ?19,
-                 risk_parameters_json = ?20
+                 risk_parameters_json = ?20,
+                 use_shared_cash = ?21,
+                 execution_profile = ?22
              WHERE id = ?1",
             params![
                 strategy_id,
@@ -1076,7 +1288,9 @@ impl Database {
                 now,
                 run_interval_ms,
                 serde_json::to_string(&current.state_json)?,
-            rp_json,
+                rp_json,
+                request.use_shared_cash.unwrap_or(current.use_shared_cash) as i64,
+                execution_profile_to_str(request.execution_profile.unwrap_or(current.execution_profile)),
             ],
         )?;
 
@@ -1293,13 +1507,15 @@ impl Database {
             "SELECT id, strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type, side,
                     quantity, price, multiplier, option_structure_preset, option_type, expiration, strike,
                     legs_json, provider, execution_mode, reason, realized_pnl, executed_at,
-                    hidden, hold_intent, exit_logic, planned_exit, buy_logic, entry_math, entry_ai
+                    hidden, hold_intent, exit_logic, planned_exit, buy_logic, entry_math, entry_ai,
+                    signal_price, slippage_pnl
              FROM trade_log WHERE strategy_id = ?1 ORDER BY executed_at DESC LIMIT ?2"
         } else {
             "SELECT id, strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type, side,
                     quantity, price, multiplier, option_structure_preset, option_type, expiration, strike,
                     legs_json, provider, execution_mode, reason, realized_pnl, executed_at,
-                    hidden, hold_intent, exit_logic, planned_exit, buy_logic, entry_math, entry_ai
+                    hidden, hold_intent, exit_logic, planned_exit, buy_logic, entry_math, entry_ai,
+                    signal_price, slippage_pnl
              FROM trade_log ORDER BY executed_at DESC LIMIT ?1"
         };
 
@@ -1455,11 +1671,22 @@ impl Database {
 
         let positions_json = serde_json::to_string(raw_positions)?;
         for position in positions {
+            // FUZZY ENRICHMENT: Try to find the original strategy and entry logic for this position
+            // We look for the most recent trade record for this symbol that hasn't been matched yet.
+            let (enriched_strategy_id, enriched_logic) = tx.query_row(
+                "SELECT strategy_id, buy_logic 
+                 FROM trade_log 
+                 WHERE instrument_symbol = ?1 
+                 ORDER BY executed_at DESC LIMIT 1",
+                params![position.symbol],
+                |row| Ok((Some(row.get::<_, String>(0)?), Some(row.get::<_, String>(1)?)))
+            ).unwrap_or((None, None));
+
             tx.execute(
                 "INSERT INTO broker_positions (
                     credential_id, symbol, asset_class, side, quantity, avg_entry_price, market_value,
-                    current_price, unrealized_pl, unrealized_plpc, synced_at, raw_json
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                    current_price, unrealized_pl, unrealized_plpc, strategy_id, entry_logic, synced_at, raw_json
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
                     credential_id,
                     position.symbol,
@@ -1471,6 +1698,8 @@ impl Database {
                     position.current_price,
                     position.unrealized_pl,
                     position.unrealized_plpc,
+                    enriched_strategy_id,
+                    enriched_logic,
                     position.synced_at,
                     positions_json,
                 ],
@@ -1603,8 +1832,103 @@ impl Database {
             Self::recompute_strategy_equity_internal(&tx, &strategy_id)?;
         }
 
+        // --- ORPHANED POSITION MAPPING ---
+        // If the broker has a position that isn't linked to ANY strategy locally,
+        // we try to "adopt" it if an enabled strategy has that symbol in its tracked_symbols.
+        let mut enabled_strategies_stmt = tx.prepare(
+            "SELECT id, tracked_symbols FROM strategies WHERE enabled = 1"
+        )?;
+        let enabled_strategies: Vec<(String, Vec<String>)> = enabled_strategies_stmt.query_map([], |row| {
+            let symbols_str: String = row.get(1)?;
+            let symbols: Vec<String> = symbols_str.split(',').map(|s| s.trim().to_uppercase()).collect();
+            Ok((row.get(0)?, symbols))
+        })?.collect::<Result<Vec<_>, _>>()?;
+        drop(enabled_strategies_stmt);
+
+
+        for broker_pos in positions {
+            // Check if this symbol + credential is already in ANY strategy_positions
+            let exists: bool = tx.query_row(
+                "SELECT COUNT(*) FROM strategy_positions sp 
+                 JOIN strategies s ON s.id = sp.strategy_id
+                 WHERE sp.instrument_symbol = ?1 AND s.credential_id = ?2",
+                params![broker_pos.symbol, credential_id],
+                |row| row.get::<_, i64>(0).map(|c| c > 0)
+            )?;
+
+            if !exists {
+                // Parse underlying symbol to handle options (e.g. SPY281215C00745000 -> SPY)
+                let underlying = broker_pos.symbol.chars().take_while(|c: &char| c.is_ascii_alphabetic()).collect::<String>();
+                let is_option = broker_pos.symbol.len() >= 15 && (broker_pos.symbol.contains('C') || broker_pos.symbol.contains('P')) && broker_pos.symbol.chars().any(|c: char| c.is_ascii_digit());
+                let asset_type = if is_option { "option" } else { "equity" };
+                let multiplier = if is_option { 100.0 } else { 1.0 };
+
+                // Orphan found! Try to match by tracked_symbols
+                if let Some((strategy_id, _)) = enabled_strategies.iter()
+                    .find(|(_, tracked)| tracked.contains(&underlying.to_uppercase())) 
+                {
+                    tracing::info!("Adopting orphaned Alpaca position {} (Underlying: {}) into strategy {}", broker_pos.symbol, underlying, strategy_id);
+                    
+                    tx.execute(
+                        "INSERT INTO strategy_positions (
+                            strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type,
+                            quantity, average_price, market_price, multiplier, entry_time, buy_logic
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                        params![
+                            strategy_id,
+                            underlying,
+                            underlying,
+                            broker_pos.symbol,
+                            asset_type,
+                            broker_pos.quantity,
+                            broker_pos.avg_entry_price.unwrap_or(0.0),
+                            broker_pos.current_price.unwrap_or(0.0),
+                            multiplier,
+                            now(),
+                            "ORPHANED_ADOPTION (Sync Recovery)"
+                        ],
+                    )?;
+                    Self::recompute_strategy_equity_internal(&tx, strategy_id)?;
+                }
+            }
+        }
+
         tx.commit()?;
         Ok(())
+    }
+
+    pub fn list_all_broker_positions(&self) -> AppResult<std::collections::HashMap<String, Vec<BrokerPositionSummary>>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT credential_id, symbol, asset_class, side, quantity, avg_entry_price,
+                    market_value, current_price, unrealized_pl, unrealized_plpc, strategy_id, entry_logic, synced_at
+             FROM broker_positions
+             ORDER BY symbol ASC"
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok(BrokerPositionSummary {
+                credential_id: row.get(0)?,
+                symbol: row.get(1)?,
+                asset_class: row.get(2)?,
+                side: row.get(3)?,
+                quantity: row.get(4)?,
+                avg_entry_price: row.get(5)?,
+                market_value: row.get(6)?,
+                current_price: row.get(7)?,
+                unrealized_pl: row.get(8)?,
+                unrealized_plpc: row.get(9)?,
+                strategy_id: row.get(10)?,
+                entry_logic: row.get(11)?,
+                synced_at: row.get(12)?,
+            })
+        })?;
+
+        let mut results: std::collections::HashMap<String, Vec<BrokerPositionSummary>> = std::collections::HashMap::new();
+        for row in rows {
+            let pos = row?;
+            results.entry(pos.credential_id.clone()).or_default().push(pos);
+        }
+        Ok(results)
     }
 
     pub fn broker_sync_state(&self, credential_id: &str) -> AppResult<Option<BrokerSyncState>> {
@@ -1649,7 +1973,7 @@ impl Database {
 
         let mut positions_stmt = self.conn.prepare(
             "SELECT symbol, asset_class, side, quantity, avg_entry_price, market_value,
-                    current_price, unrealized_pl, unrealized_plpc, synced_at
+                    current_price, unrealized_pl, unrealized_plpc, strategy_id, entry_logic, synced_at
              FROM broker_positions
              WHERE credential_id = ?1
              ORDER BY symbol ASC",
@@ -1667,7 +1991,9 @@ impl Database {
                     current_price: row.get(6)?,
                     unrealized_pl: row.get(7)?,
                     unrealized_plpc: row.get(8)?,
-                    synced_at: row.get(9)?,
+                    strategy_id: row.get(9)?,
+                    entry_logic: row.get(10)?,
+                    synced_at: row.get(11)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -2007,6 +2333,22 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_position_metadata(
+        &mut self,
+        strategy_id: &str,
+        symbol: &str,
+        signal: &StrategySignal,
+    ) -> AppResult<()> {
+        let existing = Self::get_position_record_internal(&self.conn, strategy_id, symbol)?;
+        if let Some(mut pos) = existing {
+            pos.hold_intent = signal.hold_intent.clone().or(pos.hold_intent);
+            pos.planned_exit = signal.planned_exit.clone().or(pos.planned_exit);
+            pos.exit_logic = signal.exit_logic.clone().or(pos.exit_logic);
+            Self::upsert_position_internal(&self.conn, strategy_id, &pos)?;
+        }
+        Ok(())
+    }
+
     pub fn execute_local_trade(
         &mut self,
         strategy_id: &str,
@@ -2250,8 +2592,9 @@ impl Database {
                 id, strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type, side,
                 quantity, price, multiplier, option_structure_preset, option_type, expiration, strike,
                 legs_json, provider, execution_mode, reason, realized_pnl, executed_at,
-                hold_intent, exit_logic, planned_exit, buy_logic, entry_math, entry_ai
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+                hold_intent, exit_logic, planned_exit, buy_logic, entry_math, entry_ai,
+                signal_price, slippage_pnl
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
             params![
                 trade_id,
                 strategy_id,
@@ -2279,6 +2622,8 @@ impl Database {
                 trade.buy_logic,
                 trade.entry_math,
                 trade.entry_ai,
+                trade.signal_price,
+                trade.slippage_pnl,
             ],
         )?;
 
@@ -2313,6 +2658,8 @@ impl Database {
             buy_logic: trade.buy_logic.clone(),
             entry_math: trade.entry_math.clone(),
             entry_ai: trade.entry_ai,
+            signal_price: trade.signal_price,
+            slippage_pnl: trade.slippage_pnl,
         }))
     }
 
@@ -2359,26 +2706,34 @@ impl Database {
 
         match side {
             TradeSide::Buy => {
-                let position_cost = fill_quantity * fill_price;
+                let (underlying_symbol, expiration, strike, option_type, multiplier, asset_type) =
+                    if let Some((u, e, s, t)) = parse_alpaca_option_symbol(symbol) {
+                        (u, Some(e), Some(s), Some(t), 100.0, "option".to_string())
+                    } else {
+                        (symbol.to_string(), None, None, None, 1.0, "equity".to_string())
+                    };
+
+                let position_cost = fill_quantity * fill_price * multiplier;
                 cash_balance -= position_cost;
-                let updated = if let Some(current) = existing {
+                let updated = if let Some(ref current) = existing {
                     let new_quantity = current.quantity + fill_quantity;
                     let new_average =
-                        ((current.quantity * current.average_price) + position_cost) / new_quantity;
+                        ((current.quantity * current.average_price) + (fill_quantity * fill_price))
+                            / new_quantity;
                     PositionRecord {
-                        underlying_symbol: symbol.to_string(),
+                        underlying_symbol,
                         instrument_symbol: symbol.to_string(),
-                        asset_type: strategy.asset_class_target.as_str().to_string(),
+                        asset_type,
                         quantity: new_quantity,
                         average_price: new_average,
                         market_price: fill_price,
-                        multiplier: 1.0,
-                        option_structure_preset: None,
-                        option_type: None,
-                        expiration: None,
-                        strike: None,
+                        multiplier,
+                        option_structure_preset: current.option_structure_preset,
+                        option_type,
+                        expiration,
+                        strike,
                         stale_quote: false,
-                        legs: Vec::new(),
+                        legs: current.legs.clone(),
                         razor_stop: current.razor_stop,
                         stagnation_timestamp: current.stagnation_timestamp.clone(),
                         kronos_sentiment: current.kronos_sentiment,
@@ -2393,17 +2748,17 @@ impl Database {
                     }
                 } else {
                     PositionRecord {
-                        underlying_symbol: symbol.to_string(),
+                        underlying_symbol,
                         instrument_symbol: symbol.to_string(),
-                        asset_type: strategy.asset_class_target.as_str().to_string(),
+                        asset_type,
                         quantity: fill_quantity,
                         average_price: fill_price,
                         market_price: fill_price,
-                        multiplier: 1.0,
+                        multiplier,
                         option_structure_preset: None,
-                        option_type: None,
-                        expiration: None,
-                        strike: None,
+                        option_type,
+                        expiration,
+                        strike,
                         stale_quote: false,
                         legs: Vec::new(),
                         razor_stop: None,
@@ -2411,7 +2766,7 @@ impl Database {
                         kronos_sentiment: None,
                         take_profit: None,
                         exit_logic: None,
-                        entry_time: None,
+                        entry_time: Some(executed_at.clone()),
                         buy_logic: None,
                         entry_math: None,
                         entry_ai: None,
@@ -2422,7 +2777,7 @@ impl Database {
                 Self::upsert_position_internal(&tx, strategy_id, &updated)?;
             }
             TradeSide::Sell => {
-                let Some(current) = existing else {
+                let Some(ref current) = existing else {
                     Self::mark_strategy_run_internal(
                         &tx,
                         strategy_id,
@@ -2432,9 +2787,9 @@ impl Database {
                     tx.commit()?;
                     return Ok(None);
                 };
-                let proceeds = fill_quantity * fill_price;
+                let proceeds = fill_quantity * fill_price * current.multiplier;
                 cash_balance += proceeds;
-                let pnl = (fill_price - current.average_price) * fill_quantity;
+                let pnl = (fill_price - current.average_price) * fill_quantity * current.multiplier;
                 realized_pnl = Some(pnl);
                 if pnl >= 0.0 {
                     wins += 1;
@@ -2442,7 +2797,7 @@ impl Database {
                     losses += 1;
                 }
 
-                let remaining = round_quantity(current.quantity - fill_quantity);
+                let remaining = round_position_quantity(current.quantity - fill_quantity, &current.asset_type);
                 if remaining <= 0.0 {
                     Self::delete_position_internal(&tx, strategy_id, &current.instrument_symbol)?;
                 } else {
@@ -2450,16 +2805,16 @@ impl Database {
                         &tx,
                         strategy_id,
                         &PositionRecord {
-                            underlying_symbol: current.underlying_symbol,
-                            instrument_symbol: current.instrument_symbol,
-                            asset_type: current.asset_type,
+                            underlying_symbol: current.underlying_symbol.clone(),
+                            instrument_symbol: current.instrument_symbol.clone(),
+                            asset_type: current.asset_type.clone(),
                             quantity: remaining,
                             average_price: current.average_price,
                             market_price: fill_price,
                             multiplier: current.multiplier,
                             option_structure_preset: current.option_structure_preset,
-                            option_type: current.option_type,
-                            expiration: current.expiration,
+                            option_type: current.option_type.clone(),
+                            expiration: current.expiration.clone(),
                             strike: current.strike,
                             stale_quote: false,
                             legs: current.legs.clone(),
@@ -2479,6 +2834,7 @@ impl Database {
                 }
             }
         }
+
 
         if let Some(state) = new_state {
             tx.execute(
@@ -2515,13 +2871,46 @@ impl Database {
             )?;
         }
 
+        // Extract metadata for logging
+        let (hold_intent, exit_logic, planned_exit, buy_logic, entry_math, entry_ai) = match side {
+            TradeSide::Buy => {
+                // For a buy, if it was an existing position, we keep metadata.
+                // If it's a new position, we don't have metadata from the broker fill itself.
+                if let Some(ref current) = existing {
+                    (
+                        current.hold_intent.clone(),
+                        current.exit_logic.clone(),
+                        current.planned_exit.clone(),
+                        current.buy_logic.clone(),
+                        current.entry_math.clone(),
+                        current.entry_ai,
+                    )
+                } else {
+                    (None, None, None, None, None, None)
+                }
+            }
+            TradeSide::Sell => {
+                // For a sell, we must have an existing position (checked above).
+                let current = existing.as_ref().unwrap();
+                (
+                    current.hold_intent.clone(),
+                    current.exit_logic.clone(),
+                    current.planned_exit.clone(),
+                    current.buy_logic.clone(),
+                    current.entry_math.clone(),
+                    current.entry_ai,
+                )
+            }
+        };
+
         tx.execute(
             "INSERT INTO trade_log (
                 id, strategy_id, symbol, underlying_symbol, instrument_symbol, asset_type,
                 side, quantity, price, multiplier, option_structure_preset, option_type,
                 expiration, strike, legs_json, provider, execution_mode, reason, realized_pnl,
-                executed_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+                executed_at, hold_intent, exit_logic, planned_exit, buy_logic, entry_math, entry_ai,
+                signal_price, slippage_pnl
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
             params![
                 trade_id,
                 strategy_id,
@@ -2543,6 +2932,14 @@ impl Database {
                 reason,
                 realized_pnl,
                 executed_at,
+                hold_intent,
+                exit_logic,
+                planned_exit,
+                buy_logic,
+                entry_math,
+                entry_ai,
+                Option::<f64>::None, // signal_price
+                Option::<f64>::None, // slippage_pnl
             ],
         )?;
 
@@ -2577,6 +2974,8 @@ impl Database {
             buy_logic: None,
             entry_math: None,
             entry_ai: None,
+            signal_price: None,
+            slippage_pnl: None,
         }))
     }
 
@@ -2862,6 +3261,7 @@ impl Database {
         let broker_synced_at = broker_sync.as_ref().map(|sync| sync.synced_at.clone());
 
         Ok(StrategySummary {
+            use_shared_cash: record.use_shared_cash,
             id: record.id,
             name: record.name,
             kind: record.kind,
@@ -2897,6 +3297,7 @@ impl Database {
             run_interval_ms: record.run_interval_ms,
             state_json: record.state_json,
             risk_parameters: record.risk_parameters,
+            execution_profile: record.execution_profile,
         })
     }
 }
@@ -2947,6 +3348,8 @@ fn map_trade_record(row: &rusqlite::Row<'_>) -> Result<TradeRecord, rusqlite::Er
         buy_logic: row.get(24)?,
         entry_math: row.get(25)?,
         entry_ai: row.get(26)?,
+        signal_price: row.get(27)?,
+        slippage_pnl: row.get(28)?,
     })
 }
 
@@ -3107,6 +3510,42 @@ fn round_position_quantity(value: f64, asset_type: &str) -> f64 {
     }
 }
 
+pub fn parse_alpaca_option_symbol(symbol: &str) -> Option<(String, String, f64, String)> {
+    // Alpaca Option Symbol format: [Underlying][YY][MM][DD][C/P][Price*1000]
+    // Example: AAPL240517C00190000
+    if symbol.len() < 15 {
+        return None;
+    }
+
+    // Find first digit (start of expiration)
+    let first_digit_idx = symbol.find(|c: char| c.is_ascii_digit())?;
+    if first_digit_idx == 0 || first_digit_idx + 15 > symbol.len() {
+        return None;
+    }
+
+    let underlying = &symbol[..first_digit_idx];
+    let rest = &symbol[first_digit_idx..];
+    if rest.len() < 15 {
+        return None;
+    }
+
+    let expiration = format!("20{}", &rest[..6]);
+    let option_type = if &rest[6..7] == "C" {
+        "call"
+    } else {
+        "put"
+    };
+    let strike_raw = &rest[7..15];
+    let strike = strike_raw.parse::<f64>().ok()? / 1000.0;
+
+    Some((
+        underlying.to_string(),
+        expiration,
+        strike,
+        option_type.to_string(),
+    ))
+}
+
 fn option_contract_mark_price(contract: &OptionContractSnapshot) -> Option<f64> {
     contract
         .last
@@ -3188,11 +3627,6 @@ fn normalize_strategy_options(
     if !(0.0..=1.0).contains(&options.option_target_delta) {
         return Err(AppError::Validation(
             "option target delta must be between 0 and 1".to_string(),
-        ));
-    }
-    if options.option_dte_min == 0 {
-        return Err(AppError::Validation(
-            "option minimum DTE must be at least 1".to_string(),
         ));
     }
     if options.option_dte_max < options.option_dte_min {
@@ -3325,6 +3759,20 @@ fn execution_mode_from_str(value: &str) -> Result<ExecutionMode, rusqlite::Error
     }
 }
 
+fn execution_profile_from_str(value: &str) -> Result<crate::models::ExecutionProfile, rusqlite::Error> {
+    match value {
+        "standard" => Ok(crate::models::ExecutionProfile::Standard),
+        "sniper_0dte" => Ok(crate::models::ExecutionProfile::Sniper0Dte),
+        other => Err(rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Text,
+            Box::new(AppError::Internal(format!(
+                "unknown execution profile {other}"
+            ))),
+        )),
+    }
+}
+
 fn asset_class_target_from_str(value: &str) -> Result<AssetClassTarget, rusqlite::Error> {
     match value {
         "equity" => Ok(AssetClassTarget::Equity),
@@ -3415,6 +3863,13 @@ fn execution_mode_to_str(value: ExecutionMode) -> &'static str {
         ExecutionMode::AlpacaLive => "alpaca_live",
         ExecutionMode::ManualReconciliation => "manual_reconciliation",
         ExecutionMode::AlpacaReconciliation => "alpaca_reconciliation",
+    }
+}
+
+fn execution_profile_to_str(value: crate::models::ExecutionProfile) -> &'static str {
+    match value {
+        crate::models::ExecutionProfile::Standard => "standard",
+        crate::models::ExecutionProfile::Sniper0Dte => "sniper_0dte",
     }
 }
 

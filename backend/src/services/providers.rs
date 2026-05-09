@@ -449,6 +449,8 @@ pub async fn fetch_alpaca_broker_sync(
                 current_price: numberish(&position["current_price"]),
                 unrealized_pl: numberish(&position["unrealized_pl"]),
                 unrealized_plpc: numberish(&position["unrealized_plpc"]),
+                strategy_id: None,
+                entry_logic: None,
                 synced_at: synced_at.clone(),
             })
         })
@@ -786,6 +788,35 @@ pub async fn cancel_all_alpaca_orders(
     Ok(())
 }
 
+pub async fn liquidate_all_alpaca_positions(
+    client: &Client,
+    credential: &StoredCredential,
+    mock: bool,
+) -> AppResult<()> {
+    if mock {
+        return Ok(());
+    }
+    let response = client
+        .delete(format!(
+            "{}/v2/positions",
+            credential.environment.base_trading_url()
+        ))
+        .header("APCA-API-KEY-ID", credential.key_id.as_str())
+        .header("APCA-API-SECRET-KEY", credential.secret_key.as_str())
+        .query(&[("cancel_orders", "true")])
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::External(format!(
+            "Alpaca liquidate-all positions failed: {body}"
+        )));
+    }
+
+    Ok(())
+}
+
 pub async fn liquidate_alpaca_position(
     client: &Client,
     credential: &StoredCredential,
@@ -803,6 +834,7 @@ pub async fn liquidate_alpaca_position(
         ))
         .header("APCA-API-KEY-ID", credential.key_id.as_str())
         .header("APCA-API-SECRET-KEY", credential.secret_key.as_str())
+        .query(&[("cancel_orders", "true")])
         .send()
         .await?;
 

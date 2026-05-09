@@ -56,3 +56,29 @@ export function legLabel(leg: {
 export function parseSymbols(value: string): string[] {
   return value.split(",").map((item) => item.trim().toUpperCase()).filter(Boolean);
 }
+
+export function prettyTime(isoString: string): string {
+  if (!isoString) return "--:--";
+  try {
+    let normalized = isoString;
+    // If it looks like "2024-05-06 14:14:35", normalize to "2024-05-06T14:14:35Z"
+    if (isoString.includes(" ") && !isoString.includes("T")) {
+      normalized = isoString.replace(" ", "T") + "Z";
+    } else if (!isoString.includes("Z") && !isoString.includes("+") && isoString.includes("-")) {
+      // If it has dashes but no timezone, it's likely UTC from the DB
+      normalized = isoString + "Z";
+    }
+
+    const date = new Date(normalized);
+    if (isNaN(date.getTime())) return isoString;
+
+    return date.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    });
+  } catch (e) {
+    return isoString;
+  }
+}

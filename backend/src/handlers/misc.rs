@@ -69,3 +69,21 @@ pub async fn sync_strategy_broker(
         error: None,
     })
 }
+
+#[derive(serde::Deserialize)]
+pub struct SetProfileRequest {
+    pub profile: crate::models::ExecutionProfile,
+}
+
+pub async fn set_global_profile(
+    State(state): State<AppState>,
+    Json(request): Json<SetProfileRequest>,
+) -> AppResult<ApiResponse<()>> {
+    let db = state.db.lock().await;
+    db.set_global_execution_profile(request.profile)?;
+    Ok(ApiResponse {
+        success: true,
+        data: Some(()),
+        error: None,
+    })
+}

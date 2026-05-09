@@ -229,3 +229,21 @@ pub async fn run_pattern_analysis(
         error: None,
     })
 }
+
+#[derive(Debug, Deserialize)]
+pub struct PerformanceQuery {
+    pub strategy_id: String,
+}
+
+pub async fn get_strategy_performance(
+    State(state): State<AppState>,
+    Query(query): Query<PerformanceQuery>,
+) -> AppResult<ApiResponse<crate::services::analytics::PerformanceReport>> {
+    let report = state.analytics.get_strategy_performance(&query.strategy_id).await?;
+    
+    Ok(ApiResponse {
+        success: true,
+        data: Some(report),
+        error: None,
+    })
+}

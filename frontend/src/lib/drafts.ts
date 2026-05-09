@@ -30,6 +30,7 @@ export interface StrategyDraft {
   blacklisted_symbols: string;
   run_interval: string;
   run_interval_unit: RunIntervalUnit;
+  use_shared_cash: boolean;
 }
 
 export function runIntervalToDraft(ms: number): { value: string; unit: RunIntervalUnit } {

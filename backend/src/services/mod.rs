@@ -8,3 +8,4 @@ pub mod trading;
 pub mod risk;
 pub mod greeks;
 pub mod corporate_actions;
+pub mod analytics;

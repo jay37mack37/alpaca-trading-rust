@@ -1,15 +1,19 @@
 <script lang="ts">
   import type { TradeRecord } from "../lib/types";
-  import { prettyMoney, prettyPct, quantityDigits } from "../lib/format";
+  import { prettyMoney, prettyPct, quantityDigits, prettyTime } from "../lib/format";
 
   export let trades: TradeRecord[] = [];
 
   // Filter for closed positions (exits with realized P/L)
   // Filter for closed positions (exits with realized P/L) and not hidden
   $: closedTrades = trades.filter(t => t.realized_pnl != null && !t.hidden);
-
+  $: openTrades = trades.filter(t => t.realized_pnl == null && t.side === "buy" && !t.hidden);
+  
   // Sort trades by date descending
   $: sortedTrades = [...closedTrades].sort((a, b) => 
+    new Date(b.executed_at).getTime() - new Date(a.executed_at).getTime()
+  );
+  $: sortedOpenTrades = [...openTrades].sort((a, b) => 
     new Date(b.executed_at).getTime() - new Date(a.executed_at).getTime()
   );
 
@@ -39,7 +43,58 @@
     </div>
   </div>
 
-  <div class="table-wrapper">
+  <div class="table-wrapper" style="margin-bottom: 2rem;">
+    <h3 style="padding: 0 1.5rem; color: #22c55e; font-size: 0.9rem; margin-bottom: 0.5rem; margin-top: 1rem; font-weight: 800;">EXECUTED BUYS (LIVE)</h3>
+    <table class="trades-table">
+      <thead>
+        <tr>
+          <th>Executed At</th>
+          <th>Symbol</th>
+          <th>Agent</th>
+          <th>Entry Price</th>
+          <th>Intel</th>
+          <th class="action-head">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each sortedOpenTrades as trade}
+          <tr>
+            <td class="time">
+              {new Date(trade.executed_at).toLocaleDateString()}
+              <div class="at-time">{prettyTime(trade.executed_at)}</div>
+            </td>
+            <td class="symbol-cell">
+              <span class="symbol">{trade.instrument_symbol}</span>
+              <span class="asset-type">{trade.asset_type.toUpperCase()}</span>
+            </td>
+            <td class="strategy-cell">
+              <span class="strategy">{trade.strategy_id.replace('-', ' ').toUpperCase()}</span>
+            </td>
+            <td class="pnl" style="color: #60a5fa">
+              <div class="pnl-stack">
+                <span class="pnl-cash">{prettyMoney(trade.price)}</span>
+                <span class="qty-size">{trade.quantity} units</span>
+              </div>
+            </td>
+            <td class="intel-cell">
+              <div class="intel-block">
+                <span class="intel-title">{trade.buy_logic || 'MANUAL'}</span>
+                <span class="intel-sub">{trade.reason}</span>
+              </div>
+            </td>
+            <td class="action-cell">
+              <button class="hide-btn" on:click={() => handleHide(trade.id)}>HIDE</button>
+            </td>
+          </tr>
+        {:else}
+          <tr>
+            <td colspan="6" class="empty-row">No recent entries found.</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+
+    <h3 style="padding: 0 1.5rem; color: #94a3b8; font-size: 0.9rem; margin-bottom: 0.5rem; margin-top: 1rem;">Closed Positions (Archive)</h3>
     <table class="trades-table">
       <thead>
         <tr>
@@ -58,7 +113,7 @@
           <tr>
             <td class="time">
               {new Date(trade.executed_at).toLocaleDateString()}
-              <div class="at-time">{new Date(trade.executed_at).toLocaleTimeString()}</div>
+              <div class="at-time">{prettyTime(trade.executed_at)}</div>
             </td>
             <td class="symbol-cell">
               <span class="symbol">{trade.instrument_symbol}</span>

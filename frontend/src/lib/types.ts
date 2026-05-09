@@ -4,7 +4,8 @@ export type ExecutionMode = "local_paper" | "alpaca_paper" | "alpaca_live";
 export type AssetClassTarget = "equity" | "options";
 export type OptionEntryStyle = "long_call" | "long_put";
 export type OptionStructurePreset = "single" | "bull_call_spread" | "bear_put_spread";
-export type StrategyKind = "vwap_reflexive" | "rsi_mean_reversion" | "sma_trend" | "listing_arbitrage" | "put_call_parity" | "parity_sniper" | "vwap_reversion" | "jarrod_vwap" | "yield_rotation" | "distribution_sniper" | "gamma_flip";
+export type ExecutionProfile = "standard" | "sniper_0dte";
+export type StrategyKind = "vwap_reflexive" | "rsi_mean_reversion" | "sma_trend" | "listing_arbitrage" | "put_call_parity" | "parity_sniper" | "vwap_reversion" | "jarrod_vwap" | "yield_rotation" | "distribution_sniper" | "gamma_flip" | "zero_dte_neutral";
 export type TradeSide = "buy" | "sell";
 
 export interface Quote {
@@ -71,6 +72,20 @@ export interface RiskParameters {
   blacklisted_symbols: string[];
 }
 
+export interface IntelligenceLog {
+    id?: string;
+    strategy_id: string;
+    symbol: string;
+    source: string;
+    math_edge: string;
+    ai_score: string;
+    decision: string;
+    narrative: string;
+    timestamp: string;
+    was_executed?: boolean;
+    execution_profile?: ExecutionProfile;
+}
+
 export interface StrategySummary {
   id: string;
   name: string;
@@ -107,6 +122,8 @@ export interface StrategySummary {
   broker_open_orders: number | null;
   risk_parameters: RiskParameters | null;
   run_interval_ms: number;
+  use_shared_cash: boolean;
+  execution_profile: ExecutionProfile;
 }
 
 export interface PositionSummary {
@@ -274,6 +291,7 @@ export interface DashboardResponse {
   credentials: CredentialSummary[];
   tracked_symbols: string[];
   watchlists: Watchlist[];
+  recent_logs?: IntelligenceLog[];
 }
 
 export interface CreateCredentialRequest {
@@ -306,6 +324,8 @@ export interface UpdateStrategyRequest {
   live_confirmation?: string;
   risk_parameters?: RiskParameters | null;
   run_interval_ms?: number;
+  use_shared_cash?: boolean;
+  execution_profile?: ExecutionProfile;
 }
 
 export interface CreateStrategyRequest {
@@ -330,6 +350,8 @@ export interface CreateStrategyRequest {
   run_interval_ms?: number;
   description?: string;
   reset_portfolio?: boolean;
+  use_shared_cash?: boolean;
+  execution_profile?: ExecutionProfile;
 }
 
 export interface CollectResponse {
@@ -376,6 +398,7 @@ export interface LogRealtimeEvent {
   decision: string;
   narrative: string;
   time: string;
+  was_executed?: boolean;
 }
 
 export interface HeartbeatRealtimeEvent {
@@ -411,12 +434,14 @@ export interface SystemLogRealtimeEvent {
     math_context: string;
     ai_confidence: number;
     narrative: string;
+    execution_profile?: ExecutionProfile;
   };
 }
 
 export interface PositionsRealtimeEvent {
   type: "positions";
   positions: PositionSummary[];
+  broker_positions: BrokerPositionSummary[];
 }
 
 export type RealtimeEvent =

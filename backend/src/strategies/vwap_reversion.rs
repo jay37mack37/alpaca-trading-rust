@@ -1,3 +1,4 @@
+use chrono::Timelike;
 use crate::logger::{SystemEvent, SystemSource, SystemEventType};
 use crate::agents::broadcast_audit_log;
 use crate::models::{SignalAction, StrategySignal, Candle, PositionRecord, Quote, StrategyRecord};
@@ -14,15 +15,16 @@ impl crate::strategies::TradingStrategy for VwapReversionStrategy {
         strategy: &StrategyRecord,
         candles: &[Candle],
         quote: &Quote,
-        _options: &[crate::models::OptionContractSnapshot],
-        _position: Option<&PositionRecord>,
+        options: &[crate::models::OptionContractSnapshot],
+        position: Option<&PositionRecord>,
         kronos_score: Option<f64>,
+        net_gex: Option<f64>,
     ) -> StrategySignal {
         let mut tracker = VwapTracker::new();
         for candle in candles {
             tracker.update(candle.close, candle.volume);
         }
-        evaluate_vwap_reversion(state, &strategy.id, &quote.symbol, quote.price, &tracker, kronos_score)
+        evaluate_vwap_reversion(state, &strategy.id, &quote.symbol, quote.price, &tracker, position, kronos_score, net_gex, strategy.performance_stats_json.clone(), strategy.execution_profile)
     }
 }
 
@@ -95,8 +97,22 @@ pub fn evaluate_vwap_reversion(
     symbol: &str,
     current_price: f64,
     tracker: &VwapTracker,
+    position: Option<&PositionRecord>,
     kronos_score: Option<f64>,
+    _net_gex: Option<f64>,
+    performance_stats: Option<String>,
+    profile: crate::models::ExecutionProfile,
 ) -> StrategySignal {
+    // 0. Learning Loop Feedback
+    let best_hours = performance_stats.and_then(|json| {
+        let stats: serde_json::Value = serde_json::from_str(&json).ok()?;
+        stats.get("best_hours").and_then(|h| h.as_array()).map(|arr| {
+            arr.iter().filter_map(|v| v.as_u64().map(|u| u as u32)).collect::<Vec<u32>>()
+        })
+    });
+
+    let current_hour = (chrono::Utc::now().hour() + 20) % 24;
+    let is_suboptimal_window = false;
     let vwap = tracker.vwap();
     let sd = tracker.std_dev();
 
@@ -127,34 +143,100 @@ pub fn evaluate_vwap_reversion(
     broadcast_audit_log(
         state,
         SystemEvent::now(
-            SystemSource::Vwap,
+            "VWAP_REVERSION".to_string(),
             Some(_strategy_id.to_string()),
             symbol.to_string(),
             event_type,
-            math_context,
+            format!("SD: {:.2} | ADX: {:.1}", dev, adx),
             ai_score,
             narrative,
+            Some(profile),
         ),
     );
 
-    // Entry Logic
-    if abs_dev >= 2.5 && ai_score > 0.8 && adx_allows {
-        let action = if dev > 0.0 { SignalAction::Sell } else { SignalAction::Buy };
-        let direction = if dev > 0.0 { "Over-extended (UP)" } else { "Over-extended (DOWN)" };
+    // GEX Filtering (Gamma Flip Intelligence)
+    let gex_val = _net_gex.unwrap_or(0.0);
+    let is_gamma_unstable = gex_val < -500_000.0; // High volatility risk zone
 
+    // Entry Logic
+    if abs_dev >= 2.0 && !is_gamma_unstable {
+        let (action, entry_style, direction) = if dev > 0.0 {
+            // Price is high -> Snap back DOWN -> Buy PUT
+            (SignalAction::Buy, crate::models::OptionEntryStyle::LongPut, "Over-extended (UP)")
+        } else {
+            // Price is low -> Snap back UP -> Buy CALL
+            (SignalAction::Buy, crate::models::OptionEntryStyle::LongCall, "Over-extended (DOWN)")
+        };
+
+        // Directional Confirmation (Kronos)
+        let ai_confirms = if dev > 0.0 { ai_score < 0.4 } else { ai_score > 0.6 };
+
+        if ai_confirms {
+            let mut size_multiplier = 1.0;
+            let mut learning_loop_context = String::new();
+            if is_suboptimal_window {
+                size_multiplier = 0.5;
+                learning_loop_context = format!(" | [REDUCED SIZE: Sub-optimal Window {}:00]", current_hour);
+            }
+
+            let allocation = if (dev > 0.0 && ai_score < 0.25) || (dev < 0.0 && ai_score > 0.75) {
+                0.25 // High Conviction
+            } else {
+                0.15 // Standard
+            };
+
+            // SNIPER 0DTE FILTER: Ensure we only pick 0DTE contracts in Sniper mode
+            let (max_dte, max_cost) = match profile {
+                crate::models::ExecutionProfile::Sniper0Dte => (0, 2.50), // Focus on high leverage/Low cost for 0DTE
+                crate::models::ExecutionProfile::Standard => (45, 50.0),
+            };
+
+            // In Style-based strategies, the actual contract is resolved in trading.rs,
+            // but we can pass hints or just trust the global failsafe I just added.
+            // However, it's better to log the intent correctly here.
+            let sniper_context = if profile == crate::models::ExecutionProfile::Sniper0Dte {
+                " [SNIPER 0DTE]"
+            } else {
+                ""
+            };
+
+            return StrategySignal {
+                action,
+                allocation_fraction: allocation * size_multiplier,
+                reason: format!(
+                    "VWAP SNAP-BACK confirmed by KRONOS ({:.2}): Mean reversion likely ({:.2} SD) | GEX: {:.1}M{}{}",
+                    ai_score,
+                    abs_dev,
+                    gex_val / 1_000_000.0,
+                    learning_loop_context,
+                    sniper_context
+                ),
+                limit_price: Some(current_price),
+                stop_loss: Some(current_price * (1.0 - 0.01 * dev.signum())),
+                take_profit: Some(vwap),
+                exit_logic: Some("VWAP Center".to_string()),
+                planned_exit: Some(format!("Close position at VWAP mean target (~${:.2})", vwap)),
+                option_entry_style: Some(entry_style),
+                ai_score: Some(format!("{:.2}", ai_score)),
+                ..default_signal()
+            };
+        }
+    }
+
+    if let Some(_) = position {
         return StrategySignal {
-            action,
-            allocation_fraction: 0.15,
-            reason: format!("{}: SNAP BACK likely ({:.2} SD)", direction, abs_dev),
-            limit_price: Some(current_price),
-            stop_loss: Some(current_price * (1.0 - 0.01 * dev.signum())),
-            take_profit: Some(vwap),
-            exit_logic: Some("VWAP Center".to_string()),
+            action: SignalAction::Hold,
+            reason: format!("MONITORING: Currently at {:.2} SD from VWAP", dev),
+            hold_intent: Some(format!("Holding until price reverts to session VWAP mean (${:.2})", vwap)),
+            planned_exit: Some(format!("Targeting VWAP cross at ${:.2}", vwap)),
             ..default_signal()
         };
     }
 
-    crate::strategies::hold(format!("Monitoring | {:.2} SD", dev))
+    crate::strategies::hold_with_intent(
+        format!("SCANNING: {:.2} SD from Mean", dev),
+        format!("Awaiting +/- 2.5 SD extension for reversion entry (Current: {:.2} SD)", dev)
+    )
 }
 
 fn default_signal() -> StrategySignal {

@@ -45,6 +45,7 @@ pub struct AppState {
     pub agent_tasks: Arc<Mutex<std::collections::HashMap<String, tokio::task::JoinHandle<()>>>>,
     pub api_token: Arc<String>,
     pub risk_engine: Arc<services::risk::RiskEngine>,
+    pub analytics: Arc<services::analytics::AnalyticsService>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -101,8 +102,9 @@ async fn main() -> anyhow::Result<()> {
             axum::http::header::CONTENT_TYPE,
         ]);
 
+    let db_shared = Arc::new(Mutex::new(db));
     let state = AppState {
-        db: Arc::new(Mutex::new(db)),
+        db: db_shared.clone(),
         http: Client::builder()
             .user_agent("AutoStonksAlgoSuite/0.1")
             .build()?,
@@ -111,6 +113,7 @@ async fn main() -> anyhow::Result<()> {
         agent_tasks: Arc::new(Mutex::new(std::collections::HashMap::new())),
         api_token: api_token.token().clone(),
         risk_engine: Arc::new(services::risk::RiskEngine::new()),
+        analytics: Arc::new(services::analytics::AnalyticsService::new(db_shared.clone())),
     };
 
     let active_strategies: Vec<String> = {
@@ -118,9 +121,7 @@ async fn main() -> anyhow::Result<()> {
         db.list_strategy_records()
             .unwrap_or_default()
             .into_iter()
-            .filter(|s| {
-                s.enabled && !matches!(s.kind, crate::models::StrategyKind::ParitySniper | crate::models::StrategyKind::PutCallParity | crate::models::StrategyKind::VwapReversion | crate::models::StrategyKind::JarrodVwap)
-            })
+            .filter(|s| s.enabled)
             .map(|s| s.id)
             .collect()
     };
@@ -192,6 +193,11 @@ async fn main() -> anyhow::Result<()> {
                options_active = true; 
             }
 
+            let execution_profile = {
+                let db = state_hb.db.lock().await;
+                db.get_global_execution_profile()
+            };
+
             // 4. Broadcast Heartbeat (for UI indicator)
             let _ = state_hb.streams.send_event(RealtimeEvent::Heartbeat { 
                 timestamp: Utc::now().timestamp_millis() as u64,
@@ -199,19 +205,21 @@ async fn main() -> anyhow::Result<()> {
                 kronos_active: kronos_status.contains("CONNECTED") || kronos_status.contains("SIM"),
                 alpaca_active: alpaca_status.contains("LIVE"),
                 options_active,
+                execution_profile,
             });
 
             // 5. Audit Log
             broadcast_audit_log(
                 &state_hb,
                 SystemEvent::now(
-                    SystemSource::System,
+                    "SYSTEM".to_string(),
                     None,
                     "SYS".to_string(),
                     SystemEventType::Scan,
                     format!("BP:${:.0}", buying_power),
                     0.0,
                     format!("Kronos: {} | Alpaca: {} | Options: {}", kronos_status, alpaca_status, if options_active { "LINKED" } else { "ERROR" }),
+                    None,
                 )
             );
 
@@ -231,13 +239,23 @@ async fn main() -> anyhow::Result<()> {
     let state_pos = state.clone();
     tokio::spawn(async move {
         loop {
-            let positions = {
+            let (positions, broker_positions) = {
                 let db = state_pos.db.lock().await;
-                db.list_all_open_positions().unwrap_or_default()
+                (
+                    db.list_all_open_positions().unwrap_or_default(),
+                    db.list_all_broker_positions()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .flat_map(|(_, positions)| positions)
+                        .collect::<Vec<_>>()
+                )
             };
             
-            if !positions.is_empty() {
-                let _ = state_pos.streams.send_event(crate::models::RealtimeEvent::Positions { positions });
+            if !positions.is_empty() || !broker_positions.is_empty() {
+                let _ = state_pos.streams.send_event(crate::models::RealtimeEvent::Positions { 
+                    positions,
+                    broker_positions,
+                });
             }
             
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -286,6 +304,10 @@ async fn main() -> anyhow::Result<()> {
             post(handlers::misc::sync_strategy_broker),
         )
         .route(
+            "/api/strategies/:strategy_id/logs",
+            get(handlers::agents::get_strategy_logs),
+        )
+        .route(
             "/api/strategies/:strategy_id/run",
             post(handlers::agents::run_strategy),
         )
@@ -306,6 +328,7 @@ async fn main() -> anyhow::Result<()> {
             delete(handlers::agents::hide_trade),
         )
         .route("/api/strategies/panic", post(handlers::agents::panic_all))
+        .route("/api/broker/liquidate-all", post(handlers::agents::liquidate_all_broker_positions))
         .route(
             "/api/watchlist",
             post(handlers::watchlist::add_watchlist_symbol),
@@ -320,9 +343,14 @@ async fn main() -> anyhow::Result<()> {
             post(handlers::misc::ingest_robinhood_data),
         )
         .route(
+            "/api/analytics/performance",
+            get(handlers::analytics::get_strategy_performance),
+        )
+        .route(
             "/api/analytics/patterns",
             get(handlers::analytics::run_pattern_analysis),
         )
+        .route("/api/config/profile", post(handlers::misc::set_global_profile))
         .layer(middleware::from_fn_with_state(
             api_token.clone(),
             require_token,
